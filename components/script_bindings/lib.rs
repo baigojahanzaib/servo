@@ -47,6 +47,7 @@ pub mod realms;
 pub mod record;
 pub mod refcounted;
 pub mod reflector;
+pub mod reflector_root;
 pub mod root;
 pub mod routed_promise;
 pub mod script_runtime;

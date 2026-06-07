@@ -55,6 +55,7 @@ use script_bindings::cell::{DomRefCell, RefMut};
 use script_bindings::domstring::TracedDOMString;
 use script_bindings::interfaces::GlobalScopeHelpers;
 use script_bindings::reflector::DomObject;
+use script_bindings::reflector_root::WeakReflectorRoot;
 use script_bindings::settings_stack::run_a_script;
 use servo_base::generic_channel;
 use servo_base::generic_channel::{GenericCallback, GenericSend};
@@ -237,6 +238,10 @@ pub(crate) struct GlobalScope {
     #[no_trace]
     storage_threads: StorageThreads,
 
+    /// Weak references to the [`ReflectorRoot`]s created in this global.
+    /// Allows us to release perma roots on teardown and break cycles.
+    #[no_trace]
+    rooted_reflectors: DomRefCell<Vec<WeakReflectorRoot>>,
     /// <https://html.spec.whatwg.org/multipage/#concept-environment-creation-url>
     #[no_trace]
     creation_url: DomRefCell<ServoUrl>,
@@ -470,6 +475,7 @@ impl GlobalScope {
             inherited_upgrade_insecure_navigations_set: DomRefCell::new(
                 inherited_upgrade_insecure_navigations_set,
             ),
+            rooted_reflectors: DomRefCell::new(Vec::new()),
         }
     }
 
@@ -526,6 +532,32 @@ impl GlobalScope {
             window.font_context()
         } else {
             unreachable!("Unsupported global type retrieving font context")
+        }
+    }
+
+    pub(crate) fn register_reflector_root(&self, root: WeakReflectorRoot) {
+        let mut roots = self.rooted_reflectors.borrow_mut();
+        if roots.len() == roots.capacity() {
+            roots.retain(|weak| weak.live());
+        }
+        roots.push(root);
+    }
+
+    /// Release (unroot) all registered `ReflectorRoot`s
+    ///
+    /// This may be called when the ReflectorRoot objects are still alive.
+    /// The Reflector can then be garbage collected, as soon as nothing else traces to it.
+    ///
+    /// # Safety
+    ///
+    /// This may only be called on teardown, when it is certain that nothing can
+    /// dereference the reflector anymore.
+    #[expect(unsafe_code)]
+    pub(crate) unsafe fn release_reflector_roots(&self) {
+        let roots = std::mem::take(&mut *self.rooted_reflectors.borrow_mut());
+        for weak in roots {
+            // SAFETY: The caller guarantees that this is only called on teardown.
+            unsafe { weak.release() }
         }
     }
 
@@ -3393,6 +3425,10 @@ impl GlobalScopeHelpers<crate::DomTypeHolder> for GlobalScope {
 
     fn entry() -> DomRoot<Self> {
         GlobalScope::entry()
+    }
+
+    fn register_reflector_root(&self, root: WeakReflectorRoot) {
+        self.register_reflector_root(root)
     }
 }
 
