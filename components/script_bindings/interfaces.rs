@@ -23,6 +23,7 @@ use crate::codegen::PrototypeList;
 use crate::conversions::DerivedFrom;
 use crate::error::Error;
 use crate::reflector::{DomObject, DomObjectWrap};
+use crate::reflector_root::WeakReflectorRoot;
 use crate::root::DomRoot;
 use crate::settings_stack::StackEntry;
 use crate::utils::ProtoOrIfaceArray;
@@ -91,6 +92,9 @@ pub trait GlobalScopeHelpers<D: DomTypes>: DomObject + Sized {
 
     fn script_to_constellation_chan(&self) -> ScriptToConstellationChan;
     fn entry() -> DomRoot<Self>;
+
+    /// Track a `ReflectorRoot` so the perma-root can be removed when this global is torn down.
+    fn register_reflector_root(&self, root: WeakReflectorRoot);
 }
 
 pub trait ThreadTrustedPromiseHelpers<D: DomTypes> {

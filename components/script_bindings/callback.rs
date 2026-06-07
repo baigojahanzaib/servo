@@ -18,9 +18,10 @@ use crate::codegen::GenericBindings::WindowBinding::Window_Binding::WindowMethod
 use crate::error::{Error, Fallible};
 use crate::interfaces::{DocumentHelpers, DomHelpers, GlobalScopeHelpers};
 use crate::js::JS_GetProperty;
-use crate::permanent_root::PermanentRoot;
+use crate::reflector_root::WeakReflectorRoot;
 use crate::realms::enter_auto_realm;
 use crate::reflector::DomObject;
+use crate::reflector_root::ReflectorRoot;
 use crate::root::Dom;
 use crate::settings_stack::{run_a_callback, run_a_script};
 use crate::{DomTypes, cformat};
@@ -64,7 +65,7 @@ pub enum ExceptionHandling {
 }
 
 /// A WebIDL callback that is treated as a GC root.
-pub struct RootedCallback<T>(Rc<(T, PermanentRoot)>);
+pub struct RootedCallback<T>(Rc<(T, ReflectorRoot)>);
 
 impl<D: DomTypes, T: HasCallbackHolder<D = D>> RootedCallback<T> {
     /// Create a new [TracedCallback] value from this rooted callback.
@@ -134,12 +135,19 @@ pub(crate) unsafe fn create_callback_rooted<D: DomTypes, T: HasCallbackHolder<D 
     obj: T,
     callback: *mut JSObject,
 ) -> RootedCallback<T> {
-    let mut ret = Rc::new((obj, PermanentRoot::default()));
-    let (callback2, permanent_root) = Rc::get_mut(&mut ret).unwrap();
+    let ret = Rc::new((
+        obj,
+        ReflectorRoot::new(cx, ObjectValue(callback), c"Callback::root"),
+    ));
+    let (callback2, root) = Rc::get_mut(&mut ret).unwrap();
     unsafe {
         callback2.callback_holder_mut().init_callback(callback);
-        permanent_root.init(cx, callback2.callback(), c"Callback::root");
     };
+    // Register the root weakly with the callback's incumbent global so it can
+    // be unrooted if the global is torn down before this callback drops.
+    if let Some(global) = &callback2.callback_holder().incumbent {
+        global.register_reflector_root(root.get_weak());
+    }
     RootedCallback(ret)
 }
 

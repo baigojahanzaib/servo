@@ -36,8 +36,8 @@ use js::rust::{HandleObject, HandleValue, MutableHandleObject};
 use script_bindings::interfaces::{
     HeapTracedPromiseHelpers, PromiseHelpers, StackRootPromiseHelpers,
 };
-use script_bindings::permanent_root::PermanentRoot;
 use script_bindings::reflector::{DomObject, MutDomObject, Reflector};
+use script_bindings::reflector_root::ReflectorRoot;
 use script_bindings::settings_stack::run_a_script;
 
 use crate::DomTypeHolder;
@@ -59,7 +59,7 @@ use crate::runtime::job_queue::MicrotaskRunnable;
 /// GC cycles that prevent memory from being reclaimed.
 #[derive(Clone)]
 #[cfg_attr(crown, crown::unrooted_must_root_lint::allow_unrooted_interior)]
-pub(crate) struct RootedPromise(Rc<(Promise, PermanentRoot)>);
+pub(crate) struct RootedPromise(Rc<(Promise, ReflectorRoot)>);
 
 impl StackRootPromiseHelpers<crate::DomTypeHolder> for RootedPromise {
     type HeapTraced = TracedPromise;
@@ -229,13 +229,22 @@ impl Promise {
         let promise = Promise {
             reflector: Reflector::new(),
         };
-        let promise = Rc::new((promise, PermanentRoot::default()));
+        let promise = Rc::new((
+            promise,
+            ReflectorRoot::new(cx, ObjectValue(*obj), c"Promise::root"),
+        ));
         unsafe {
             promise
                 .0
                 .init_reflector_without_associated_memory(obj.get());
-            promise.1.init(cx, *obj, c"Promise::root");
         }
+        // Register the root weakly with the owning global so it can be unrooted if the
+        // global is torn down before this promise drops, which can be necessary to
+        // clean up despite cycles.
+        promise
+            .0
+            .global()
+            .register_reflector_root(promise.1.get_weak());
         RootedPromise(promise)
     }
 
