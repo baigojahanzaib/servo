@@ -895,6 +895,7 @@ impl WorkletThread {
     }
 
     /// Process a control message.
+    #[expect(unsafe_code)]
     fn process_control(&mut self, control: WorkletControl, cx: &mut js::context::JSContext) {
         match control {
             WorkletControl::ExitWorklet(worklet_id) => {
@@ -904,6 +905,10 @@ impl WorkletThread {
                     .map(|global_scope| global_scope.as_rooted())
                 {
                     global_scope.upcast::<GlobalScope>().tear_down();
+                    // SAFETY: The worklet has exited. Tasks arriving for it after this
+                    // point can't find the worklet_id in `global_scopes` and are dropped,
+                    // so nothing can dereference the reflectors we unroot here.
+                    unsafe { global_scope.upcast::<GlobalScope>().release_reflector_roots() };
                 }
             },
             WorkletControl::FetchAndInvokeAWorkletScript {
