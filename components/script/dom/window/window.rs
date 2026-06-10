@@ -2569,6 +2569,11 @@ impl Window {
         self.paint_worklet.or_init(|| self.new_paint_worklet(cx))
     }
 
+    pub(crate) fn has_document(&self) -> bool {
+        self.document.get().is_some()
+    }
+
+    #[expect(unsafe_code)]
     pub(crate) fn clear_js_runtime(&self) {
         self.clear_js_runtime_common();
 
@@ -2593,6 +2598,10 @@ impl Window {
         // Callbacks may contain `Trusted` references, which are rooted and would
         // prevent the window from being GCed.
         self.pending_image_callbacks.borrow_mut().clear();
+
+        // SAFETY: This is at the end of `clear_js_runtime()`, so nothing can
+        // dereference the reflectors we unroot here.
+        unsafe { self.as_global_scope().release_reflector_roots() };
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-scroll>
