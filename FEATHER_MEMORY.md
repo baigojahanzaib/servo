@@ -303,3 +303,37 @@ float rounding case) re-ran both ways on stock → flaky, not real.
 work neither helps nor hurts pass rate, as expected. This subset is the
 weekly scoreboard; widen it (e.g. add `tests/wpt/tests/dom`) for deeper
 coverage when needed.
+
+## 1e. Suspended-webview freeze — JS-heap GC on hide — SHIPPED on feather-engine
+
+INVESTIGATION (what a hidden document still does, feather-engine):
+Full throttling was already wired upstream — `webview.hide()` →
+`SetWebViewHidden` → `pipeline.send_throttle_messages()` → script
+`SetThrottled` clamps timers to `pref!(js_timers_minimum_duration)`=1000
++ `PaintMessage::SetThrottled`; `window.throttled()` gates animations and
+rAF; `update_the_rendering` is skipped entirely; image fetch/decode is
+gated on visibility (§1c); decoded image surfaces + cached layout trees
+are discarded on hide (§1b/§1c). What still runs: layout queries still
+trigger full `window.reflow()` (required for correct values, Chrome same);
+FontContext is `Arc` per-script-thread shared across docs (not
+doc-scopable — ruled out). The uncovered gap: **the JS heap**.
+SpiderMonkey GC is allocation-driven, and a throttled hidden page
+allocates too rarely to ever trigger collection → dead objects sit in
+the heap for as long as the tab stays hidden.
+
+FIX (commit e434b31): `document.rs` `update_visibility_state` runs
+`window().gc(cx)` on the visible→hidden transition — a full GC while the
+pause is invisible to the user. Semantically safe (only unreachable
+objects are collected) and instant.
+
+MEASURED (page holding ~240MB of dead JS objects, feather, llvmpipe VM):
+- stock servoshell:      ~470MB, resident (no hide path exists)
+- feather-engine before: 506→509MB hidden, 0MB released after 90s
+- feather-engine + fix:  453→274MB on hide, **−178MB released immediately**
+Re-showing the tab works normally; a second hide cycle releases again.
+Pairs with §1b/§1c: hide now frees images AND dead JS heap.
+
+Remaining non-levers (documented so nobody re-tries): per-document layout
+cache suspension (caches already dropped on hide), layout/font cache
+freezes (FontContext is shared per script-thread), reflow gating
+(correctness), timer suspension (already clamped).
