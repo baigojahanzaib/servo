@@ -3762,6 +3762,16 @@ impl Document {
             .retain(|observer| *observer != intersection_observer)
     }
 
+    /// Release all [`IntersectionObserver`]s and their observation targets when
+    /// this document is torn down, so that live observers do not extend the
+    /// lifetime of the document's DOM past pipeline exit.
+    pub(crate) fn clear_intersection_observers(&self, no_gc: &NoGC) {
+        for observer in self.intersection_observers.borrow_mut().drain(..) {
+            observer.clear_registrations(no_gc);
+        }
+        self.lazy_load_intersection_observer.set(None);
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#start-intersection-observing-a-lazy-loading-element>
     pub(crate) fn start_intersection_observing_a_lazy_loading_element(
         &self,

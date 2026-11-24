@@ -370,6 +370,19 @@ impl IntersectionObserver {
         }
     }
 
+    /// Release all observation targets, registrations, and queued entries when
+    /// the owning document is torn down, so that the observer does not extend
+    /// the lifetime of its targets past pipeline exit.
+    pub(crate) fn clear_registrations(&self, no_gc: &NoGC) {
+        for target in self.observation_targets.borrow_mut().drain(..) {
+            target
+                .registered_intersection_observers_mut(no_gc)
+                .retain(|registration| &*registration.observer != self);
+        }
+        self.queued_entries.borrow_mut().clear();
+        self.disconnect_from_owner();
+    }
+
     /// <https://w3c.github.io/IntersectionObserver/#queue-an-intersectionobserverentry>
     #[allow(clippy::too_many_arguments)]
     fn queue_an_intersectionobserverentry(

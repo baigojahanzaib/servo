@@ -2574,7 +2574,7 @@ impl Window {
     }
 
     #[expect(unsafe_code)]
-    pub(crate) fn clear_js_runtime(&self) {
+    pub(crate) fn clear_js_runtime(&self, no_gc: &NoGC) {
         self.clear_js_runtime_common();
 
         // Clean up any active promises
@@ -2598,6 +2598,10 @@ impl Window {
         // Callbacks may contain `Trusted` references, which are rooted and would
         // prevent the window from being GCed.
         self.pending_image_callbacks.borrow_mut().clear();
+
+        // Live IntersectionObservers hold their targets and the document's
+        // DOM alive; release them so the pipeline's heap can be collected.
+        self.Document().clear_intersection_observers(no_gc);
 
         // SAFETY: This is at the end of `clear_js_runtime()`, so nothing can
         // dereference the reflectors we unroot here.

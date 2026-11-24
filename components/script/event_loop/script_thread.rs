@@ -3322,7 +3322,7 @@ impl ScriptThread {
                 window.as_global_scope().tear_down();
 
                 debug!("{pipeline_id}: Clearing JavaScript runtime");
-                window.clear_js_runtime();
+                window.clear_js_runtime(cx.no_gc());
             }
 
         }
