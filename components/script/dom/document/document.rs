@@ -5460,7 +5460,7 @@ impl Document {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#visibility-state>
-    fn update_visibility_state(
+    pub(crate) fn update_visibility_state(
         &self,
         cx: &mut JSContext,
         visibility_state: DocumentVisibilityState,
@@ -5471,6 +5471,41 @@ impl Document {
         }
         // Step 2 Set document's visibility state to visibilityState.
         self.visibility_state.set(visibility_state);
+
+        // Discard or restore decoded image surfaces. The DOM reference and the
+        // image cache entry together pin the decoded pixel data, so both are
+        // released when the document becomes hidden; images are re-fetched and
+        // decoded when it becomes visible again.
+        if visibility_state == DocumentVisibilityState::Hidden {
+            self.image_cache.discard_completed_loads();
+            // The retained box tree's ReplacedContentKind::Image and the
+            // animation manager's per-node state also pin decoded surfaces;
+            // all of it is rebuilt on the next reflow.
+            self.window.layout_mut().drop_cached_layout_trees();
+            self.animation_manager
+                .animating_images()
+                .write()
+                .node_to_state_map
+                .clear();
+        }
+        for node in self
+            .upcast::<Node>()
+            .traverse_preorder(ShadowIncluding::No)
+        {
+            if visibility_state == DocumentVisibilityState::Hidden {
+                // Each node's `layout_data` keeps its `LayoutBox` (and for
+                // replaced elements its `ReplacedContents`, which pins the
+                // decoded image) alive past the box-tree drop above.
+                node.clear_layout_data();
+            }
+            if let Some(img) = node.downcast::<HTMLImageElement>() {
+                if visibility_state == DocumentVisibilityState::Hidden {
+                    img.discard_decoded_image(cx);
+                } else {
+                    img.restore_decoded_image(cx);
+                }
+            }
+        }
         // Step 3 Queue a new VisibilityStateEntry whose visibility state is visibilityState and whose timestamp is
         // the current high resolution time given document's relevant global object.
         let entry = VisibilityStateEntry::new(

@@ -288,4 +288,10 @@ pub trait ImageCache: Sync + Send {
 
     /// Clear the image cache.
     fn clear(&self);
+
+    /// Drop every fully-loaded image held by this cache, freeing its decoded
+    /// pixel data, without touching in-flight loads or their listeners. Used
+    /// when the owning document becomes hidden; affected images are re-fetched
+    /// and decoded when it becomes visible again.
+    fn discard_completed_loads(&self);
 }

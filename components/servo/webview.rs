@@ -499,19 +499,35 @@ impl WebView {
     }
 
     /// Make this [`WebView`] visible within its [`RenderingContext`].
+    /// Unthrottles the [`WebView`]'s script threads and marks its documents
+    /// visible.
     pub fn show(&self) {
         self.servo()
             .paint()
             .show_webview(self.id())
             .expect("BUG: invalid WebView instance");
+        self.servo()
+            .constellation_proxy()
+            .send(EmbedderToConstellationMessage::SetWebViewHidden(
+                self.id(),
+                false,
+            ));
     }
 
     /// Hide this [`WebView`] within its [`RenderingContext`].
+    /// Throttles the [`WebView`]'s script threads and marks its documents
+    /// hidden, which discards their decoded image surfaces until shown again.
     pub fn hide(&self) {
         self.servo()
             .paint()
             .hide_webview(self.id())
             .expect("BUG: invalid WebView instance");
+        self.servo()
+            .constellation_proxy()
+            .send(EmbedderToConstellationMessage::SetWebViewHidden(
+                self.id(),
+                true,
+            ));
     }
 
     /// Notify this [`WebView`] of a change to the system theme (e.g. light or dark mode).

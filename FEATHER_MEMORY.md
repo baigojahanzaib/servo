@@ -40,6 +40,59 @@ not the retainer — the DOM is. Shrinking that case needs script-side
 discard of decoded surfaces (like imglib's discard-on-memory-pressure),
 a much bigger change.
 
+## 1b. Hidden-document image surface discard — SHIPPED on feather-engine
+
+Follow-up to §1: releases decoded surfaces for the DOM-referenced case
+when a WebView is hidden (background tab in feather-shell).
+
+Chain: `WebView::hide()/show()` now also sends
+`EmbedderToConstellationMessage::SetWebViewHidden` →
+`SetThrottled` → `Document::update_visibility_state(Hidden|Visible)`.
+Bonus: `document.visibilityState` and timer throttling now follow tab
+visibility, which upstream had not wired.
+
+On `Hidden`, `update_visibility_state` releases every retainer of the
+decoded `Arc<RasterImage>`:
+
+1. `image_cache.discard_completed_loads()` — clears completed loads and
+   sends `DeleteImage` for each `ImageKey` (pending loads/listeners and
+   the key cache are kept).
+2. `window.layout_mut().drop_cached_layout_trees()` — new `Layout`
+   method dropping box/fragment/stacking trees + `resolved_images_cache`.
+3. `animating_images.node_to_state_map.clear()` — per-node animation
+   state pins `Arc<RasterImage>` too.
+4. Per node: `node.clear_layout_data()` — **required**: each node's
+   `InnerDOMLayoutData.self_box` keeps its `LayoutBox` alive after the
+   tree root is dropped, and `ReplacedContents`/`ImageInfo` inside pins
+   the image. This was the last retainer found via `Arc::strong_count`
+   instrumentation.
+5. Per `HTMLImageElement`: `discard_decoded_image()` takes
+   `current_request.image` (state/url/metadata kept).
+
+On `Visible`, `restore_decoded_image()` re-fetches each `CompletelyAvailable`
+image (`fetch_image` → re-decode → repaint); layout data and trees are
+rebuilt by the normal reflow.
+
+Measured (feather-shell, llvmpipe host, same 40-image loop page,
+40x1600x1200 PNG ≈ 307 MiB decoded):
+
+| Build | Page loaded | Tab hidden (~60-90s settled) |
+|---|---|---|
+| stock servoshell (`main` @170fe92389a, no feather patches) | 944 MB, stays resident | n/a — no tab-hide path |
+| feather-engine (image-cache bound only) | 1039 MB | 1027 MB — no release |
+| feather-engine + discard lever | 835 MB | **712 MB** (−315 MB vs no-lever) |
+
+Restore verified on screen: re-showing the tab re-fetches all 40 images
+and re-renders the grid; repeated hide/show cycles release again each
+time. Note `Image::as_raster_image()` returns a clone — counting
+`strong_count` through it overstates by one.
+
+Remaining gap: RSS release lags behind the logical free (jemalloc/GC
+retains segments briefly); a deeper lever for *visible* tabs would need
+per-image offscreen discard driven by IntersectionObserver/paint bounds —
+the cache-bound already covers DOM-unreferenced images, and DOM-referenced
+on-screen ones must stay decoded by definition.
+
 ## 2. Lazy subsystem init
 
 Subsystems that could start on first use instead of at `Servo::new`:
@@ -83,3 +136,62 @@ Baseline ~322MB RSS / ~275MB PSS (llvmpipe host):
 
 The floor on this host is Servo runtime (~180MB) + llvmpipe (~65MB).
 On real GPU hardware expect ~215-255MB with one loaded tab.
+
+## 6. Reflector-root revival — nav-leak measurements
+
+`release_reflector_roots()` (reflector-root revival, HEAD 9ec4a62b) makes
+dead pipelines' objects *collectable*. Whether RSS actually falls depends
+on collection pressure. 30-nav WebDriver loop (10 sites ×3), single
+servoshell PID RSS in MB, macOS arm64 16GB host:
+
+| Config | Start→End | Shape |
+|---|---|---|
+| stock servo/main | 411→3355 | monotone |
+| stock `--zealous-gc` | 414→2460 | still climbing |
+| feather-engine (roots released) | 410→2953 | mild sawtooth, real mid-run drops |
+| engine `--zealous-gc` | 411→5130–6599 (2 runs) | monotone — worst config tested |
+| engine + `JS_GC` on pipeline teardown (tested, not pushed) | 411→6126 | monotone, ~1.9× stock |
+| engine + `JS_MaybeGC` on teardown (tested, not pushed) | →3916 @ nav18 | wedged at nav19 |
+| engine + `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` | 411→5261 | monotone |
+| stock + feather env (js_mem 192/50/300 + jemalloc 5s decay + bg thread) | 415→3482 | slower monotone |
+| engine + feather env (same) | 411→5213, 5598 (2 runs) | monotone, ~1.5× stock |
+| engine + feather env, no `js_mem_max` cap | 411→5718 | monotone — cap ruled out |
+| engine + `JS_GC` every 8th teardown (tested, not pushed) | 411→4364 | sawtooth-ish but ~25% over stock; wedged at nav8 in 1 of 2 runs |
+
+Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
+zeal GC, allocator decay — makes patched *worse* than stock, and under
+Feather's exact memory environment patched runs ~1.5× stock. Patched
+runs also show ~1GB step-ups at each pass boundary (nav 11, 20, 29),
+which stock does not. The Windows forced-GC sawtooth (~4GB peak) did
+not reproduce here. Purge/decay can't help because the retained objects
+are still *reachable* — they only become dirty pages after a GC, and
+eager GC is the part that hurts. Windows measured the same direction
+(patched ~2.5× stock under natural GC).
+
+`js_mem_max=192` is NOT the cause: patched+feather-env without the cap
+ends at 5718 (vs 5213/5598 with it). Throttled GC (every 8th teardown)
+lands at 4364 — better than eager but still ~25% over stock AND it
+wedged at the first GC'd exit in one of two runs. GC-on-teardown at any
+cadence, zeal, and the cap are all ruled out — on macOS the revival
+retains ~1.5× stock RSS under nav churn however you press it. The
+revival stays anyway: releasing roots is correct, and under natural GC
+it ended below stock (2953 vs 3355).
+
+## 1c. E2E scoreboard + hidden-tab CPU caveat (Nov 24)
+
+Feather on feather-engine vs stock servoshell (upstream main), llvmpipe host:
+
+| Metric | Stock | Feather | Δ |
+|---|---|---|---|
+| Cold start → paint | ~297ms | ~296ms | parity |
+| Idle RSS, 1 DDG tab | 663MB | 566MB | −97MB |
+| 4-tab (2 grid + slideshow + DDG) | 2503MB resident | 433MB lazy-restored / 1287MB hidden | −49% |
+| Binary | 206MB / 153MB stripped | 89.5MB production | −57% |
+
+CAVEAT discovered in E2E: a hidden tab whose JS keeps mutating images
+(slideshow cycling `<img src>`) still fetches + decodes each cycle — timers
+keep firing when hidden (throttling only reaches rAF/visibility, not
+setInterval-driven network+decode work). Memory stays bounded by the cache
+cap but CPU churns (observed ~460% vs stock ~53% on llvmpipe). Next lever:
+defer image fetch/decode for hidden documents, or throttle hidden-tab
+timer-driven network loads.

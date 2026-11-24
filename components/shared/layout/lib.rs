@@ -324,6 +324,13 @@ pub trait Layout {
     /// Removes an image from the Layout image resolver cache.
     fn remove_cached_image(&mut self, image_url: &ServoUrl);
 
+    /// Drop all cached layout trees (box tree, fragment tree and stacking
+    /// context tree) along with the resolved image cache, releasing the
+    /// resources they retain — most notably decoded image surfaces pinned by
+    /// `ReplacedContentKind::Image`. Everything is rebuilt on the next reflow.
+    /// Used when a document becomes hidden to release memory.
+    fn drop_cached_layout_trees(&mut self);
+
     /// Requests a reflow.
     fn reflow(&mut self, reflow_request: ReflowRequest) -> Option<ReflowResult>;
 
