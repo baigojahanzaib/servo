@@ -277,3 +277,29 @@ VERIFIED in feather-shell: wa.me renders the real WhatsApp landing
 page and its JS deep-link logs "Load cancelled" with the page intact;
 a JS `location.href='whatsapp://chat/'` test page stays rendered; a
 restored whatsapp:// session tab loads about:blank, no error page.
+
+
+## WPT pass-rate baseline (macOS arm64, 2026-11-24)
+
+Subset: `tests/wpt/tests/html/dom` + `tests/wpt/tests/css/cssom` = 695 test
+files, 76,928 subtests. Same flags both sides:
+`./mach test-wpt <dirs> -r --binary <bin> --log-raw <log> --processes 4`
+(~90 s per run). Stock = upstream main 170fe9238; engine = feather-engine.
+
+|                     | Stock    | feather-engine |
+|---------------------|----------|----------------|
+| test-level PASS+OK  | 580/695  | 580/695        |
+| test-level FAIL     | 104      | 104            |
+| test-level TIMEOUT  | 10       | 10             |
+| test-level ERROR    | 1        | 1              |
+| subtests PASS       | 68,507/76,928 (89.1%) | 68,508/76,928 (89.1%) |
+| subtests FAIL       | 8,397    | 8,396          |
+
+Zero test-level diffs. The single subtest delta
+(`getComputedStyle-inset-inline-containing-block-vertical.html`, a sub-ULP
+float rounding case) re-ran both ways on stock → flaky, not real.
+
+**Verdict: our branch is compat-neutral on dom/cssom** — memory/IO/cache
+work neither helps nor hurts pass rate, as expected. This subset is the
+weekly scoreboard; widen it (e.g. add `tests/wpt/tests/dom`) for deeper
+coverage when needed.
