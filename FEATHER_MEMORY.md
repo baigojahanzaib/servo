@@ -7,19 +7,38 @@ Feather's idle budget is <150MB RSS. Feather-side work shipped in
 The remaining levers below need engine-side changes; sketches live here
 rather than as hacks in feather-shell.
 
-## 1. Bounded image cache (net/image_cache.rs)
+## 1. Bounded image cache (net/image_cache.rs) — SHIPPED on feather/image-cache-bound
 
-`ImageCache` retains every decoded image for the session — no size bound
-and no eviction. On image-heavy sites (news, social) this is the largest
-growth path beyond the baseline.
+`ImageCache` retained every decoded image for the lifetime of the
+pipeline — no size bound, no eviction.
 
-Sketch: track decoded byte size per cache entry (bytes for
-`DecodedImage::Raster` are already `Arc<Vec<u8>>`), keep a per-webview or
-global LRU cap (~64MB), evict decoded-but-not-referenced images back to
-their encoded bytes or drop them for re-fetch. The completed-image map is
-keyed by `PendingLoadId`; entries already carry `ImageBytes::Complete`,
-so a `total_decoded_bytes` counter plus an eviction pass in
-`notify_image_response` is a contained change.
+Implemented: `completed_loads` is now capped at 128 MiB of decoded
+raster bytes per `ImageCache` (per pipeline). `CompletedLoad` records
+its decoded size; `completed_loads_bytes` + `completed_loads_lru` drive
+`enforce_completed_load_budget` after each completed load. Eviction
+reuses `remove_loaded_image` (drops the entry + `DeleteImage` to
+WebRender); hits promote entries in the LRU. Entries whose decoded
+`Arc<RasterImage>` is still referenced outside the cache (DOM nodes
+hold one via `ImageRequest.image`) are skipped — evicting them frees
+nothing and forces a re-fetch, so the cap is soft when a page displays
+more than the budget.
+
+Measured (feather-shell, llvmpipe host, 40x 1600x1200 PNG ≈ 307 MiB
+decoded):
+
+| Scenario | Before | After |
+|---|---|---|
+| Slideshow page (images unreferenced after display) | 839 MiB RSS | **657 MiB** (−182) |
+| All-visible grid | 855 MiB | ~831 MiB — soft cap, no churn |
+
+The naive version without the `Arc::strong_count` check caused an
+evict→refetch→re-decode cycle (80 fetches for 40 images) for no RSS
+gain — the pinned-entry check is required.
+
+Caveat: on a page that *keeps* all its images referenced, the cache is
+not the retainer — the DOM is. Shrinking that case needs script-side
+discard of decoded surfaces (like imglib's discard-on-memory-pressure),
+a much bigger change.
 
 ## 2. Lazy subsystem init
 
