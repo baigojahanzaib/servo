@@ -1253,8 +1253,19 @@ pub async fn http_redirect_fetch(
             ));
         },
         // Step 6. If locationURL’s scheme is not an HTTP(S) scheme, then return a network error.
+        //
+        // An HTTP(S) response redirecting a document navigation to a
+        // non-navigable scheme (whatsapp:, intent:, spotify:, …) is treated
+        // by other engines as a cancelled navigation that can be handed to
+        // the OS, not as a page error. Mirror that: cancel the load so the
+        // previous page stays instead of showing a net-error page.
+        // Subresource fetches still error per the spec.
         Some(Ok(url)) if !matches!(url.scheme(), "http" | "https") => {
-            return Response::network_error(NetworkError::UnsupportedScheme);
+            return Response::network_error(if request.destination == Destination::Document {
+                NetworkError::LoadCancelled
+            } else {
+                NetworkError::UnsupportedScheme
+            });
         },
         Some(Ok(url)) => url,
     };

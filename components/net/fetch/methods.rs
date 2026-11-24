@@ -1138,6 +1138,14 @@ async fn scheme_fetch(
 
         _ => match context.protocols.get(scheme) {
             Some(handler) => handler.load(request, done_chan, context).await,
+            // A document navigation into a scheme we cannot handle
+            // (whatsapp:, intent:, spotify:, …) is treated by other engines
+            // as a cancelled navigation that can be handed to the OS, not as
+            // a page error. Cancel it so the previous page stays instead of
+            // showing a net-error page. Subresource fetches still error.
+            None if request.destination == Destination::Document => {
+                Response::network_error(NetworkError::LoadCancelled)
+            },
             None => Response::network_error(NetworkError::UnsupportedScheme),
         },
     }
