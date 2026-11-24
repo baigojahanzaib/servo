@@ -4271,6 +4271,30 @@ impl ScriptThread {
         };
 
         let mut incomplete_parser_contexts = self.incomplete_parser_contexts.0.borrow_mut();
+
+        // Feather: a cancelled navigation (e.g. an HTTP redirect into an
+        // unhandled scheme like whatsapp:) must abort the pending load instead
+        // of vanishing silently. Without this the constellation's pending
+        // session-history change never completes and the webview wedges: every
+        // subsequent navigation times out waiting for a load event that can
+        // never fire. Mirror the 204/205 path and tell the constellation to
+        // tear the pending pipeline down.
+        if matches!(fetch_metadata, Err(NetworkError::LoadCancelled)) {
+            if let Some(pos) = incomplete_parser_contexts
+                .iter()
+                .position(|&(pipeline_id, _)| pipeline_id == id)
+            {
+                let (_, ctxt) = incomplete_parser_contexts.remove(pos);
+                let _ = self.senders.pipeline_to_constellation_sender.send((
+                    ctxt.webview_id(),
+                    id,
+                    ScriptToConstellationMessage::AbortLoadUrl,
+                ));
+            } else {
+            }
+            return;
+        }
+
         let parser = incomplete_parser_contexts
             .iter_mut()
             .find(|&&mut (pipeline_id, _)| pipeline_id == id);

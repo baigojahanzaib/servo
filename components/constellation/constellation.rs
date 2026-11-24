@@ -4389,6 +4389,28 @@ where
             },
             load_data.url,
         );
+
+        // Feather: drop document navigations into schemes the fetch layer
+        // cannot navigate to (whatsapp:, intent:, spotify:, …) before any
+        // pipeline or pending session-history change is created. Other
+        // engines treat these as external-protocol handoffs that leave the
+        // current document untouched. Creating a real pipeline for them
+        // instead wedged the webview: the deep-link navigation interrupted
+        // the still-loading current document, and when the unhandled-scheme
+        // fetch was then cancelled, the original document's load event could
+        // never fire — leaving the webview permanently "navigating" so every
+        // subsequent navigation timed out.
+        if !matches!(
+            load_data.url.scheme(),
+            "http" | "https" | "about" | "data" | "blob" | "file" | "filesystem"
+        ) {
+            debug!(
+                "{}: Dropping navigation into unhandled scheme: {}",
+                source_id, load_data.url,
+            );
+            return None;
+        }
+
         // If this load targets an iframe, its framing element may exist
         // in a separate script thread than the framed document that initiated
         // the new load. The framing element must be notified about the
@@ -4464,14 +4486,24 @@ where
                 None
             },
             None => {
-                // Make sure no pending page would be overridden.
-                if let Some(webview) = self.webviews.get(&webview_id) &&
-                    webview.pending_changes.iter().any(|pending_change| {
-                        pending_change.browsing_context_id == browsing_context_id
+                // Feather: supersede any in-progress navigation for this
+                // browsing context instead of dropping the new one. Per the
+                // spec the latest navigation wins. Silently dropping wedged
+                // the webview permanently whenever a load never completed:
+                // the stuck pending change blocked every subsequent
+                // navigation, so one bad page killed the whole browser
+                // session.
+                let superseded_pending_changes = self
+                    .webviews
+                    .get_mut(&webview_id)
+                    .map(|webview| {
+                        webview.remove_pending_changes_for_browsing_context_id(
+                            browsing_context_id,
+                        )
                     })
-                {
-                    // id that sent load msg is being changed already; abort
-                    return None;
+                    .unwrap_or_default();
+                for change in superseded_pending_changes {
+                    self.close_pipeline(change.new_pipeline_id, DiscardBrowsingContext::No);
                 }
 
                 if self.get_activity(source_id) == DocumentActivity::Inactive {
@@ -4561,7 +4593,6 @@ where
         pipeline_id: PipelineId,
         aborted: bool,
     ) {
-        debug!("Load finished in {pipeline_id:?} aborted={aborted}");
 
         if let Some(pipeline) = self.pipelines.get_mut(&pipeline_id) {
             pipeline.load_finished = true;

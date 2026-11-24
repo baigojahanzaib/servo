@@ -1060,6 +1060,10 @@ impl ParserContext {
         self.parent_info
     }
 
+    pub(crate) fn webview_id(&self) -> WebViewId {
+        self.webview_id
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#creating-a-policy-container-from-a-fetch-response>
     fn create_policy_container_from_fetch_response(metadata: &Metadata) -> PolicyContainer {
         // TODO Step 1. If response's URL's scheme is "blob", then return a clone of response's

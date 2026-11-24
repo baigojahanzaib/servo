@@ -2725,6 +2725,19 @@ impl WebDriverHandler<ServoExtensionRoute> for Handler {
             WebDriverCommand::DeleteSession |
             WebDriverCommand::Extension(ServoExtensionCommand::Shutdown) |
             WebDriverCommand::Extension(ServoExtensionCommand::ResetAllCookies) => {},
+            // Feather: a new navigation inherently abandons any in-progress
+            // one — waiting for the old navigation to complete before
+            // starting it deadlocked the session permanently whenever a load
+            // never finished: the pre-command wait burned the whole page-load
+            // timeout and the command body never ran, so no navigation could
+            // ever be issued again. Other commands still wait per the spec's
+            // processing model.
+            WebDriverCommand::Get(_) => {
+                self.session()?;
+                if let Ok(webview_id) = self.webview_id() {
+                    self.navigating_webviews.remove(&webview_id);
+                }
+            },
             _ => {
                 self.session()?;
                 // Step 6.4: wait for navigation to complete before running the command.
