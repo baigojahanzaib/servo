@@ -155,6 +155,7 @@ servoshell PID RSS in MB, macOS arm64 16GB host:
 | engine + `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` | 411→5261 | monotone |
 | stock + feather env (js_mem 192/50/300 + jemalloc 5s decay + bg thread) | 415→3482 | slower monotone |
 | engine + feather env (same) | 411→5213, 5598 (2 runs) | monotone, ~1.5× stock |
+| engine + feather env, no `js_mem_max` cap | 411→5718 | monotone — cap ruled out |
 
 Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
 zeal GC, allocator decay — makes patched *worse* than stock, and under
@@ -166,6 +167,7 @@ are still *reachable* — they only become dirty pages after a GC, and
 eager GC is the part that hurts. Windows measured the same direction
 (patched ~2.5× stock under natural GC).
 
-Open question: whether `js_mem_max=192` itself drives pathological GC
-churn on the patched engine — worth A/Bing patched+feather-env with and
-without the cap. GC-on-teardown and zeal are ruled out regardless.
+`js_mem_max=192` is NOT the cause: patched+feather-env without the cap
+ends at 5718 (vs 5213/5598 with it). GC-on-teardown, zeal, and the cap
+are all ruled out — on macOS the revival retains ~1.5× stock RSS under
+nav churn however you press it.
