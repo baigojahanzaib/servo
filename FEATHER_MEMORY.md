@@ -250,3 +250,30 @@ drop the unconditional redraw (new-frame notifications already request
 redraw via `notify_new_frame_ready`). Result: feather idle on static
 page = 0.0% CPU vs ~390% before. Stock servoshell doesn't have this bug
 (it already only repaints on `notify_new_frame_ready`).
+
+## 1d. External-scheme navigations (wa.me fix) — SHIPPED on feather-engine
+
+Top-100 crawler defect queue flagged wa.me as the only real engine defect:
+wa.me → api.whatsapp.com renders, then page JS does
+`location.href = 'whatsapp://chat/'` → document navigation to an
+unregistered scheme → UnsupportedScheme net-error page.
+
+Chrome parity: other engines treat a document navigation into a scheme
+they can't handle as a *cancelled* navigation handed to the OS /
+interstitial — the previous page stays, no error page.
+
+FIX (commit 1ea96fb):
+- `net/fetch/methods.rs` `scheme_fetch` fallback: when the scheme has no
+  protocol handler AND `request.destination == Destination::Document`,
+  return `NetworkError::LoadCancelled` instead of `UnsupportedScheme`.
+  servoparser renders no error page for LoadCancelled ("the next load
+  will show a page"), so the previous document stays.
+- `net/http_loader.rs` redirect step 6: an HTTP(S) redirect target with
+  a non-navigable scheme gets the same treatment, scoped to
+  Destination::Document.
+- Subresource fetches to unknown schemes still hard-error per spec.
+
+VERIFIED in feather-shell: wa.me renders the real WhatsApp landing
+page and its JS deep-link logs "Load cancelled" with the page intact;
+a JS `location.href='whatsapp://chat/'` test page stays rendered; a
+restored whatsapp:// session tab loads about:blank, no error page.
