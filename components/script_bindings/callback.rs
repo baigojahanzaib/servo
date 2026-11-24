@@ -18,7 +18,6 @@ use crate::codegen::GenericBindings::WindowBinding::Window_Binding::WindowMethod
 use crate::error::{Error, Fallible};
 use crate::interfaces::{DocumentHelpers, DomHelpers, GlobalScopeHelpers};
 use crate::js::JS_GetProperty;
-use crate::reflector_root::WeakReflectorRoot;
 use crate::realms::enter_auto_realm;
 use crate::reflector::DomObject;
 use crate::reflector_root::ReflectorRoot;
@@ -135,7 +134,7 @@ pub(crate) unsafe fn create_callback_rooted<D: DomTypes, T: HasCallbackHolder<D 
     obj: T,
     callback: *mut JSObject,
 ) -> RootedCallback<T> {
-    let ret = Rc::new((
+    let mut ret = Rc::new((
         obj,
         ReflectorRoot::new(cx, ObjectValue(callback), c"Callback::root"),
     ));
