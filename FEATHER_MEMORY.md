@@ -485,3 +485,37 @@ STILL MISSING: no engine-side cancel (embedder marks cancelled and
 deletes the delivered temp file — the fetch itself runs to EOF; a real
 cancel needs a fetch-abort message into net), no multipart/range resume,
 no save-As prompt.
+
+## Per-nav retention resolved: jemalloc purge at pipeline teardown (693146a10)
+
+Attribution (vmmap + MallocStackLogging, macOS): the ~2-3GB retained RSS is
+NOT framework buffers despite the misleading "CoreMedia Capture Data" vmmap
+label — stack traces show those regions are `_rjem_je_extent_alloc_mmap`
+(i.e. jemalloc arena extents). jemalloc mallctl after ~18 navs:
+allocated(live) ~1.0-1.8GB vs mapped ~1.6-2.0GB → several hundred MB-1GB of
+mapped-but-unallocated dirty pages. The rest of RSS is SpiderMonkey's own
+mmap'd GC heap + non-heap regions.
+
+Levers measured on the 30-nav loop (feather-env prefs):
+- `MALLOC_CONF dirty_decay_ms:1000,muzzy_decay_ms:1000`: end 3592 — decay
+  returns pages but slower than navs produce them.
+- `+ background_thread:true`: end 4551 (oscillating troughs ~2.1-2.7G) —
+  no better than natural.
+- `arena.4096.purge` (MALLCTL_ARENAS_ALL) in `handle_exit_pipeline_msg`:
+  ends 2725 / 3500 (end is reddit-heavy sensitive), mid-loop sits
+  ~1.4-2.6GB vs ~2.4-3.3GB unpurged — ~600MB-1GB sustained win.
+
+Shipped: `servo_allocator::purge_arenas()` (mallctl arena.purge on all
+arenas; no-op on non-jemalloc builds) called once per pipeline exit in
+handle_exit_pipeline_msg. Cross-platform via jemalloc; Linux siblings get
+it for free.
+
+Audit trail for future passes (already-clean teardown, don't re-check):
+`pipeline_to_node_ids` removed at exit; `image_cache().clear()` sends
+WR `DeleteImage` for every cached key; `document.unload` →
+`clean_up_media_elements` → `reset_media_player`; `animation_manager`
+cleared; `pipeline_exited` → `transaction.remove_pipeline` (WR scene).
+Remaining RSS after purge = live jemalloc allocs (layout/DOM still alive
+in bfcache/history) + SpiderMonkey GC heap — next lever would be auditing
+which Rust objects survive teardown (layout snapshots, font caches), not
+allocator tuning.
