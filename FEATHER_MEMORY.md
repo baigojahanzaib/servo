@@ -78,7 +78,7 @@ Measured (feather-shell, llvmpipe host, same 40-image loop page,
 
 | Build | Page loaded | Tab hidden (~60-90s settled) |
 |---|---|---|
-| stock servoshell (fork `main`, no feather patches) | TBD | n/a (no tabs) |
+| stock servoshell (`main` @170fe92389a, no feather patches) | 944 MB, stays resident | n/a — no tab-hide path |
 | feather-engine (image-cache bound only) | 1039 MB | 1027 MB — no release |
 | feather-engine + discard lever | 835 MB | **712 MB** (−315 MB vs no-lever) |
 
