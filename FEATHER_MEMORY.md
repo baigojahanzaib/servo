@@ -386,3 +386,37 @@ Consequences for prior measurements:
 - Lesson: always rebuild + re-hash the preserved `/tmp/engine` binary after
   pulling feather-engine; a servoshell on port 7000 from a prior run can
   also shadow fresh probes (pgrep before probing).
+
+## 1f. Downloads pipeline — SHIPPED on feather-engine
+
+Upstream Servo had ZERO download support: no `WebView` delegate hook, no
+constellation message, nothing in servoshell. A navigation to a
+`Content-Disposition: attachment` response rendered the body as an inline
+text wall; an undisplayable MIME type fell into the generic "unknown
+content" path with the URL lost.
+
+PIPELINE (all on feather-engine):
+- `script/dom/servoparser/mod.rs::load_document` — after the MediaType
+  verdict (HTML spec step 2), fires `ScriptToConstellationMessage::
+  DownloadRequested { webview_id, pipeline_id, url, mime,
+  content_disposition }` when `is_attachment || media_type.is_none()`.
+  For attachments `media_type` is forced to `None` so the body never
+  renders: the parser takes the existing inline "Downloading content of
+  type (…)." page instead of streaming the payload.
+- `NavigationParams` gained `content_disposition: Option<String>`,
+  populated in `process_response` from the response's
+  `Content-Disposition` header (needed to resolve the download filename
+  embedder-side).
+- `constellation/constellation.rs` forwards the message as
+  `ConstellationToEmbedderMsg::DownloadRequested(webview_id, url, mime,
+  content_disposition)` (registered in `tracing.rs`); `servo.rs`
+  dispatches it to `WebViewDelegate::notify_download_requested(webview,
+  url, mime, content_disposition)` — the new delegate hook embedders
+  implement (default no-op).
+
+WHAT'S STILL MISSING vs a full browser download stack (for the next
+lane): no multipart/range resume, no download *initiated* by JS
+`a[download]` clicks or blob: URLs (only document navigations are
+detected), no save-As dialog prompt, and the engine still fetches the
+body once for the (aborted) navigation before the embedder re-fetches it
+— a shared net-cache consumer would avoid the double fetch.

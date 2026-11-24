@@ -1817,6 +1817,22 @@ where
             ScriptToConstellationMessage::LoadFinished { aborted } => {
                 self.handle_load_finished_message(webview_id, source_pipeline_id, aborted)
             },
+            ScriptToConstellationMessage::DownloadRequested {
+                webview_id,
+                url,
+                mime,
+                content_disposition,
+                ..
+            } => {
+                let _ = self.constellation_to_embedder_proxy.send(
+                    ConstellationToEmbedderMsg::DownloadRequested(
+                        webview_id,
+                        url,
+                        mime,
+                        content_disposition,
+                    ),
+                );
+            },
             // Handle navigating to a fragment
             ScriptToConstellationMessage::NavigatedToFragment(new_url, replacement_enabled) => {
                 self.handle_navigated_to_fragment(source_pipeline_id, new_url, replacement_enabled);

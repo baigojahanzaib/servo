@@ -43,7 +43,7 @@ use script_bindings::script_runtime::temp_cx;
 use script_traits::DocumentActivity;
 use servo_base::id::{PipelineId, WebViewId};
 use servo_config::pref;
-use servo_constellation_traits::TargetSnapshotParams;
+use servo_constellation_traits::{ScriptToConstellationMessage, TargetSnapshotParams};
 use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
 use style::context::QuirksMode as ServoQuirksMode;
 use tendril::stream::LossyDecoder;
@@ -955,6 +955,8 @@ struct NavigationParams {
     final_sandboxing_flag_set: SandboxingFlagSet,
     /// <https://mimesniff.spec.whatwg.org/#resource-header>
     resource_header: Vec<u8>,
+    /// The response's `Content-Disposition` header value, if any.
+    content_disposition: Option<String>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-params-about-base-url>
     about_base_url: Option<ServoUrl>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-params-iframe-referrer-policy>
@@ -1017,6 +1019,7 @@ impl ParserContext {
                 link_headers: vec![],
                 final_sandboxing_flag_set: creation_sandboxing_flag_set,
                 resource_header: vec![],
+                content_disposition: None,
                 about_base_url: Default::default(),
                 iframe_element_referrer_policy: Default::default(),
                 redirect_taint: Default::default(),
@@ -1138,9 +1141,36 @@ impl ParserContext {
         // Step 2. If the user agent has been configured to process resources of the given type using
         // some mechanism other than rendering the content in a navigable, then skip this step.
         // Otherwise, if the type is one of the following types:
-        let Some(media_type) = MimeClassifier::get_media_type(&mime_type) else {
+        //
+        // Feather: a `Content-Disposition: attachment` response or a content
+        // type we cannot render is offered to the embedder as a download
+        // instead of producing a document.
+        let media_type = MimeClassifier::get_media_type(&mime_type);
+        let is_attachment = self
+            .navigation_params
+            .content_disposition
+            .as_deref()
+            .is_some_and(|value| {
+                value
+                    .trim_start()
+                    .get(..10)
+                    .is_some_and(|first| first.eq_ignore_ascii_case("attachment"))
+            });
+        if is_attachment || media_type.is_none() {
+            document.window().send_to_constellation(
+                ScriptToConstellationMessage::DownloadRequested {
+                    webview_id: self.webview_id,
+                    pipeline_id: self.pipeline_id,
+                    url: self.url.clone(),
+                    mime: mime_type.to_string(),
+                    content_disposition: self.navigation_params.content_disposition.clone(),
+                },
+            );
+        }
+        let media_type = if is_attachment { None } else { media_type };
+        let Some(media_type) = media_type else {
             let page = format!(
-                "<html><body><p>Unknown content type ({}).</p></body></html>",
+                "<html><body><p>Downloading content of type ({}).</p></body></html>",
                 mime_type,
             );
             self.load_inline_unknown_content(
@@ -1416,27 +1446,39 @@ impl ParserContext {
         // Step 21.9. Set responsePolicyContainer to the result of creating a
         // policy container from a fetch response given response and request's
         // reserved client.
-        let (policy_container, endpoints_list, link_headers, content_language, redirect_taint) =
-            metadata
-                .as_ref()
-                .map(|metadata| {
-                    (
-                        Self::create_policy_container_from_fetch_response(metadata),
-                        ReportingEndpoint::parse_reporting_endpoints_header(
-                            &self.url,
-                            &metadata.headers,
-                        ),
-                        extract_links_from_headers(&metadata.headers),
-                        metadata
-                            .headers
-                            .as_ref()
-                            .and_then(|headers| headers.get("Content-Language"))
-                            .and_then(|header| header.to_str().ok())
-                            .map(|string| string.to_owned()),
-                        metadata.redirect_taint,
-                    )
-                })
-                .unwrap_or_default();
+        let (
+            policy_container,
+            endpoints_list,
+            link_headers,
+            content_language,
+            redirect_taint,
+            content_disposition,
+        ) = metadata
+            .as_ref()
+            .map(|metadata| {
+                (
+                    Self::create_policy_container_from_fetch_response(metadata),
+                    ReportingEndpoint::parse_reporting_endpoints_header(
+                        &self.url,
+                        &metadata.headers,
+                    ),
+                    extract_links_from_headers(&metadata.headers),
+                    metadata
+                        .headers
+                        .as_ref()
+                        .and_then(|headers| headers.get("Content-Language"))
+                        .and_then(|header| header.to_str().ok())
+                        .map(|string| string.to_owned()),
+                    metadata.redirect_taint,
+                    metadata
+                        .headers
+                        .as_ref()
+                        .and_then(|headers| headers.get("Content-Disposition"))
+                        .and_then(|header| header.to_str().ok())
+                        .map(|string| string.to_owned()),
+                )
+            })
+            .unwrap_or_default();
 
         // Step 21.10. Set finalSandboxFlags to the union of targetSnapshotParams's
         // sandboxing flags and responsePolicyContainer's CSP list's CSP-derived
@@ -1539,6 +1581,7 @@ impl ParserContext {
             link_headers,
             about_base_url: document.about_base_url(),
             resource_header: vec![],
+            content_disposition,
             iframe_element_referrer_policy: self
                 .target_snapshot_params
                 .iframe_element_referrer_policy,

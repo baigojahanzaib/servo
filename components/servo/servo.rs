@@ -883,6 +883,21 @@ impl ServoInner {
                     webview.delegate().request_navigation(webview, request);
                 }
             },
+            ConstellationToEmbedderMsg::DownloadRequested(
+                webview_id,
+                servo_url,
+                mime,
+                content_disposition,
+            ) => {
+                if let Some(webview) = self.get_webview_handle(webview_id) {
+                    webview.delegate().notify_download_requested(
+                        webview,
+                        servo_url.into_url(),
+                        mime,
+                        content_disposition,
+                    );
+                }
+            },
             ConstellationToEmbedderMsg::AllowOpeningWebView(webview_id, response_sender) => {
                 if let Some(webview) = self.get_webview_handle(webview_id) {
                     webview.request_create_new(response_sender);

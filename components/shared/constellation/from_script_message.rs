@@ -801,6 +801,20 @@ pub enum ScriptToConstellationMessage {
     LoadUrl(LoadData, NavigationHistoryBehavior, TargetSnapshotParams),
     /// Abort loading after sending a LoadUrl message.
     AbortLoadUrl,
+    /// A document navigation fetched a resource that should be downloaded
+    /// rather than rendered (attachment disposition or non-displayable type).
+    DownloadRequested {
+        /// The webview that initiated the navigation.
+        webview_id: WebViewId,
+        /// The pipeline whose navigation produced the download.
+        pipeline_id: PipelineId,
+        /// The final URL of the resource to download.
+        url: ServoUrl,
+        /// The response's content type, as string.
+        mime: String,
+        /// The response's Content-Disposition header value, if any.
+        content_disposition: Option<String>,
+    },
     /// Post a message to the currently active window of a given browsing context.
     PostMessage {
         /// The target of the posted message.

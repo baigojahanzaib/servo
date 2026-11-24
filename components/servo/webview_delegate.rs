@@ -988,6 +988,19 @@ pub trait WebViewDelegate {
     /// Whether or not to allow a [`WebView`] to load a URL in its main frame or one of its
     /// nested `<iframe>`s. [`NavigationRequest`]s are accepted by default.
     fn request_navigation(&self, _webview: WebView, _navigation_request: NavigationRequest) {}
+
+    /// A document navigation fetched a resource that should be downloaded
+    /// rather than rendered (`Content-Disposition: attachment` or a
+    /// non-displayable content type). `content_disposition` is the raw
+    /// header value when present; `mime` is the response content type.
+    fn notify_download_requested(
+        &self,
+        _webview: WebView,
+        _url: Url,
+        _mime: String,
+        _content_disposition: Option<String>,
+    ) {
+    }
     /// Whether or not to allow a [`WebView`]  to unload a `Document` in its main frame or one
     /// of its nested `<iframe>`s. By default, unloads are allowed.
     fn request_unload(&self, _webview: WebView, _unload_request: AllowOrDenyRequest) {}

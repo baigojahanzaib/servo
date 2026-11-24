@@ -174,6 +174,7 @@ mod from_script {
                 Self::LoadFinished { .. } => target!("LoadFinished"),
                 Self::LoadUrl(..) => target!("LoadUrl"),
                 Self::AbortLoadUrl => target!("AbortLoadUrl"),
+                Self::DownloadRequested { .. } => target!("DownloadRequested"),
                 Self::PostMessage { .. } => target!("PostMessage"),
                 Self::NavigatedToFragment(..) => target!("NavigatedToFragment"),
                 Self::TraverseHistory(..) => target!("TraverseHistory"),
