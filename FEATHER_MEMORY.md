@@ -566,3 +566,51 @@ delta (stock's unbounded decoded cache = ~200MB/nav pile-up). So the
 platform-specific: purge is essentially free insurance on Linux and the
 real win stays on macOS. Reclaim confirmed working; incremental Linux
 delta unmeasurable in this workload.
+
+### Idle-floor decomposition (Nov 24, llvmpipe host, feather-engine 81fc006)
+
+Goal: explain the ~420MB settled idle RSS vs the <150MB budget — find
+what's releasable. Measured via /proc/PID/smaps on a settled
+single-DDG-tab feather process, compared against about:blank.
+
+**Feather @ about:blank = 311MB RSS.** Floor is structural:
+
+- **77MB** feather binary pages (file-backed; shared/reclaimable under
+  memory pressure — not live heap)
+- **55MB** libLLVM-15 + **8MB** swrast_dri — llvmpipe-only (~65MB total
+  tax; vanishes on real GPUs)
+- **38MB** glibc [heap] — mostly mesa/LLVM allocations (same tax)
+- **~116MB anonymous, 509 VMAs** — live engine+shell runtime: 65 threads
+  (8×llvmpipe workers, 8×JS Helper, 4×jemalloc bg, 4×WRWorker +
+  WRSceneBuilder + WRRenderBackend, StyleThread×2, GlobalPool×4,
+  Script, Constellation, FetchThread, ResourceManager, storage trio,
+  tokio pool…), surfman/GL contexts + framebuffers, SM runtime,
+  jemalloc live heap, egui atlas, IPC. jemalloc decay already purges
+  freed pages every 5s, so this residue is *live* allocations, not
+  decay candidates.
+
+**A loaded DDG tab adds ~110MB** on top (→420MB): DOM+layout trees,
+SM heap (js-gc-heap 6→17MB), decoded images, font/shaping caches,
+WebRender picture/tile state, net caches.
+
+**Releasable vs structural, ranked:**
+
+1. Decoded image surfaces on *visible-but-idle* tabs — only sizable
+   pool (~40-80MB on image-heavy pages). The hide-discard lever already
+   releases them for hidden tabs; extending to idle-visible means the
+   next paint/scroll must re-fetch+re-decode — real resume jank, so
+   deferred (NOT clean). If attempted: gate on compositor keeping the
+   painted frame in its FBO, re-decode on demand.
+2. Font/shaping caches, glyph runs — few MB each, low value.
+3. Thread stack trimming (65 threads) / WR worker count — small each,
+   upstream-invasive.
+4. `js_mem_max=192` already caps SM growth; `session_history_max_length=5`
+   caps dead-doc retention; image cache bounded at 128MiB — all shipped.
+
+**Verdict:** no clean big lever at idle-on-load. The <150MB budget is
+unreachable on this architecture today: ~180-250MB is engine runtime
+(binary pages + SM + compositor + thread pools + one live document).
+Remaining path is upstream — smaller runtime footprint, fewer threads,
+shared surfaces — not a shell or prefs fix. Linux note: the 30-nav
+flat-933MB result shows retention is solved; the *floor* is the problem,
+and it's ~2.5× budget even after llvmpipe subtraction (~355MB).
