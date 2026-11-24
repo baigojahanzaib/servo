@@ -420,3 +420,36 @@ lane): no multipart/range resume, no download *initiated* by JS
 detected), no save-As dialog prompt, and the engine still fetches the
 body once for the (aborted) navigation before the embedder re-fetches it
 — a shared net-cache consumer would avoid the double fetch.
+
+## Per-nav retention: GC triggers don't reclaim it (2026-11-24)
+
+Question: after the reflector-root + IO-teardown fixes release JS roots at
+pipeline exit, can a low-cost trigger reclaim the memory promptly instead of
+waiting for natural GC?
+
+Experiments (30-nav WebDriver loop, feather-env prefs, end-RSS):
+
+| variant | end RSS |
+|---|---|
+| patched engine, natural GC | ~2953 MB |
+| + js_mem_gc_incremental_enabled | 4366 MB |
+| + incremental slices driven from the event loop (WorkBudget, 8ms/turn cap) | 4631 MB |
+| + deferred blocking JS_GC per pipeline exit (queued past the `NoGC` scope in clear_js_runtime) | 4177 MB |
+
+Every explicit trigger is *worse* than natural GC. Reasons found in the source:
+- `JS_MaybeGC`/`maybeGC` only collects if zones already past eager triggers —
+  not a real periodic trigger (and a blocking GC when it does fire).
+- Incremental slices without a driver stall mid-collection; driven slices keep
+  running under continued nav allocation with write-barrier overhead, so
+  reclamation lags further behind growth.
+- A blocking `JS_GC` per nav is pure cost: the retained memory is mostly NOT
+  JS-heap garbage — it's Rust-side allocations (layout, image cache, DOM
+  arenas in jemalloc), which GC can't touch. GC only frees the JS wrappers.
+
+Conclusion: there is no GC-trigger fix for per-nav retention. The remaining
+sawtooth is Rust-allocator memory; the levers that work are jemalloc decay
+prefs (already in featherprefs) and Rust-side release-at-teardown work
+(e.g. `image_cache().clear()` in handle_exit_pipeline_msg). `JS_GC` under
+`Window::clear_js_runtime`'s `cx.no_gc()` scope is suppressed — earlier
+"eager GC" experiments measured nothing; the correct deferred point is the
+next event-loop turn.
