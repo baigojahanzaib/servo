@@ -158,24 +158,42 @@ servoshell PID RSS in MB, macOS arm64 16GB host:
 | engine + feather env, no `js_mem_max` cap | 411→5718 | monotone — cap ruled out |
 | engine + `JS_GC` every 8th teardown (tested, not pushed) | 411→4364 | sawtooth-ish but ~25% over stock; wedged at nav8 in 1 of 2 runs |
 
+### Bisect: the 1.5× is IntersectionObserver, not the reflector fix
+
+`test/bisect-*` = stock-baseline + stacked cherry-picks, same prefs/env
+as the rows above, same-window runs:
+
+| Build | End MB | Verdict |
+|---|---|---|
+| stock | 2681 | baseline |
+| reflector-roots only | 3209 | ≈ stock, with reclaim drops |
+| + image-cache bound | 2697 | ≈ stock |
+| + hidden-document discard | 2767 | ≈ stock same-window |
+| + IntersectionObserver (b4a6153e2) | 4086 | **~1.5× — culprit** |
+| + h265 (full engine code) | 3799, 4583 | same as IO layer |
+| IO build, `dom_intersection_observer_enabled=false` | 2584 | ≈ stock |
+
+The pref-off A/B on an identical binary pins it: live IntersectionObserver
+objects retain ~1.3GB across navs on this site list (observers hold
+Element targets/roots; most crawled sites register them). The spec-gap
+fixes are not implicated — enabling the feature is. Fix direction: unroot
+observer targets at pipeline teardown, not revert.
+
 Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
-zeal GC, allocator decay — makes patched *worse* than stock, and under
-Feather's exact memory environment patched runs ~1.5× stock. Patched
-runs also show ~1GB step-ups at each pass boundary (nav 11, 20, 29),
-which stock does not. The Windows forced-GC sawtooth (~4GB peak) did
-not reproduce here. Purge/decay can't help because the retained objects
-are still *reachable* — they only become dirty pages after a GC, and
-eager GC is the part that hurts. Windows measured the same direction
-(patched ~2.5× stock under natural GC).
+zeal GC, allocator decay — makes things *worse*. The ~1.5×-over-stock
+full-branch number decomposes in the bisect below: the reflector-root
+revival itself is clean (≈ stock, with natural-GC reclaim drops); the
+retention comes from IntersectionObserver being enabled. The Windows
+forced-GC sawtooth (~4GB peak) did not reproduce here. Purge/decay can't
+help because retained objects are still *reachable* — they only become
+dirty pages after a GC, and eager GC is the part that hurts.
 
 `js_mem_max=192` is NOT the cause: patched+feather-env without the cap
 ends at 5718 (vs 5213/5598 with it). Throttled GC (every 8th teardown)
 lands at 4364 — better than eager but still ~25% over stock AND it
 wedged at the first GC'd exit in one of two runs. GC-on-teardown at any
-cadence, zeal, and the cap are all ruled out — on macOS the revival
-retains ~1.5× stock RSS under nav churn however you press it. The
-revival stays anyway: releasing roots is correct, and under natural GC
-it ended below stock (2953 vs 3355).
+cadence, zeal, and the cap are all ruled out. The bisect below shows the
+~1.5× over stock is NOT the revival — it's live IntersectionObservers.
 
 ## 1c. E2E scoreboard + hidden-tab CPU caveat (Nov 24)
 
