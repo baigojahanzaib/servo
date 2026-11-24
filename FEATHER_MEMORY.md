@@ -702,3 +702,33 @@ Minimal repro: servoshell --webdriver + nav one of these + probe
 **Real engine fails worth investigating:** `load_error` on hosts that pass
 dns+tcp+tls probes: nflxvideo.net, elasticbeanstalk.com, mybluehost.me,
 gcdn.co, huawei.com. `slack.com` consistent >30s timeout (wa.me/aol class).
+
+## 1i. Load-event stall family — drain race fixed; residual is upstream net-class (2026-11-25)
+
+**Drain race fix** (`23f1a29f30e`): bootloader pages (api.whatsapp.com) insert the next async
+script batch synchronously from each executing script. `wait_until_asap_scripts_have_executed`
+checked the sets after execution — already re-populated — so the step-7 drain never completed.
+Fix: `has_finished_all_asap_scripts` only gates on parser-inserted scripts; dynamic insertions
+still execute but don't re-arm the spin. Spec-letter is ambiguous (prepare-a-script sets
+'delaying the load event' unconditionally for external scripts) but browsers observably don't
+let post-parser-end insertions re-gate indefinitely; commit message has the honest reading.
+
+**Navigate-and-cancel for external schemes** (`deab4229838`): the bb5c9bc9b94 silent early-drop
+in `load_url` is removed. Document navigations into unnavigable schemes now proceed, cancel at
+the fetch layer (`LoadCancelled` → `AbortLoadUrl`), and leave the current document untouched —
+matching what browsers do. **Integration point for a future shell "open in app?" prompt hook:
+the removed early-drop site in `constellation.rs::load_url` is where an embedder callback for
+external schemes would slot in** (surface the scheme+url to the shell, let it prompt/discard).
+Don't build it yet — noted per coordinator.
+
+**The residual stall is NOT a feather regression.** Probed stock: wa.me ends on `whatsapp://chat/`
+with title "Error loading page" — stock HARD-ERRORS; the fast "loads" I measured in the wedge
+era were error pages. On feather-engine the landing survives, its boot chain terminates
+naturally (~21 fetches in the first second, then total network silence), yet load never fires:
+a handful of script **body streams** never finish reaching the document — net logs `got 200
+response` for exactly the scripts stuck in the document's `blocking_loads` (data:-URI images
+transiently stick too but do resolve). **aol.com reproduces the same stall on STOCK servo** —
+so this family is an upstream-class fetch-completion/net bug (chunked body stream dies
+mid-flight, no error ever surfaces), not a feather patch. Fix belongs upstream in the net →
+script fetch handoff; the stall signature is: `blocking_loads` entries whose URLs already show
+`got 200 response` in the net log.
