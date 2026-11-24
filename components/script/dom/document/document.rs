@@ -5525,6 +5525,13 @@ impl Document {
                 }
             }
         }
+        if visibility_state == DocumentVisibilityState::Hidden {
+            // Collect the JS heap now: SpiderMonkey GC is allocation-driven,
+            // and a hidden page's throttled timers allocate too rarely to
+            // trigger collection, so dead objects would sit for as long as
+            // the tab stays hidden. The GC pause is invisible to the user.
+            self.window().gc(cx);
+        }
         // Step 3 Queue a new VisibilityStateEntry whose visibility state is visibilityState and whose timestamp is
         // the current high resolution time given document's relevant global object.
         let entry = VisibilityStateEntry::new(
