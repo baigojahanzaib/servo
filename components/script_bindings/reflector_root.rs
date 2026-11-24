@@ -21,7 +21,7 @@ use js::jsval::{JSVal, UndefinedValue};
 use js::rust::{HandleValue, Runtime};
 use malloc_size_of::{MallocSizeOf, MallocSizeOfOps};
 
-use crate::script_runtime::JSContext;
+use js::context::JSContext;
 
 #[derive(JSTraceable)]
 #[cfg_attr(crown, crown::unrooted_must_root_lint::allow_unrooted_interior)]
