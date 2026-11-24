@@ -176,3 +176,22 @@ cadence, zeal, and the cap are all ruled out — on macOS the revival
 retains ~1.5× stock RSS under nav churn however you press it. The
 revival stays anyway: releasing roots is correct, and under natural GC
 it ended below stock (2953 vs 3355).
+
+## 1c. E2E scoreboard + hidden-tab CPU caveat (Nov 24)
+
+Feather on feather-engine vs stock servoshell (upstream main), llvmpipe host:
+
+| Metric | Stock | Feather | Δ |
+|---|---|---|---|
+| Cold start → paint | ~297ms | ~296ms | parity |
+| Idle RSS, 1 DDG tab | 663MB | 566MB | −97MB |
+| 4-tab (2 grid + slideshow + DDG) | 2503MB resident | 433MB lazy-restored / 1287MB hidden | −49% |
+| Binary | 206MB / 153MB stripped | 89.5MB production | −57% |
+
+CAVEAT discovered in E2E: a hidden tab whose JS keeps mutating images
+(slideshow cycling `<img src>`) still fetches + decodes each cycle — timers
+keep firing when hidden (throttling only reaches rAF/visibility, not
+setInterval-driven network+decode work). Memory stays bounded by the cache
+cap but CPU churns (observed ~460% vs stock ~53% on llvmpipe). Next lever:
+defer image fetch/decode for hidden documents, or throttle hidden-tab
+timer-driven network loads.
