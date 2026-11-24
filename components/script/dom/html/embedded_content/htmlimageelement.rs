@@ -34,6 +34,9 @@ use style::attr::{AttrValue, LengthOrPercentageOrAuto, parse_unsigned_integer};
 use crate::dom::activation::Activatable;
 use crate::dom::bindings::cell::AtomicSafeBorrowMut;
 use crate::dom::bindings::codegen::Bindings::DOMRectBinding::DOMRect_Binding::DOMRectMethods;
+use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
+    DocumentMethods, DocumentVisibilityState,
+};
 use crate::dom::bindings::codegen::Bindings::ElementBinding::Element_Binding::ElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLImageElementBinding::HTMLImageElementMethods;
 use crate::dom::bindings::codegen::Bindings::MouseEventBinding::MouseEventMethods;
@@ -185,14 +188,26 @@ impl HTMLImageElement {
     /// No-op for requests that still hold their surface or have not finished
     /// loading.
     pub(crate) fn restore_decoded_image(&self, cx: &mut JSContext) {
+        // While hidden, `fetch_image` is a no-op and a changed `src` moves
+        // into `pending_request`: restore from the pending request's URL
+        // first so the latest selection wins, then fall back to the current
+        // request when its surface was discarded.
         let url = {
-            let current_request = self.current_request.borrow();
-            if !matches!(current_request.state, State::CompletelyAvailable) ||
-                current_request.image.is_some()
-            {
-                return;
+            let pending_request = self.pending_request.borrow();
+            let url = pending_request
+                .as_ref()
+                .and_then(|request| request.parsed_url.clone());
+            match url {
+                Some(url) => Some(url),
+                None => {
+                    let current_request = self.current_request.borrow();
+                    if current_request.image.is_some() {
+                        None
+                    } else {
+                        current_request.parsed_url.clone()
+                    }
+                },
             }
-            current_request.parsed_url.clone()
         };
         if let Some(url) = url {
             self.fetch_image(cx, &url);
@@ -317,6 +332,15 @@ impl ResourceTimingListener for ImageContext {
 impl HTMLImageElement {
     /// Update the current image with a valid URL.
     fn fetch_image(&self, cx: &mut JSContext, img_url: &ServoUrl) {
+        // Defer fetching while the document is hidden: background tabs keep
+        // firing timers that mutate `src`, and each fetch would fetch and
+        // decode a surface that gets discarded on hide anyway. The latest
+        // request is picked up by `restore_decoded_image` when the document
+        // becomes visible again.
+        if self.owner_document().VisibilityState() == DocumentVisibilityState::Hidden {
+            return;
+        }
+
         let window = self.owner_window_unrooted(cx.no_gc());
 
         let cache_result = window.image_cache().get_cached_image_status(

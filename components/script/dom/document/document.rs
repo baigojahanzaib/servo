@@ -3378,6 +3378,15 @@ impl Document {
         if !self.is_fully_active() {
             return false;
         }
+        // Hidden documents are never rendered, so don't run the rendering
+        // steps for them at all: otherwise timers that keep mutating the DOM
+        // in background tabs produce a reflow and display list for every tick,
+        // which WebRender then rasterizes needlessly. Restyle and layout
+        // reasons stay set and are flushed in a single update when the
+        // document becomes visible again.
+        if self.visibility_state.get() == DocumentVisibilityState::Hidden {
+            return false;
+        }
         if !self.window().layout_blocked() &&
             (!self.restyle_reason(no_gc).is_empty() ||
                 self.window().layout().needs_new_display_list() ||

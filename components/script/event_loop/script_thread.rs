@@ -1161,8 +1161,7 @@ impl ScriptThread {
             // doc is render-blocked;
             document.is_render_blocked()
             // doc's visibility state is "hidden";
-            // TODO: Currently, this would mean that the script thread does nothing, since
-            // documents aren't currently correctly set to the visible state when navigating
+            || document.VisibilityState() == DocumentVisibilityState::Hidden
 
             // doc's rendering is suppressed for view transitions; or
             // TODO
