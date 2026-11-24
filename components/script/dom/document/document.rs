@@ -2904,7 +2904,21 @@ impl Document {
     }
 
     fn has_finished_all_asap_scripts(&self) -> bool {
-        self.asap_scripts_set.borrow().is_empty() && self.asap_in_order_scripts_list.is_empty()
+        // Feather: only parser-inserted scripts gate this drain. Per
+        // <https://html.spec.whatwg.org/multipage/scripting.html#delaying-the-load-event>
+        // a script only ever "delays the load event" when it is parser-inserted;
+        // dynamically-inserted scripts never do. Non-parser-inserted scripts are
+        // still members of these sets per the spec and still execute here, but
+        // they must not re-arm the step-7 spin: bootloader-style pages insert
+        // the next async batch synchronously from each executing script, so the
+        // sets re-populate before every empty-check and the drain never
+        // completed — the load event never fired and the webview timed out.
+        self.asap_scripts_set
+            .borrow()
+            .iter()
+            .all(|script| !script.is_parser_inserted()) &&
+        self.asap_in_order_scripts_list
+            .all_non_parser_inserted()
     }
 
     /// Step 7 of <https://html.spec.whatwg.org/multipage/#the-end>
@@ -7748,6 +7762,13 @@ struct PendingInOrderScriptVec {
 impl PendingInOrderScriptVec {
     fn is_empty(&self) -> bool {
         self.scripts.borrow().is_empty()
+    }
+
+    fn all_non_parser_inserted(&self) -> bool {
+        self.scripts
+            .borrow()
+            .iter()
+            .all(|entry| !entry.element.is_parser_inserted())
     }
 
     fn push(&self, element: &HTMLScriptElement) {

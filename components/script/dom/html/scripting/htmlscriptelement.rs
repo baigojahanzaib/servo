@@ -1160,6 +1160,10 @@ impl HTMLScriptElement {
         }
     }
 
+    pub(crate) fn is_parser_inserted(&self) -> bool {
+        self.parser_inserted.get()
+    }
+
     pub(crate) fn set_parser_inserted(&self, parser_inserted: bool) {
         self.parser_inserted.set(parser_inserted);
     }
