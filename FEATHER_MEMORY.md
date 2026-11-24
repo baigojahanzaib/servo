@@ -614,3 +614,46 @@ Remaining path is upstream — smaller runtime footprint, fewer threads,
 shared surfaces — not a shell or prefs fix. Linux note: the 30-nav
 flat-933MB result shows retention is solved; the *floor* is the problem,
 and it's ~2.5× budget even after llvmpipe subtraction (~355MB).
+
+### 1g. Idle-surface-discard prototype (llvmpipe VM, feather-engine) — DROPPED
+
+Coordinator asked: prototype discarding decoded surfaces on a
+*visible-but-idle* tab, measure resume jank vs RSS saved, ~100ms budget.
+
+**Implementation** (prototyped, then reverted — stash `idle-surface-discard
+prototype` on feather-engine): new
+`EmbedderToConstellationMessage::DiscardWebViewIdleResources` →
+`ScriptThreadMessage::DiscardIdleResources` →
+`Document::discard_idle_resources(cx)` — the Hidden-branch discard
+(image_cache completed loads + `drop_cached_layout_trees` + animating
+state + per-node `clear_layout_data` + per-img `discard_decoded_image` +
+`window.gc`) with NO visibility change; `idle_resources_discarded` flag →
+lazy `restore_idle_resources` called from `Window::reflow` (every repaint
+stimulus funnels there). Shell trigger: Ctrl+Shift+D + resize/wheel
+instrumentation on `notify_new_frame_ready`.
+
+**Numbers** (3 tabs, active = 40×1600×1200-PNG page, llvmpipe):
+- settled RSS ~865-887MB; discard frees ~303MB instantly (850→547 in the
+  first run — the pool is real)
+- **but it never holds**: the discard itself marks the document dirty
+  (`clear_layout_data`/tree drop) → `needs_rendering_update` → the very
+  next reflow (within ~1-2s, zero user input) lazily restores → re-fetch
+  from HTTP cache (0 network GETs) + re-decode → RSS spikes to ~1100MB
+  then decays back to a ~905MB plateau ≈ baseline. Net saving ≈ 0.
+- resume→first-frame: 2-5ms (WR retains the last painted tiles — the
+  page never visibly flickers while restore races the reflow)
+
+**Why it fails structurally:** a visible document can't keep its painted
+frame while its surfaces are dropped — dropping the pins
+(DOM `current_request.image`, image-cache entry, ReplacedContents in
+layout_data) requires invalidating layout data, which forces a reflow,
+which re-requests the surfaces. Suppressing the dirty flag instead risks
+the compositor receiving a blank display list — page blanks while the
+user reads it. Either way the ~300MB pool cannot be held on a *visible*
+tab. The hidden-tab path (§1a/§1b) already covers the real case; a
+visible idle tab's honest floor stands at the §1f decomposition.
+
+**Residual cost if pursued anyway:** a ~300MB churn cycle + decode CPU
+burst every idle→wake, for ~0 steady-state gain. Dropped per the
+coordinator's janky→drop criterion; the honest number is "save doesn't
+hold", not "jank too high".
