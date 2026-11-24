@@ -179,6 +179,14 @@ Element targets/roots; most crawled sites register them). The spec-gap
 fixes are not implicated — enabling the feature is. Fix direction: unroot
 observer targets at pipeline teardown, not revert.
 
+**Fix shipped (816b8e39e):** `Document::clear_intersection_observers` now
+runs in `Window::clear_js_runtime` — drains each observer's target list,
+element `registered_intersection_observers` entries, and queued entries.
+Post-fix same-window runs (feather-env, IO on): **3263, 3272** vs pre-fix
+4086 and IO-off-on-fixed-binary **3392** — IO-on now tracks the IO-off
+curve; the residual over the earlier 2681 stock reading is ambient drift,
+not IO. IO verified functional (callback fires on scroll via WebDriver).
+
 Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
 zeal GC, allocator decay — makes things *worse*. The ~1.5×-over-stock
 full-branch number decomposes in the bisect below: the reflector-root
