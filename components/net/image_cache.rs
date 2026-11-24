@@ -71,6 +71,12 @@ const FALLBACK_RIPPY: &[u8] = include_bytes!("resources/rippy.png");
 /// width/height of the pixmap allocated for rasterization.
 const MAX_SVG_PIXMAP_DIMENSION: u32 = 5000;
 
+/// Upper bound on the decoded pixel data a single [`ImageCache`] retains in
+/// `completed_loads`. When a completed load pushes the cache past the bound,
+/// the least-recently-used entries are evicted; an evicted image is fetched
+/// and decoded again if the page asks for it later.
+const MAX_COMPLETED_LOAD_BYTES: usize = 128 * 1024 * 1024;
+
 //
 // TODO(gw): Remaining work on image cache:
 //     * Make use of the prefetch support in various parts of the code.
@@ -240,11 +246,21 @@ enum CacheResult<'a> {
 struct CompletedLoad {
     image_response: ImageResponse,
     id: PendingImageId,
+    /// The decoded byte size this entry contributes to the cache budget.
+    image_bytes: usize,
 }
 
 impl CompletedLoad {
     fn new(image_response: ImageResponse, id: PendingImageId) -> CompletedLoad {
-        CompletedLoad { image_response, id }
+        let image_bytes = match &image_response {
+            ImageResponse::Loaded(Image::Raster(image), _) => image.bytes.len(),
+            _ => 0,
+        };
+        CompletedLoad {
+            image_response,
+            id,
+            image_bytes,
+        }
     }
 }
 
@@ -502,6 +518,14 @@ struct ImageCacheStore {
     /// Images that have finished loading (successful or not)
     completed_loads: HashMap<ImageKey, CompletedLoad>,
 
+    /// Total decoded byte size of `completed_loads`, checked against
+    /// [`MAX_COMPLETED_LOAD_BYTES`].
+    completed_loads_bytes: usize,
+
+    /// `completed_loads` keys in least-recently-used order (front is oldest).
+    /// Keys of failed loads are tracked too; they contribute no bytes.
+    completed_loads_lru: VecDeque<ImageKey>,
+
     /// Vector (e.g. SVG) images that have been sucessfully loaded and parsed
     /// but are yet to be rasterized. Since the same SVG data can be used for
     /// rasterizing at different sizes, we use this hasmap to share the data.
@@ -709,17 +733,60 @@ impl ImageCacheStore {
         };
 
         let completed_load = CompletedLoad::new(image_response.clone(), key);
-        self.completed_loads.insert(
-            (
-                pending_load.url,
-                pending_load.load_origin,
-                pending_load.cors_setting,
-            ),
-            completed_load,
+        let completed_key = (
+            pending_load.url,
+            pending_load.load_origin,
+            pending_load.cors_setting,
         );
+        let image_bytes = completed_load.image_bytes;
+        if let Some(previous) = self
+            .completed_loads
+            .insert(completed_key.clone(), completed_load)
+        {
+            self.completed_loads_bytes = self
+                .completed_loads_bytes
+                .saturating_sub(previous.image_bytes);
+            self.remove_from_lru(&completed_key);
+        }
+        self.completed_loads_bytes += image_bytes;
+        self.completed_loads_lru.push_back(completed_key);
+        self.enforce_completed_load_budget();
 
         for listener in pending_load.listeners {
             listener.respond(image_response.clone());
+        }
+    }
+
+    /// Drop the least-recently-used completed loads until the decoded byte
+    /// total is back within [`MAX_COMPLETED_LOAD_BYTES`]. Entries whose decoded
+    /// `Arc` is still referenced outside the cache (e.g. by a DOM node) are
+    /// skipped: evicting them frees no memory and only forces a re-fetch.
+    fn enforce_completed_load_budget(&mut self) {
+        let mut rotations = self.completed_loads_lru.len();
+        while self.completed_loads_bytes > MAX_COMPLETED_LOAD_BYTES && rotations > 0 {
+            rotations -= 1;
+            let Some(key) = self.completed_loads_lru.pop_front() else {
+                break;
+            };
+            let pinned = matches!(
+                self.completed_loads.get(&key),
+                Some(load) if matches!(
+                    &load.image_response,
+                    ImageResponse::Loaded(Image::Raster(image), _) if Arc::strong_count(image) > 1
+                )
+            );
+            if pinned {
+                self.completed_loads_lru.push_back(key);
+                continue;
+            }
+            debug!("Evicting {key:?} to keep the image cache under budget");
+            self.remove_loaded_image(&key.0, &key.1, &key.2);
+        }
+    }
+
+    fn remove_from_lru(&mut self, key: &ImageKey) {
+        if let Some(position) = self.completed_loads_lru.iter().position(|k| k == key) {
+            self.completed_loads_lru.remove(position);
         }
     }
 
@@ -729,16 +796,20 @@ impl ImageCacheStore {
         origin: &ImmutableOrigin,
         cors_setting: &Option<CorsSettings>,
     ) {
-        if let Some(loaded_image) =
-            self.completed_loads
-                .remove(&(url.clone(), origin.clone(), *cors_setting)) &&
-            let ImageResponse::Loaded(Image::Raster(image), _) = loaded_image.image_response &&
-            let Some(id) = image.id
-        {
-            self.paint_api.update_images(
-                self.webview_id.into(),
-                vec![ImageUpdate::DeleteImage(id)].into(),
-            );
+        let key = (url.clone(), origin.clone(), *cors_setting);
+        if let Some(loaded_image) = self.completed_loads.remove(&key) {
+            self.completed_loads_bytes = self
+                .completed_loads_bytes
+                .saturating_sub(loaded_image.image_bytes);
+            self.remove_from_lru(&key);
+            if let ImageResponse::Loaded(Image::Raster(image), _) = loaded_image.image_response &&
+                let Some(id) = image.id
+            {
+                self.paint_api.update_images(
+                    self.webview_id.into(),
+                    vec![ImageUpdate::DeleteImage(id)].into(),
+                );
+            }
         }
     }
 
@@ -777,17 +848,23 @@ impl ImageCacheStore {
     /// Return a completed image if it exists, or None if there is no complete load
     /// or the complete load is not fully decoded or is unavailable.
     fn get_completed_image_if_available(
-        &self,
+        &mut self,
         url: ServoUrl,
         origin: ImmutableOrigin,
         cors_setting: Option<CorsSettings>,
     ) -> Option<Result<(Image, ServoUrl), ()>> {
-        self.completed_loads
-            .get(&(url, origin, cors_setting))
-            .map(|completed_load| match &completed_load.image_response {
+        let key = (url, origin, cors_setting);
+        let result = self.completed_loads.get(&key).map(|completed_load| {
+            match &completed_load.image_response {
                 ImageResponse::Loaded(image, url) => Ok((image.clone(), url.clone())),
                 ImageResponse::FailedToLoadOrDecode | ImageResponse::MetadataLoaded(_) => Err(()),
-            })
+            }
+        });
+        if matches!(result, Some(Ok(_))) {
+            self.remove_from_lru(&key);
+            self.completed_loads_lru.push_back(key);
+        }
+        result
     }
 
     /// Handle a message from one of the decoder worker threads or from a sync
@@ -861,6 +938,8 @@ impl ImageCacheFactory for ImageCacheFactoryImpl {
             store: Arc::new(Mutex::new(ImageCacheStore {
                 pending_loads: AllPendingLoads::new(),
                 completed_loads: HashMap::new(),
+                completed_loads_bytes: 0,
+                completed_loads_lru: VecDeque::new(),
                 vector_images: FxHashMap::default(),
                 rasterized_vector_images: FxHashMap::default(),
                 broken_image_icon_image: OnceCell::new(),
@@ -959,7 +1038,7 @@ impl ImageCache for ImageCacheImpl {
         origin: ImmutableOrigin,
         cors_setting: Option<CorsSettings>,
     ) -> Option<Image> {
-        let store = self.store.lock();
+        let mut store = self.store.lock();
         let result = store.get_completed_image_if_available(url, origin, cors_setting);
         match result {
             Some(Ok((img, _))) => Some(img),
@@ -1432,6 +1511,8 @@ impl ImageCacheStore {
         // explicitly on pipeline close, and again on Drop (as a safeguard,
         // since we could forget to explicitly clear).
         self.completed_loads = Default::default();
+        self.completed_loads_bytes = 0;
+        self.completed_loads_lru = Default::default();
         self.vector_images = Default::default();
         self.rasterized_vector_images = Default::default();
         self.svg_rasterization_task_store = Default::default();
