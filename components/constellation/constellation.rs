@@ -4390,26 +4390,6 @@ where
             load_data.url,
         );
 
-        // Feather: drop document navigations into schemes the fetch layer
-        // cannot navigate to (whatsapp:, intent:, spotify:, …) before any
-        // pipeline or pending session-history change is created. Other
-        // engines treat these as external-protocol handoffs that leave the
-        // current document untouched. Creating a real pipeline for them
-        // instead wedged the webview: the deep-link navigation interrupted
-        // the still-loading current document, and when the unhandled-scheme
-        // fetch was then cancelled, the original document's load event could
-        // never fire — leaving the webview permanently "navigating" so every
-        // subsequent navigation timed out.
-        if !matches!(
-            load_data.url.scheme(),
-            "http" | "https" | "about" | "data" | "blob" | "file" | "filesystem"
-        ) {
-            debug!(
-                "{}: Dropping navigation into unhandled scheme: {}",
-                source_id, load_data.url,
-            );
-            return None;
-        }
 
         // If this load targets an iframe, its framing element may exist
         // in a separate script thread than the framed document that initiated
