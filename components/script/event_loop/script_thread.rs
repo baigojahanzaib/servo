@@ -124,7 +124,7 @@ use url::Position;
 #[cfg(feature = "webgpu")]
 use webgpu_traits::{WebGPUDevice, WebGPUMsg};
 
-use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
+use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentVisibilityState;
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::conversions::{
@@ -1816,7 +1816,7 @@ impl ScriptThread {
                 self.handle_set_document_activity_msg(cx, pipeline_id, activity)
             },
             ScriptThreadMessage::SetThrottled(pipeline_id, throttled) => {
-                self.handle_set_throttled_msg(pipeline_id, throttled)
+                self.handle_set_throttled_msg(cx, pipeline_id, throttled)
             },
             ScriptThreadMessage::PostMessage {
                 target: target_pipeline_id,
@@ -2873,11 +2873,26 @@ impl ScriptThread {
         reports_chan.send(ProcessReports::new(reports));
     }
 
-    fn handle_set_throttled_msg(&self, pipeline_id: PipelineId, throttled: bool) {
+    fn handle_set_throttled_msg(
+        &self,
+        cx: &mut JSContext,
+        pipeline_id: PipelineId,
+        throttled: bool,
+    ) {
         let window = self.documents.borrow().find_window(pipeline_id);
         match window {
             Some(window) => {
                 window.set_throttled(throttled);
+                // A throttled WebView is not visible to the user, so its document's
+                // visibility state follows the throttle state.
+                let visibility_state = if throttled {
+                    DocumentVisibilityState::Hidden
+                } else {
+                    DocumentVisibilityState::Visible
+                };
+                window
+                    .Document()
+                    .update_visibility_state(cx, visibility_state);
                 return;
             },
             None => {

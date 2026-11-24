@@ -40,6 +40,59 @@ not the retainer — the DOM is. Shrinking that case needs script-side
 discard of decoded surfaces (like imglib's discard-on-memory-pressure),
 a much bigger change.
 
+## 1b. Hidden-document image surface discard — SHIPPED on feather-engine
+
+Follow-up to §1: releases decoded surfaces for the DOM-referenced case
+when a WebView is hidden (background tab in feather-shell).
+
+Chain: `WebView::hide()/show()` now also sends
+`EmbedderToConstellationMessage::SetWebViewHidden` →
+`SetThrottled` → `Document::update_visibility_state(Hidden|Visible)`.
+Bonus: `document.visibilityState` and timer throttling now follow tab
+visibility, which upstream had not wired.
+
+On `Hidden`, `update_visibility_state` releases every retainer of the
+decoded `Arc<RasterImage>`:
+
+1. `image_cache.discard_completed_loads()` — clears completed loads and
+   sends `DeleteImage` for each `ImageKey` (pending loads/listeners and
+   the key cache are kept).
+2. `window.layout_mut().drop_cached_layout_trees()` — new `Layout`
+   method dropping box/fragment/stacking trees + `resolved_images_cache`.
+3. `animating_images.node_to_state_map.clear()` — per-node animation
+   state pins `Arc<RasterImage>` too.
+4. Per node: `node.clear_layout_data()` — **required**: each node's
+   `InnerDOMLayoutData.self_box` keeps its `LayoutBox` alive after the
+   tree root is dropped, and `ReplacedContents`/`ImageInfo` inside pins
+   the image. This was the last retainer found via `Arc::strong_count`
+   instrumentation.
+5. Per `HTMLImageElement`: `discard_decoded_image()` takes
+   `current_request.image` (state/url/metadata kept).
+
+On `Visible`, `restore_decoded_image()` re-fetches each `CompletelyAvailable`
+image (`fetch_image` → re-decode → repaint); layout data and trees are
+rebuilt by the normal reflow.
+
+Measured (feather-shell, llvmpipe host, same 40-image loop page,
+40x1600x1200 PNG ≈ 307 MiB decoded):
+
+| Build | Page loaded | Tab hidden (~60-90s settled) |
+|---|---|---|
+| stock servoshell (fork `main`, no feather patches) | TBD | n/a (no tabs) |
+| feather-engine (image-cache bound only) | 1039 MB | 1027 MB — no release |
+| feather-engine + discard lever | 835 MB | **712 MB** (−315 MB vs no-lever) |
+
+Restore verified on screen: re-showing the tab re-fetches all 40 images
+and re-renders the grid; repeated hide/show cycles release again each
+time. Note `Image::as_raster_image()` returns a clone — counting
+`strong_count` through it overstates by one.
+
+Remaining gap: RSS release lags behind the logical free (jemalloc/GC
+retains segments briefly); a deeper lever for *visible* tabs would need
+per-image offscreen discard driven by IntersectionObserver/paint bounds —
+the cache-bound already covers DOM-unreferenced images, and DOM-referenced
+on-screen ones must stay decoded by definition.
+
 ## 2. Lazy subsystem init
 
 Subsystems that could start on first use instead of at `Servo::new`:

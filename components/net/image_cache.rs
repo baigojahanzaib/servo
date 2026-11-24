@@ -1456,6 +1456,10 @@ impl ImageCache for ImageCacheImpl {
         *self.svg_id_image_id_map.lock() = Default::default();
     }
 
+    fn discard_completed_loads(&self) {
+        self.store.lock().discard_completed_loads();
+    }
+
     fn get_broken_image_icon(&self) -> Option<Arc<RasterImage>> {
         let store = self.store.lock();
         store
@@ -1520,6 +1524,42 @@ impl ImageCacheStore {
         self.key_cache = Default::default();
 
         let _ = self.broken_image_icon_image.take();
+    }
+
+    /// Drop every fully-loaded image in the cache. Unlike [`Self::clear`] this
+    /// leaves pending loads (and their listeners), the SVG source map, the key
+    /// cache and the broken-image icon intact, so in-flight fetches still
+    /// complete and the cache keeps working. Any `Arc`s to the decoded data
+    /// still held by the DOM keep the underlying bytes alive, so this only
+    /// frees what callers have also released.
+    fn discard_completed_loads(&mut self) {
+        let deletions: smallvec::SmallVec<_> = self
+            .completed_loads
+            .values()
+            .filter_map(|load| match &load.image_response {
+                ImageResponse::Loaded(Image::Raster(image), _) => {
+                    image.id.map(ImageUpdate::DeleteImage)
+                },
+                _ => None,
+            })
+            .chain(
+                self.rasterized_vector_images
+                    .values()
+                    .filter_map(|task| task.result.as_ref()?.id.map(ImageUpdate::DeleteImage)),
+            )
+            .collect();
+        if !deletions.is_empty() {
+            self.paint_api.update_images(self.webview_id.into(), deletions);
+        }
+        debug!(
+            "Discarded {} completed image loads ({} bytes)",
+            self.completed_loads.len(),
+            self.completed_loads_bytes
+        );
+        self.completed_loads = Default::default();
+        self.completed_loads_bytes = 0;
+        self.completed_loads_lru = Default::default();
+        self.rasterized_vector_images = Default::default();
     }
 }
 

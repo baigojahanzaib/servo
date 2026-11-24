@@ -341,6 +341,13 @@ impl Layout for LayoutThread {
         resolved_images_cache.remove(url);
     }
 
+    fn drop_cached_layout_trees(&mut self) {
+        self.box_tree.borrow_mut().take();
+        self.fragment_tree.borrow_mut().take();
+        self.stacking_context_tree.borrow_mut().take();
+        self.resolved_images_cache.write().clear();
+    }
+
     fn node_rendering_type(
         &self,
         node: TrustedNodeAddress,

@@ -169,6 +169,35 @@ impl HTMLImageElement {
         };
         Some(raster_image.as_snapshot())
     }
+
+    /// Drop the decoded image surface held by the current request, if any.
+    /// Called when the element's document becomes hidden: the request's URL,
+    /// metadata and state are kept so the surface can be restored by
+    /// [`Self::restore_decoded_image`] when the document becomes visible again.
+    pub(crate) fn discard_decoded_image(&self, cx: &mut JSContext) {
+        self.current_request
+            .safe_borrow_mut(cx.no_gc())
+            .image
+            .take();
+    }
+
+    /// Re-fetch the image surface discarded by [`Self::discard_decoded_image`].
+    /// No-op for requests that still hold their surface or have not finished
+    /// loading.
+    pub(crate) fn restore_decoded_image(&self, cx: &mut JSContext) {
+        let url = {
+            let current_request = self.current_request.borrow();
+            if !matches!(current_request.state, State::CompletelyAvailable) ||
+                current_request.image.is_some()
+            {
+                return;
+            }
+            current_request.parsed_url.clone()
+        };
+        if let Some(url) = url {
+            self.fetch_image(cx, &url);
+        }
+    }
 }
 
 /// The context required for asynchronously loading an external image.
