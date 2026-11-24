@@ -519,3 +519,32 @@ Remaining RSS after purge = live jemalloc allocs (layout/DOM still alive
 in bfcache/history) + SpiderMonkey GC heap — next lever would be auditing
 which Rust objects survive teardown (layout snapshots, font caches), not
 allocator tuning.
+
+## Object-level audit: bfcache depth is the dominant per-nav lever (no code needed)
+
+Follow-up to the purge work: WHY does live jemalloc alloc stay ~1-1.8GB?
+Answer — session history keeps nav'd-away documents fully alive
+(`NeedsToReload::No`) until evicted past `session_history_max_length`
+(default **20**) or until the document unloads unsalvageable. Up to ~20
+dead documents × DOM+layout+JS global each = the sawtooth mass. Eviction
+path: `session_history.rs` eviction → `NeedsToReload::Yes` → close_pipeline.
+Unsalvageable docs die sooner via `DiscardDocument` → replace_reloader(Yes).
+
+Measured (30-nav loop, feather-env prefs, purge already shipped):
+
+| history depth | end RSS | mid-loop |
+|---|---|---|
+| 20 (default) | 2725 / 3500 | 1.4-2.6 GB |
+| 5 | 1884 | 1.6-2.3 GB |
+| 1 | 2386 | 1.3-2.4 GB |
+
+Cutting depth 20→5 roughly halves end RSS and ~doubles how much a dead
+document's memory returns at teardown. 1 gives no further win — floor is
+live current-doc + SM heap + fonts. **Lever is the pref
+`session_history_max_length` — set 5 in feather prefs.json; no engine
+patch.** Chrome's bfcache is ~5-10 entries + memory-bounded, so 5 matches
+mainstream UX (still gives working back-forward).
+
+Stock servoshell honours the same pref (it's upstream's), so this is a
+feather-config win, not a patch — both sides of any A/B must use the same
+depth or the comparison is meaningless.
