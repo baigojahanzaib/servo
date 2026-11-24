@@ -548,3 +548,21 @@ mainstream UX (still gives working back-forward).
 Stock servoshell honours the same pref (it's upstream's), so this is a
 feather-config win, not a patch — both sides of any A/B must use the same
 depth or the comparison is meaningless.
+
+### Linux cross-verify of the arena-purge lever (Nov 24, llvmpipe host)
+
+30-nav loop (40-img page + ~60MB JS garbage per nav, same page as the
+macOS runs): stock upstream servoshell climbs 1.0GB → **7.79GB RSS and
+never comes back**; feather-engine head sits **flat ~1.1-1.2GB for the
+whole loop** (servoshell AND feather-shell alike). The lever is safe and
+working on Linux jemalloc — no regression, identical flat curve.
+
+Honest attribution: reverting ONLY the purge (same tree minus
+7d02b70553b) stays flat too — ~1.1-1.25GB at 3s/nav AND at 800ms/nav.
+Linux jemalloc's default dirty-page decay already reclaims teardown
+pages between navs, and the image-cache bound dominates the stock-vs-ours
+delta (stock's unbounded decoded cache = ~200MB/nav pile-up). So the
+~1GB mapped-but-unallocated problem Mac attributed on macOS is
+platform-specific: purge is essentially free insurance on Linux and the
+real win stays on macOS. Reclaim confirmed working; incremental Linux
+delta unmeasurable in this workload.
