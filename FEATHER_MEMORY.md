@@ -206,10 +206,39 @@ Feather on feather-engine vs stock servoshell (upstream main), llvmpipe host:
 | 4-tab (2 grid + slideshow + DDG) | 2503MB resident | 433MB lazy-restored / 1287MB hidden | −49% |
 | Binary | 206MB / 153MB stripped | 89.5MB production | −57% |
 
-CAVEAT discovered in E2E: a hidden tab whose JS keeps mutating images
-(slideshow cycling `<img src>`) still fetches + decodes each cycle — timers
-keep firing when hidden (throttling only reaches rAF/visibility, not
-setInterval-driven network+decode work). Memory stays bounded by the cache
-cap but CPU churns (observed ~460% vs stock ~53% on llvmpipe). Next lever:
-defer image fetch/decode for hidden documents, or throttle hidden-tab
-timer-driven network loads.
+CAVEAT resolved (commit 75697a2bc78): a hidden tab whose JS keeps
+mutating images (slideshow cycling `<img src>`) churned at ~390-460% CPU —
+each timer tick refetched + decoded a surface the hide path discards, AND
+every hidden-doc update-the-rendering produced a reflow → display list →
+WR raster of work that is never displayed. Fixed with three gates on the
+real visibilityState:
+- `fetch_image` early-returns while hidden; a `src` mutated while hidden
+  queues in `pending_request` and `restore_decoded_image` (on Visible)
+  now prefers the pending request's URL, so the latest src wins.
+- `Document::needs_rendering_update` returns false while hidden —
+  reasons accumulate and flush in one update on show.
+- `update_the_rendering` step-3 non-renderable filter skips hidden docs
+  (the WHATWG "visibility state is hidden" TODO).
+
+RESULTS (llvmpipe, looping 40-image slideshow every 350ms):
+
+| Tab state | CPU | net fetches |
+|---|---|---|
+| hidden, before | ~390-460% | 1 fetch+decode/tick |
+| hidden, fixed | **0.0%** | **0** |
+| shown, cycling | ~110-120% (legit per-tick raster) | 0 (warm cache) |
+| stock servoshell hidden-equivalent | ~53% | — |
+| re-show | RSS returns to shown level; newest image renders |
+
+ALSO REQUIRED — embedder-side: the fix needs an on-demand repaint loop.
+Feather's shell had TWO independent CPU-burn bugs found while isolating
+this: egui-winit answers `repaint: true` for `WindowEvent::RedrawRequested`
+itself, and `if response.repaint { request_redraw() }` re-requested a
+redraw after every redraw → self-sustaining ~290fps repaint loop that
+rasterized the active webview on ANY page (even static), plus an
+unconditional `request_redraw()` per servo wake in `user_event`. Shell
+fix: skip re-requesting redraw when the event IS RedrawRequested, and
+drop the unconditional redraw (new-frame notifications already request
+redraw via `notify_new_frame_ready`). Result: feather idle on static
+page = 0.0% CPU vs ~390% before. Stock servoshell doesn't have this bug
+(it already only repaints on `notify_new_frame_ready`).
