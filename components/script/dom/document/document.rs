@@ -3766,7 +3766,10 @@ impl Document {
     /// this document is torn down, so that live observers do not extend the
     /// lifetime of the document's DOM past pipeline exit.
     pub(crate) fn clear_intersection_observers(&self, no_gc: &NoGC) {
-        for observer in self.intersection_observers.borrow_mut().drain(..) {
+        // Collect first: clearing an observer unregisters it from this document,
+        // which mutably borrows `intersection_observers` again.
+        let observers: Vec<_> = self.intersection_observers.borrow_mut().drain(..).collect();
+        for observer in observers {
             observer.clear_registrations(no_gc);
         }
         self.lazy_load_intersection_observer.set(None);
