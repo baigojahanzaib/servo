@@ -669,3 +669,36 @@ hold", not "jank too high".
 Plus: unnavigable schemes dropped at `load_url` entry before any pipeline exists.
 
 **Verify**: example.com ok → wa.me timeout → example.com 12ms ok (was: permanent timeout loop). Underlying defect remains: api.whatsapp.com never fires LoadFinished — separate engine bug, affects the ~10 consistent-timeout tranco sites.
+
+## 1i. Tranco top-500 macOS crawl (2026-11-25) — baseline + second defect class
+
+500-site WebDriver crawl on feather-engine head → `crawler/baselines/tranco500-macos.jsonl`
+(feather repo). **330 ok / 500; 157 infra-side apexes (dns 123, tcp 22, cert 12);
+13 engine-verdict fails → ~96% real-site compat.**
+
+**Wedge-fix verified on macOS**: webex.com nav → clean `{"error":"timeout"}` at 30s,
+then same session navigates example.com ~1s. `bb5c9bc9b94` works on arm64.
+
+**Wedge signature on macOS (for future crawls):** one bad nav kills the whole
+WebDriver HTTP port (`/status` and `/session` both hang). Burned rows record
+`driver_error` with `load_ms=None`, or `nav_error` w/ "Connection refused" +
+load_ms~0 — nav_error is NOT in the crawler's TRANSIENT list, so strips miss
+it; requires a per-site fresh-engine retest pass. Watchdog addition: restart on
+≥6 consecutive transient rows (streak), cap retries at 3 attempts/site.
+
+**NEW DEFECT — post-nav driver hang (still live post-wedge-fix, deterministic):**
+7 sites break the WebDriver session even on a fresh `158f0e329` engine:
+- `webex.com`, `meraki.com`, `cisco.com` — nav starts, then every later request
+  hangs; no row produced in 240s. Pages never settle (webex loops tracker
+  requests forever).
+- `alidns.com`, `imdb.com`, `smartadserver.com`, `stanford.edu` — nav returns,
+  then a post-nav request dies → `driver_error` every attempt.
+Distinct from the timeout-supersede wedge: the driver itself stops answering
+mid-flow. Likely a post-load probe (execute/screenshot) hanging on a
+never-settling page, or the unfinished-navigation class via a different path.
+Minimal repro: servoshell --webdriver + nav one of these + probe
+`/session/{id}/title` after.
+
+**Real engine fails worth investigating:** `load_error` on hosts that pass
+dns+tcp+tls probes: nflxvideo.net, elasticbeanstalk.com, mybluehost.me,
+gcdn.co, huawei.com. `slack.com` consistent >30s timeout (wa.me/aol class).
