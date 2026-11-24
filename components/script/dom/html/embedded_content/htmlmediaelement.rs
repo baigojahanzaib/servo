@@ -26,6 +26,7 @@ use net_traits::{CoreResourceThread, FetchMetadata, Metadata, NetworkError, Reso
 use pixels::{CorsStatus, RasterImage};
 use script_bindings::assert::assert_in_script;
 use script_bindings::cell::DomRefCell;
+use script_bindings::reflector::DomObject;
 use script_bindings::codegen::InheritTypes::{
     ElementTypeId, HTMLElementTypeId, HTMLMediaElementTypeId, NodeTypeId,
 };
@@ -216,6 +217,9 @@ pub(crate) struct HTMLMediaElement {
     #[ignore_malloc_size_of = "servo_media"]
     #[no_trace]
     player: DomRefCell<Option<Arc<Mutex<dyn Player>>>>,
+    #[ignore_malloc_size_of = "raw pointer bookkeeping only"]
+    #[no_trace]
+    player_memory_association: DomRefCell<Option<PlayerMemoryAssociation>>,
     #[conditional_malloc_size_of]
     #[no_trace]
     video_renderer: Arc<Mutex<MediaFrameRenderer>>,
@@ -428,6 +432,7 @@ impl HTMLMediaElement {
             pending_play_promises: Default::default(),
             in_flight_play_promises_queue: Default::default(),
             player: Default::default(),
+            player_memory_association: Default::default(),
             video_renderer: Arc::new(Mutex::new(MediaFrameRenderer::new(
                 document.webview_id(),
                 document.window().paint_api().clone(),
@@ -2343,6 +2348,7 @@ impl HTMLMediaElement {
         };
 
         *self.player.borrow_mut() = Some(player);
+        self.register_player_memory_association();
 
         let task_source = self
             .owner_global()
@@ -2359,6 +2365,20 @@ impl HTMLMediaElement {
         Ok(())
     }
 
+    /// Rough estimate of the native memory a media player can retain (decoder
+    /// state plus buffered/decoded frames), reported to the JS engine so that
+    /// unreachable media elements create enough garbage-collection pressure to
+    /// actually be collected. Without this, detached media elements keep their
+    /// players — and the pipelines' buffered frames — alive indefinitely
+    /// because the collector sees no reason to run.
+    const ESTIMATED_PLAYER_BYTES: usize = 32 * 1024 * 1024;
+
+    fn register_player_memory_association(&self) {
+        let jsobject = self.reflector().get_jsobject().get();
+        *self.player_memory_association.borrow_mut() =
+            PlayerMemoryAssociation::new(jsobject, Self::ESTIMATED_PLAYER_BYTES);
+    }
+
     fn reset_media_player(&self, no_gc: &NoGC) {
         if self.player.borrow().is_none() {
             return;
@@ -2371,6 +2391,7 @@ impl HTMLMediaElement {
         }
 
         *self.player.borrow_mut() = None;
+        self.player_memory_association.borrow_mut().take();
         self.video_renderer.lock().unwrap().reset();
         *self.event_handler.borrow_mut() = None;
 
@@ -4413,6 +4434,42 @@ impl HTMLMediaElementEventHandler {
             PlayerEvent::SeekDone(position) => element.playback_seek_done(cx, position),
             PlayerEvent::StateChanged(ref state) => element.playback_state_changed(cx, state),
             PlayerEvent::VideoFrameUpdated => element.playback_video_frame_updated(cx.no_gc()),
+        }
+    }
+}
+
+/// Keeps a rough estimate of a media player's native memory associated with
+/// the element's JS object. Dropping the guard removes the association, so the
+/// accounting stays balanced across player resets and element finalization.
+#[derive(MallocSizeOf)]
+struct PlayerMemoryAssociation {
+    #[ignore_malloc_size_of = "not owned memory"]
+    jsobject: *mut js::jsapi::JSObject,
+    bytes: usize,
+}
+
+impl PlayerMemoryAssociation {
+    #[expect(unsafe_code)]
+    fn new(jsobject: *mut js::jsapi::JSObject, bytes: usize) -> Option<Self> {
+        if jsobject.is_null() {
+            return None;
+        }
+        unsafe {
+            js::jsapi::AddAssociatedMemory(jsobject, bytes, js::jsapi::MemoryUse::DOMBinding);
+        }
+        Some(Self { jsobject, bytes })
+    }
+}
+
+impl Drop for PlayerMemoryAssociation {
+    #[expect(unsafe_code)]
+    fn drop(&mut self) {
+        unsafe {
+            js::jsapi::RemoveAssociatedMemory(
+                self.jsobject,
+                self.bytes,
+                js::jsapi::MemoryUse::DOMBinding,
+            );
         }
     }
 }
