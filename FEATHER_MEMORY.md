@@ -337,3 +337,31 @@ Remaining non-levers (documented so nobody re-tries): per-document layout
 cache suspension (caches already dropped on hide), layout/font cache
 freezes (FontContext is shared per script-thread), reflow gating
 (correctness), timer suspension (already clamped).
+||||||| parent of a58906308 (FEATHER_MEMORY: WPT dom+IO baseline — engine +15 subtests, zero regressions)
+
+## WPT scoreboard extension: dom + intersection-observer (macOS arm64, 2026-11-24)
+
+Subset: `tests/wpt/tests/dom` + `tests/wpt/tests/intersection-observer` =
+1,028 files, ~67,500 subtests. Both binaries run with
+`--binary-arg=--pref=dom_intersection_observer_enabled` so the IO suite is
+a real A/B (stock default is pref-off). ~5 min per run.
+
+|                      | Stock+IO    | feather-engine+IO |
+|----------------------|-------------|-------------------|
+| test-level PASS+OK   | 1,000/1,028 | 1,000/1,028       |
+| TIMEOUT/ERROR/CRASH  | 12/15/1     | 12/15/1           |
+| subtests PASS        | 65,345 (96.72%) | 65,360 (96.74%) |
+
+Zero test-level diffs; the 1 CRASH (multiple-append-mutated-in-unload)
+hits both builds identically → environmental.
+
+15 subtest deltas — ALL engine wins, all from b4a6153e2's IO spec-gap
+fixes: 13× rootMargin/scrollMargin absolute-length units (cm/mm/q/in/pt/pc),
+1× scroll-margin intersection, 1× detached-document target observation.
+**Zero regressions in the IO suite from the teardown fix.**
+
+CAUGHT BY THIS RUN: the IO teardown fix had a RefCell double-borrow —
+`clear_intersection_observers` drained the Vec while holding the
+borrow_mut, and `clear_registrations` → `disconnect_from_owner` →
+`remove_intersection_observer` re-borrows it → panic on pipeline exit.
+Fixed in 5d1ef8ba9 (collect-then-clear).
