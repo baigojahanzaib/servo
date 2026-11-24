@@ -136,3 +136,36 @@ Baseline ~322MB RSS / ~275MB PSS (llvmpipe host):
 
 The floor on this host is Servo runtime (~180MB) + llvmpipe (~65MB).
 On real GPU hardware expect ~215-255MB with one loaded tab.
+
+## 6. Reflector-root revival — nav-leak measurements
+
+`release_reflector_roots()` (reflector-root revival, HEAD 9ec4a62b) makes
+dead pipelines' objects *collectable*. Whether RSS actually falls depends
+on collection pressure. 30-nav WebDriver loop (10 sites ×3), single
+servoshell PID RSS in MB, macOS arm64 16GB host:
+
+| Config | Start→End | Shape |
+|---|---|---|
+| stock servo/main | 411→3355 | monotone |
+| stock `--zealous-gc` | 414→2460 | still climbing |
+| feather-engine (roots released) | 410→2953 | mild sawtooth, real mid-run drops |
+| engine `--zealous-gc` | 411→5130–6599 (2 runs) | monotone — worst config tested |
+| engine + `JS_GC` on pipeline teardown (tested, not pushed) | 411→6126 | monotone, ~1.9× stock |
+| engine + `JS_MaybeGC` on teardown (tested, not pushed) | →3916 @ nav18 | wedged at nav19 |
+| engine + `MALLOC_CONF=dirty_decay_ms:0,muzzy_decay_ms:0` | 411→5261 | monotone |
+| stock + feather env (js_mem 192/50/300 + jemalloc 5s decay + bg thread) | 415→3482 | slower monotone |
+| engine + feather env (same) | 411→5213, 5598 (2 runs) | monotone, ~1.5× stock |
+
+Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
+zeal GC, allocator decay — makes patched *worse* than stock, and under
+Feather's exact memory environment patched runs ~1.5× stock. Patched
+runs also show ~1GB step-ups at each pass boundary (nav 11, 20, 29),
+which stock does not. The Windows forced-GC sawtooth (~4GB peak) did
+not reproduce here. Purge/decay can't help because the retained objects
+are still *reachable* — they only become dirty pages after a GC, and
+eager GC is the part that hurts. Windows measured the same direction
+(patched ~2.5× stock under natural GC).
+
+Open question: whether `js_mem_max=192` itself drives pathological GC
+churn on the patched engine — worth A/Bing patched+feather-env with and
+without the cap. GC-on-teardown and zeal are ruled out regardless.
