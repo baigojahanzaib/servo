@@ -73,6 +73,23 @@ mod platform {
     use tikv_jemalloc_sys::mallctl;
     pub use tikv_jemallocator::Jemalloc as Allocator;
 
+    /// Purge all dirty and muzzy pages across every arena, returning them to
+    /// the OS. This is expensive; call it at natural reclaim points (e.g.
+    /// pipeline teardown) rather than on hot paths.
+    pub fn purge_arenas() {
+        // MALLCTL_ARENAS_ALL (4096) addresses all arenas at once.
+        let name = c"arena.4096.purge";
+        unsafe {
+            mallctl(
+                name.as_ptr(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                ptr::null_mut(),
+                0,
+            );
+        }
+    }
+
     pub fn heap_reports() -> Vec<crate::HeapReport> {
         vec![
             crate::HeapReport {
@@ -184,6 +201,8 @@ mod platform {
         pub use libc::{free, malloc, realloc};
     }
 
+    pub fn purge_arenas() {}
+
     pub fn heap_reports() -> Vec<crate::HeapReport> {
         Vec::new()
     }
@@ -216,6 +235,8 @@ mod platform {
             size
         }
     }
+
+    pub fn purge_arenas() {}
 
     pub fn heap_reports() -> Vec<crate::HeapReport> {
         Vec::new()

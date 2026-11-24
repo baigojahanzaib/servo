@@ -9490,6 +9490,7 @@ dependencies = [
  "selectors",
  "serde",
  "serde_json",
+ "servo-allocator",
  "servo-background-hang-monitor-api",
  "servo-base",
  "servo-bluetooth-traits",

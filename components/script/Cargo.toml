@@ -128,6 +128,7 @@ selectors = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 servo-background-hang-monitor-api = { workspace = true }
+servo-allocator = { workspace = true }
 servo-base = { workspace = true }
 servo-bluetooth-traits = { workspace = true, optional = true }
 servo-canvas-traits = { workspace = true }

@@ -3352,6 +3352,12 @@ impl ScriptThread {
         // or that have been dropped on other threads.
         LivePromiseReferences::expensive_prune_dropped_promises();
 
+        // Return the pages this pipeline freed to the OS: without an explicit
+        // purge, jemalloc arenas retain them as dirty page cache until the
+        // (default ~10s) decay timer fires, which keeps RSS climbing across
+        // many navigations.
+        servo_allocator::purge_arenas();
+
         debug!("{pipeline_id}: Finished pipeline exit");
     }
 
