@@ -364,3 +364,25 @@ CAUGHT BY THIS RUN: the IO teardown fix had a RefCell double-borrow —
 borrow_mut, and `clear_registrations` → `disconnect_from_owner` →
 `remove_intersection_observer` re-borrows it → panic on pipeline exit.
 Fixed in 5d1ef8ba9 (collect-then-clear).
+
+## IO pref "anomaly" resolved (2026-11-24) — measurement artifact, not a bug
+
+Earlier observations that `typeof IntersectionObserver` returned 'undefined'
+without `--pref` on a binary supposedly built from a branch with
+`dom_intersection_observer_enabled: true` in `const_default()` turned out to
+be a **stale servoshell binary** in `/tmp/engine` (its `Preferences` static
+was compiled before b4a6153e2's prefs.rs flip was in the checkout).
+
+Verified on a fresh `target/release/servoshell` (head 1b093c1ba): with NO
+--pref flag, WebDriver eval returns `function` for IntersectionObserver —
+IO is correctly on by default in the engine. Instrumenting `prefs::set`
+confirmed `io=true` is written at startup; no code path flips it off.
+
+Consequences for prior measurements:
+- All WPT/crawler comparisons are UNAFFECTED — both sides ran with
+  `--binary-arg=--pref=dom_intersection_observer_enabled`, a valid A/B.
+- The "IO-off" scoreboards (nav loops, crawler) ran with the pref forced on
+  via prefs-file/--pref, so they measured the intended state anyway.
+- Lesson: always rebuild + re-hash the preserved `/tmp/engine` binary after
+  pulling feather-engine; a servoshell on port 7000 from a prior run can
+  also shadow fresh probes (pgrep before probing).
