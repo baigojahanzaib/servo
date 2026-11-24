@@ -337,7 +337,6 @@ Remaining non-levers (documented so nobody re-tries): per-document layout
 cache suspension (caches already dropped on hide), layout/font cache
 freezes (FontContext is shared per script-thread), reflow gating
 (correctness), timer suspension (already clamped).
-||||||| parent of a58906308 (FEATHER_MEMORY: WPT dom+IO baseline — engine +15 subtests, zero regressions)
 
 ## WPT scoreboard extension: dom + intersection-observer (macOS arm64, 2026-11-24)
 
