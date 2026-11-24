@@ -802,7 +802,8 @@ pub enum ScriptToConstellationMessage {
     /// Abort loading after sending a LoadUrl message.
     AbortLoadUrl,
     /// A document navigation fetched a resource that should be downloaded
-    /// rather than rendered (attachment disposition or non-displayable type).
+    /// rather than rendered (attachment disposition or non-displayable type),
+    /// or an `<a download>` activation started a download fetch.
     DownloadRequested {
         /// The webview that initiated the navigation.
         webview_id: WebViewId,
@@ -814,6 +815,38 @@ pub enum ScriptToConstellationMessage {
         mime: String,
         /// The response's Content-Disposition header value, if any.
         content_disposition: Option<String>,
+        /// A filename suggested by markup (the `download` attribute), if any.
+        filename_hint: Option<String>,
+        /// The response's Content-Length, if any.
+        content_length: Option<u64>,
+    },
+    /// Progress for a download previously announced with `DownloadRequested`.
+    /// `total` is the declared `Content-Length`, if any.
+    DownloadProgress {
+        /// The webview that initiated the download.
+        webview_id: WebViewId,
+        /// The pipeline performing the download.
+        pipeline_id: PipelineId,
+        /// The URL of the resource being downloaded.
+        url: ServoUrl,
+        /// Bytes written to the spool file so far.
+        received: u64,
+        /// Expected total bytes, if known.
+        total: Option<u64>,
+    },
+    /// A download's body has been fully spooled (or the download failed).
+    /// Ownership of the `body_path` temp file transfers to the embedder.
+    DownloadFinished {
+        /// The webview that initiated the download.
+        webview_id: WebViewId,
+        /// The pipeline that performed the download.
+        pipeline_id: PipelineId,
+        /// The URL of the resource downloaded.
+        url: ServoUrl,
+        /// Path to the temp file holding the complete body, on success.
+        body_path: Option<std::path::PathBuf>,
+        /// Failure description, on error.
+        error: Option<String>,
     },
     /// Post a message to the currently active window of a given browsing context.
     PostMessage {

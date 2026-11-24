@@ -43,6 +43,13 @@ pub enum ConstellationToEmbedderMsg {
     /// A pipeline exited, whether cleanly or because its content process died.
     PipelineExited(PipelineId),
     /// A document navigation fetched a resource that should be downloaded
-    /// rather than rendered.
-    DownloadRequested(WebViewId, ServoUrl, String, Option<String>),
+    /// rather than rendered, or an `<a download>` activation started a
+    /// download fetch. Fields: url, mime, content-disposition header value,
+    /// markup filename hint, declared Content-Length.
+    DownloadRequested(WebViewId, ServoUrl, String, Option<String>, Option<String>, Option<u64>),
+    /// Progress of a download: bytes received so far and expected total.
+    DownloadProgress(WebViewId, ServoUrl, u64, Option<u64>),
+    /// A download's body is fully spooled to the given temp file (ownership
+    /// transfers to the embedder), or the download failed with `error`.
+    DownloadFinished(WebViewId, ServoUrl, Option<std::path::PathBuf>, Option<String>),
 }

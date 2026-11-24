@@ -957,6 +957,9 @@ struct NavigationParams {
     resource_header: Vec<u8>,
     /// The response's `Content-Disposition` header value, if any.
     content_disposition: Option<String>,
+    /// The response's declared `Content-Length`, if any (Feather: download
+    /// progress reporting).
+    content_length: Option<u64>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-params-about-base-url>
     about_base_url: Option<ServoUrl>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-params-iframe-referrer-policy>
@@ -992,6 +995,10 @@ pub(crate) struct ParserContext {
     /// will be a non-aliased copy of the origin.
     source_origin: Option<MutableOrigin>,
     document: Option<Trusted<Document>>,
+    /// Feather: when the navigation was handed to the embedder as a download,
+    /// the response body is spooled to this temp file instead of being
+    /// dropped with the synthesized "Downloading content" page.
+    download_spool: Option<crate::dom::download::DownloadSpool>,
 }
 
 impl ParserContext {
@@ -1020,6 +1027,7 @@ impl ParserContext {
                 final_sandboxing_flag_set: creation_sandboxing_flag_set,
                 resource_header: vec![],
                 content_disposition: None,
+                content_length: None,
                 about_base_url: Default::default(),
                 iframe_element_referrer_policy: Default::default(),
                 redirect_taint: Default::default(),
@@ -1027,6 +1035,7 @@ impl ParserContext {
             target_snapshot_params,
             source_origin,
             document: None,
+            download_spool: None,
         }
     }
 
@@ -1157,6 +1166,16 @@ impl ParserContext {
                     .is_some_and(|first| first.eq_ignore_ascii_case("attachment"))
             });
         if is_attachment || media_type.is_none() {
+            // Feather: the body keeps streaming into this context (the
+            // synthesized page drops it) — spool it to a temp file so the
+            // embedder can save the download without fetching it again.
+            if let Some(mut spool) = crate::dom::download::DownloadSpool::new() &&
+                spool
+                    .append(&self.navigation_params.resource_header)
+                    .is_ok()
+            {
+                self.download_spool = Some(spool);
+            }
             document.window().send_to_constellation(
                 ScriptToConstellationMessage::DownloadRequested {
                     webview_id: self.webview_id,
@@ -1164,6 +1183,8 @@ impl ParserContext {
                     url: self.url.clone(),
                     mime: mime_type.to_string(),
                     content_disposition: self.navigation_params.content_disposition.clone(),
+                    filename_hint: None,
+                    content_length: self.navigation_params.content_length,
                 },
             );
         }
@@ -1453,6 +1474,7 @@ impl ParserContext {
             content_language,
             redirect_taint,
             content_disposition,
+            content_length,
         ) = metadata
             .as_ref()
             .map(|metadata| {
@@ -1476,6 +1498,12 @@ impl ParserContext {
                         .and_then(|headers| headers.get("Content-Disposition"))
                         .and_then(|header| header.to_str().ok())
                         .map(|string| string.to_owned()),
+                    metadata
+                        .headers
+                        .as_ref()
+                        .and_then(|headers| headers.get("Content-Length"))
+                        .and_then(|header| header.to_str().ok())
+                        .and_then(|string| string.parse::<u64>().ok()),
                 )
             })
             .unwrap_or_default();
@@ -1582,6 +1610,7 @@ impl ParserContext {
             about_base_url: document.about_base_url(),
             resource_header: vec![],
             content_disposition,
+            content_length,
             iframe_element_referrer_policy: self
                 .target_snapshot_params
                 .iframe_element_referrer_policy,
@@ -1663,6 +1692,26 @@ impl ParserContext {
     }
 
     pub(crate) fn process_response_chunk(&mut self, cx: &mut JSContext, payload: Bytes) {
+        // Feather: a download's body keeps arriving after detection — feed
+        // it to the temp-file spool before the synthesized-document drop.
+        if let Some(spool) = &mut self.download_spool {
+            if let Err(error) = spool.append(payload.as_ref()) {
+                warn!("Failed to spool download body for {}: {error}", self.url);
+                self.download_spool = None;
+            } else if spool.progress_due() &&
+                let Some(document) = self.document.as_ref().map(|document| document.root())
+            {
+                document.window().send_to_constellation(
+                    ScriptToConstellationMessage::DownloadProgress {
+                        webview_id: self.webview_id,
+                        pipeline_id: self.pipeline_id,
+                        url: self.url.clone(),
+                        received: spool.written(),
+                        total: self.navigation_params.content_length,
+                    },
+                );
+            }
+        }
         if self.is_synthesized_document {
             return;
         }
@@ -1698,6 +1747,25 @@ impl ParserContext {
         status: Result<(), NetworkError>,
         timing: ResourceFetchTiming,
     ) {
+        // Feather: finish a spooled navigation download before the
+        // synthesized-document early return below. When the body was smaller
+        // than the sniffing buffer, detection only happens inside
+        // `load_document` later in this function — a second finalize call
+        // after it covers that case.
+        if let Some(document) = self.document.as_ref().map(|document| document.root()) &&
+            self.download_spool.is_some()
+        {
+            crate::dom::download::send_download_finished(
+                document.window().as_global_scope(),
+                self.webview_id,
+                self.pipeline_id,
+                self.url.clone(),
+                self.download_spool.take(),
+                &status,
+                None,
+            );
+        }
+
         let parser = self.parser.as_ref().map(|parser| parser.root());
         if parser.as_ref().is_some_and(|parser| parser.aborted.get()) ||
             self.is_synthesized_document
@@ -1719,6 +1787,19 @@ impl ParserContext {
         // the end of the resource is reached.
         if !self.has_loaded_document {
             self.load_document(cx, parser.as_deref(), &document);
+            // Feather: a short body (< sniffing buffer) only triggers the
+            // download detection inside `load_document` — finish its spool.
+            if self.download_spool.is_some() {
+                crate::dom::download::send_download_finished(
+                    document.window().as_global_scope(),
+                    self.webview_id,
+                    self.pipeline_id,
+                    self.url.clone(),
+                    self.download_spool.take(),
+                    &status,
+                    None,
+                );
+            }
         }
 
         let mut realm = enter_auto_realm(cx, &*document);

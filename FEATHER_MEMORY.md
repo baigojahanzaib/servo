@@ -414,13 +414,6 @@ PIPELINE (all on feather-engine):
   url, mime, content_disposition)` — the new delegate hook embedders
   implement (default no-op).
 
-WHAT'S STILL MISSING vs a full browser download stack (for the next
-lane): no multipart/range resume, no download *initiated* by JS
-`a[download]` clicks or blob: URLs (only document navigations are
-detected), no save-As dialog prompt, and the engine still fetches the
-body once for the (aborted) navigation before the embedder re-fetches it
-— a shared net-cache consumer would avoid the double fetch.
-
 ## Per-nav retention: GC triggers don't reclaim it (2026-11-24)
 
 Question: after the reflector-root + IO-teardown fixes release JS roots at
@@ -453,3 +446,42 @@ prefs (already in featherprefs) and Rust-side release-at-teardown work
 `Window::clear_js_runtime`'s `cx.no_gc()` scope is suppressed — earlier
 "eager GC" experiments measured nothing; the correct deferred point is the
 next event-loop turn.
+
+## 1g. Downloads round 2 — body handoff + a[download]/blob — SHIPPED
+
+The double-fetch and the markup-initiated gaps from §1f are closed.
+
+- `script/dom/download.rs` (new): `DownloadSpool` streams a response body
+  to `temp_dir()/servo-download-<pid>-<nanos>.part` as chunks arrive
+  (bounded memory; the file is deleted on drop unless `finish()` hands
+  the path out). `send_download_finished` and
+  `AnchorDownloadFetchContext` (a `FetchResponseListener`) live here.
+- Nav downloads: `load_document` creates a spool when it detects a
+  download, `process_response_chunk` appends BEFORE the synthesized-page
+  early return, and `process_response_eof` finalizes at the top AND after
+  the deferred `load_document` call (the <1445-byte sniffing-buffer case).
+  `NavigationParams` gained `content_length` (parsed from headers) for
+  progress totals. Result: the embedder gets the body the navigation
+  already fetched — no second fetch, signed URLs and POST results work.
+- `a[download]`: `follow_hyperlink` (links/relations.rs) checks the
+  `download` attribute before navigation and starts a
+  `create_a_potential_cors_request_with_claim` fetch with
+  `AnchorDownloadFetchContext` — `Destination::None`,
+  `ensure_blob_referenced_by_url_is_kept_alive` claims the blob, so
+  `blob:` and `data:` URLs download through the same path. The
+  `download` attribute value is sent as `filename_hint`.
+- New message flow: `DownloadRequested` gained `filename_hint` +
+  `content_length`; added `DownloadProgress {received, total}` (≥1MiB
+  granularity) and `DownloadFinished {body_path, error}` — body_path
+  ownership transfers to the embedder (same-process path). All three
+  forward through constellation to `WebViewDelegate::
+  notify_download_progress` / `notify_download_finished` (default no-ops).
+- Verified end-to-end in feather-shell: attachment + octet-stream navs,
+  a[download] with markup filename winning, blob: and data: downloads,
+  50MB throttled progress, cancel-then-finish cleans the temp file,
+  collision naming.
+
+STILL MISSING: no engine-side cancel (embedder marks cancelled and
+deletes the delivered temp file — the fetch itself runs to EOF; a real
+cancel needs a fetch-abort message into net), no multipart/range resume,
+no save-As prompt.

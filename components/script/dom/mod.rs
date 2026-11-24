@@ -240,6 +240,8 @@ pub(crate) use self::credentialmanagement::*;
 pub(crate) mod css;
 pub(crate) use self::css::*;
 pub(crate) mod datatransfer;
+
+pub(crate) mod download;
 pub(crate) use self::datatransfer::*;
 #[cfg(feature = "devtools")]
 pub(crate) mod debugger;

@@ -7,12 +7,13 @@
 use html5ever::local_name;
 use js::context::JSContext;
 use malloc_size_of::malloc_size_of_is_0;
-use net_traits::request::Referrer;
+use net_traits::request::{Destination, Referrer};
 use servo_constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use style::str::HTML_SPACE_CHARACTERS;
 
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::str::DOMString;
+use crate::dom::download::AnchorDownloadFetchContext;
 use crate::dom::element::referrer_policy_for_element;
 use crate::dom::html::htmlanchorelement::HTMLAnchorElement;
 use crate::dom::html::htmlareaelement::HTMLAreaElement;
@@ -21,7 +22,9 @@ use crate::dom::html::htmllinkelement::HTMLLinkElement;
 use crate::dom::node::NodeTraits;
 use crate::dom::types::Element;
 use crate::dom::window::windowproxy::WindowOpenType;
+use crate::fetch::fetch::{RequestWithGlobalScope, create_a_potential_cors_request_with_claim};
 use crate::navigation::navigate;
+use crate::url::ensure_blob_referenced_by_url_is_kept_alive;
 
 bitflags::bitflags! {
     /// Describes the different relations that can be specified on elements using the `rel`
@@ -433,6 +436,44 @@ pub(crate) fn follow_hyperlink(
     //         choosing a navigable given targetAttributeValue, subject's node navigable, and
     //         noopener.
     let window = document.window();
+
+    // Feather: <a download> / <area download> — download the hyperlink
+    // instead of navigating to it.
+    // <https://html.spec.whatwg.org/multipage/#downloading-hyperlinks>
+    if (subject.is::<HTMLAreaElement>() || subject.is::<HTMLAnchorElement>()) &&
+        subject.has_attribute(&local_name!("download"))
+    {
+        let href = subject
+            .get_attribute_string_value(&local_name!("href"))
+            .unwrap_or_default();
+        if let Ok(url) = document.encoding_parse_a_url(&href) {
+            let global = window.as_global_scope();
+            let filename_hint = subject
+                .get_attribute_string_value(&local_name!("download"))
+                .filter(|hint| !hint.is_empty());
+            let url_with_blob_claim =
+                ensure_blob_referenced_by_url_is_kept_alive(&global, url.clone());
+            let request = create_a_potential_cors_request_with_claim(
+                Some(document.webview_id()),
+                url_with_blob_claim,
+                Destination::None,
+                None,
+                None,
+                global.get_referrer(),
+            )
+            .with_global_scope(&global);
+            document.fetch_background(
+                request,
+                AnchorDownloadFetchContext::new(
+                    document.webview_id(),
+                    window.pipeline_id(),
+                    url,
+                    filename_hint,
+                ),
+            );
+        }
+        return;
+    }
 
     let Some(source) = document.browsing_context() else {
         return;

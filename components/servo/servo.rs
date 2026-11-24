@@ -888,6 +888,8 @@ impl ServoInner {
                 servo_url,
                 mime,
                 content_disposition,
+                filename_hint,
+                content_length,
             ) => {
                 if let Some(webview) = self.get_webview_handle(webview_id) {
                     webview.delegate().notify_download_requested(
@@ -895,6 +897,38 @@ impl ServoInner {
                         servo_url.into_url(),
                         mime,
                         content_disposition,
+                        filename_hint,
+                        content_length,
+                    );
+                }
+            },
+            ConstellationToEmbedderMsg::DownloadProgress(
+                webview_id,
+                servo_url,
+                received,
+                total,
+            ) => {
+                if let Some(webview) = self.get_webview_handle(webview_id) {
+                    webview.delegate().notify_download_progress(
+                        webview,
+                        servo_url.into_url(),
+                        received,
+                        total,
+                    );
+                }
+            },
+            ConstellationToEmbedderMsg::DownloadFinished(
+                webview_id,
+                servo_url,
+                body_path,
+                error,
+            ) => {
+                if let Some(webview) = self.get_webview_handle(webview_id) {
+                    webview.delegate().notify_download_finished(
+                        webview,
+                        servo_url.into_url(),
+                        body_path,
+                        error,
                     );
                 }
             },

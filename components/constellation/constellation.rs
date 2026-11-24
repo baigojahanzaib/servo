@@ -1822,6 +1822,8 @@ where
                 url,
                 mime,
                 content_disposition,
+                filename_hint,
+                content_length,
                 ..
             } => {
                 let _ = self.constellation_to_embedder_proxy.send(
@@ -1830,6 +1832,34 @@ where
                         url,
                         mime,
                         content_disposition,
+                        filename_hint,
+                        content_length,
+                    ),
+                );
+            },
+            ScriptToConstellationMessage::DownloadProgress {
+                webview_id,
+                url,
+                received,
+                total,
+                ..
+            } => {
+                let _ = self.constellation_to_embedder_proxy.send(
+                    ConstellationToEmbedderMsg::DownloadProgress(
+                        webview_id, url, received, total,
+                    ),
+                );
+            },
+            ScriptToConstellationMessage::DownloadFinished {
+                webview_id,
+                url,
+                body_path,
+                error,
+                ..
+            } => {
+                let _ = self.constellation_to_embedder_proxy.send(
+                    ConstellationToEmbedderMsg::DownloadFinished(
+                        webview_id, url, body_path, error,
                     ),
                 );
             },

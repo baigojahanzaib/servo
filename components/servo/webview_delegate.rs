@@ -991,14 +991,41 @@ pub trait WebViewDelegate {
 
     /// A document navigation fetched a resource that should be downloaded
     /// rather than rendered (`Content-Disposition: attachment` or a
-    /// non-displayable content type). `content_disposition` is the raw
-    /// header value when present; `mime` is the response content type.
+    /// non-displayable content type), or an `<a download>` activation started
+    /// a download fetch. `content_disposition` is the raw header value when
+    /// present; `mime` is the response content type; `filename_hint` is a
+    /// filename suggested by markup; `content_length` the declared size.
     fn notify_download_requested(
         &self,
         _webview: WebView,
         _url: Url,
         _mime: String,
         _content_disposition: Option<String>,
+        _filename_hint: Option<String>,
+        _content_length: Option<u64>,
+    ) {
+    }
+
+    /// Progress of a download: `received` bytes so far of `total` expected
+    /// (when known).
+    fn notify_download_progress(
+        &self,
+        _webview: WebView,
+        _url: Url,
+        _received: u64,
+        _total: Option<u64>,
+    ) {
+    }
+
+    /// A download completed: `body_path` is a temp file holding the whole
+    /// response body, whose ownership transfers to the embedder (move or
+    /// delete it). `error` is set instead when the download failed.
+    fn notify_download_finished(
+        &self,
+        _webview: WebView,
+        _url: Url,
+        _body_path: Option<std::path::PathBuf>,
+        _error: Option<String>,
     ) {
     }
     /// Whether or not to allow a [`WebView`]  to unload a `Document` in its main frame or one
