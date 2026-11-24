@@ -156,6 +156,7 @@ servoshell PID RSS in MB, macOS arm64 16GB host:
 | stock + feather env (js_mem 192/50/300 + jemalloc 5s decay + bg thread) | 415→3482 | slower monotone |
 | engine + feather env (same) | 411→5213, 5598 (2 runs) | monotone, ~1.5× stock |
 | engine + feather env, no `js_mem_max` cap | 411→5718 | monotone — cap ruled out |
+| engine + `JS_GC` every 8th teardown (tested, not pushed) | 411→4364 | sawtooth-ish but ~25% over stock; wedged at nav8 in 1 of 2 runs |
 
 Verdict (macOS): every lever that forces reclaim — eager GC on teardown,
 zeal GC, allocator decay — makes patched *worse* than stock, and under
@@ -168,6 +169,10 @@ eager GC is the part that hurts. Windows measured the same direction
 (patched ~2.5× stock under natural GC).
 
 `js_mem_max=192` is NOT the cause: patched+feather-env without the cap
-ends at 5718 (vs 5213/5598 with it). GC-on-teardown, zeal, and the cap
-are all ruled out — on macOS the revival retains ~1.5× stock RSS under
-nav churn however you press it.
+ends at 5718 (vs 5213/5598 with it). Throttled GC (every 8th teardown)
+lands at 4364 — better than eager but still ~25% over stock AND it
+wedged at the first GC'd exit in one of two runs. GC-on-teardown at any
+cadence, zeal, and the cap are all ruled out — on macOS the revival
+retains ~1.5× stock RSS under nav churn however you press it. The
+revival stays anyway: releasing roots is correct, and under natural GC
+it ended below stock (2953 vs 3355).

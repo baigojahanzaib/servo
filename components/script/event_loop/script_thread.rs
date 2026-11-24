@@ -124,7 +124,7 @@ use url::Position;
 #[cfg(feature = "webgpu")]
 use webgpu_traits::{WebGPUDevice, WebGPUMsg};
 
-use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentVisibilityState;
+use crate::dom::bindings::codegen::Bindings::DocumentBinding::{DocumentMethods, DocumentVisibilityState};
 use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::conversions::{
