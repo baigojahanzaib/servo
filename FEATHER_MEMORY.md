@@ -1458,3 +1458,11 @@ real CPU, not vsync blocking. Anim achieves only ~19 of 30 target fps — main t
 - Symptom: post-timeout crawl rows garbage → see §1y (crash-fallout ordering; first error row is the suspect, the rest are fallout).
 
 **Platform caveat**: this verdict is Linux-only. If the wedge reproduces on Windows/macOS, it is platform-specific — the Linux exoneration does not transfer, but the repro sequence above (30s timeout + post-timeout nav + current-url verification) is the exact test to run there.
+
+## Metal present path (stage 1 landed, feather PR #120)
+
+Symptom: entire wgpu/Metal window contents vertically flipped on macOS → check: surfman WindowRenderingContext layer attachment (CONFIRMED cause — NSOpenGL attachment installs a bottom-up-coordinate layer on the window; any CAMetalLayer composited inside inherits the flip; fix: create NO GL window machinery in metal mode), egui.wgsl vertex transform (ruled out — math correct by inspection), machine/wgpu-level presentation (ruled out — bare-wgpu fullscreen triangle rendered correct orientation).
+
+Symptom: wgpu frame wall-time high (~14ms) but CPU low → check: surface.get_current_texture blocking (CONFIRMED — 13.7ms of the 14.3ms guipaint wall is vsync FIFO backpressure, CPU-free; the frame lands exactly on one 60Hz vsync period meaning the pipeline is vsync-paced not CPU-bound; real GPU present work ~1ms/frame: texupload=0.28 tess=0.03 updbufs=0.11 renderpass=0.1 submit+present=0.46). Do NOT read wall-time frame totals as cost in a vsync-throttled pipeline — use CPU%.
+
+Measured outcome (anim.html benchmark): GL path shell present 21-27ms/frame CPU → Metal ~1ms/frame; whole-process CPU 77-97% → ~24%. Passes the <=4ms success gate of docs/metal-present-design.md. egui-wgpu 0.34.3 + wgpu 29 is a viable present stack for egui 0.34.3 shells on macOS arm64.
