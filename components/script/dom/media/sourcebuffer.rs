@@ -196,6 +196,17 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // with updatestart/update/updateend — real player JS loops on these.
         self.updating.set(true);
         let timecodes = crate::dom::media::ebml::scan_cluster_timecodes(&bytes);
+        // fmp4 path: webm scan finds nothing in mp4 — fall back to tfdt scanning
+        // so buffered indexing works for twitch/vimeo-class mp4 appends.
+        let mut fmp4_range = None;
+        if timecodes.is_empty() {
+            let ranges = crate::dom::media::ebml::scan_fmp4_timecodes(&bytes, &self.init_cache.borrow());
+            fmp4_range = ranges.first().copied();
+        }
+        if let Some((fs, fe)) = fmp4_range {
+            let mut ranges = self.buffered.borrow_mut();
+            let _ = ranges.add(fs, fe);
+        }
         if let (Some(first), Some(last)) = (timecodes.first(), timecodes.last()) {
             // Segments are appended in presentation order by real players;
             // extend the trailing range or start a new one. Estimating the

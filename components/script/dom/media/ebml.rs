@@ -71,3 +71,61 @@ fn read_vint_size(data: &[u8]) -> (u64, usize) {
     let (v, l) = read_vint(data);
     (v as u64, l)
 }
+
+
+/// Scan an fmp4 bytestream for per-moof decode-time spans: returns (start,end)
+/// pairs in seconds using the track timescale parsed from the init segment's
+/// mdhd box. `init` is the cached init segment (may be empty — then 90000 is
+/// assumed, the most common timescale). Approximation: each moof contributes
+/// its tfdt start; the end of the last is estimated by mirroring the average
+/// inter-moof spacing, matching the webm scanner's tail-span heuristic.
+pub(crate) fn scan_fmp4_timecodes(data: &[u8], init: &[u8]) -> Vec<(f64, f64)> {
+    let timescale = mdhd_timescale(init).unwrap_or(90000) as f64;
+    let mut starts = Vec::new();
+    let mut pos = 0usize;
+    while pos + 8 <= data.len() {
+        if &data[pos + 4..pos + 8] == b"tfdt" {
+            let ver = data[pos + 8];
+            let val = if ver == 1 {
+                if pos + 20 > data.len() { break; }
+                u64::from_be_bytes(data[pos + 12..pos + 20].try_into().unwrap())
+            } else {
+                if pos + 16 > data.len() { break; }
+                u32::from_be_bytes(data[pos + 12..pos + 16].try_into().unwrap()) as u64
+            };
+            starts.push(val as f64 / timescale);
+        }
+        pos += 1;
+    }
+    if starts.is_empty() {
+        return Vec::new();
+    }
+    let first = *starts.first().unwrap();
+    let last = *starts.last().unwrap();
+    let span = if starts.len() > 1 {
+        (last - first) / (starts.len() - 1) as f64
+    } else {
+        1.0
+    };
+    vec![(first, last + span)]
+}
+
+/// Timescale from the mdhd box of an fmp4 init segment (version 0: u32 at
+/// offset +20 after box type; version 1: u32 at +28).
+fn mdhd_timescale(init: &[u8]) -> Option<u32> {
+    let mut pos = 0usize;
+    while pos + 24 <= init.len() {
+        if &init[pos + 4..pos + 8] == b"mdhd" {
+            let ver = init[pos + 8];
+            let off = if ver == 1 { pos + 28 } else { pos + 20 };
+            if off + 4 <= init.len() {
+                let ts = u32::from_be_bytes(init[off..off + 4].try_into().unwrap());
+                if ts > 0 {
+                    return Some(ts);
+                }
+            }
+        }
+        pos += 1;
+    }
+    None
+}
