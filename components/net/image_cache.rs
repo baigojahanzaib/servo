@@ -265,7 +265,7 @@ struct CompletedLoad {
 impl CompletedLoad {
     fn new(image_response: ImageResponse, id: PendingImageId) -> CompletedLoad {
         let image_bytes = match &image_response {
-            ImageResponse::Loaded(Image::Raster(image), _) => image.bytes.len(),
+            ImageResponse::Loaded(Image::Raster(image), _) => image.resident_decoded_len(),
             _ => 0,
         };
         CompletedLoad {
