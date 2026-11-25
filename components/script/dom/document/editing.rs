@@ -348,24 +348,42 @@ impl Document {
             // Step 1.1 Clear the clipboard.
             self.send_to_embedder(EmbedderMsg::ClearClipboard(self.webview_id()));
             // Step 1.2
-            for item in drag_data_store.iter_item_list() {
-                match item {
-                    Kind::Text { data, .. } => {
-                        // Step 1.2.1.1 Ensure encoding is correct per OS and locale conventions
-                        // Step 1.2.1.2 Normalize line endings according to platform conventions
-                        // Step 1.2.1.3
-                        self.send_to_embedder(EmbedderMsg::SetClipboardText(
-                            self.webview_id(),
-                            data.to_string(),
-                        ));
-                    },
-                    Kind::File { .. } => {
-                        // Step 1.2.2 If data is of a type listed in the mandatory data types list, then
-                        // Step 1.2.2.1 Place part on clipboard with the appropriate OS clipboard format description
-                        // Step 1.2.3 Else this is left to the implementation
-                    },
+            //
+            // Pages commonly write several formats for one copy operation
+            // (e.g. text/plain plus application-internal payloads). Servo's
+            // embedder clipboard is a single plain-text store, so placing
+            // every text item on it in turn means the last write wins and
+            // the user's visible text is clobbered by internal data. Write
+            // only the text/plain representation; everything else requires
+            // multi-format clipboard support at the embedder layer.
+            let plain_text = drag_data_store.iter_item_list().find_map(|item| {
+                if let Kind::Text { data, type_ } = item {
+                    if type_.eq_ignore_ascii_case("text/plain") {
+                        return Some(data.to_string());
+                    }
                 }
+                None
+            });
+            let fallback = || {
+                drag_data_store.iter_item_list().find_map(|item| {
+                    if let Kind::Text { data, .. } = item {
+                        Some(data.to_string())
+                    } else {
+                        None
+                    }
+                })
+            };
+            if let Some(text) = plain_text.or_else(fallback) {
+                // Step 1.2.1.1 Ensure encoding is correct per OS and locale conventions
+                // Step 1.2.1.2 Normalize line endings according to platform conventions
+                // Step 1.2.1.3
+                self.send_to_embedder(EmbedderMsg::SetClipboardText(self.webview_id(), text));
             }
+            // Step 1.2.2 File items: if data is of a type listed in the mandatory
+            // data types list, place part on clipboard with the appropriate OS
+            // clipboard format description. Multi-format/file clipboard support
+            // is not yet implemented at the embedder layer (step 1.2.3 leaves
+            // this to the implementation).
         } else {
             // Step 2.1
             if drag_data_store.clear_was_called {
