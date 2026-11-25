@@ -1377,3 +1377,15 @@ Residual genuine fails, identical in stock → upstream class, not feather bugs:
 - Symptom: servoshell process vanishes mid-crawl (webdriver port goes connection-refused, rows flip to instant-error at 0ms) → check: structuredclone.rs SameProcess scope (confirmed cause historically — reverted; the UAF mechanism is documented in §1u/line 1276), any future re-implementation of shared-memory cloning that copies serialized bytes out of SM ownership.
 - crawl.py now exits for restart on nav_error/driver_error too, not just timeout (`--stop-on-timeout` semantics widened); xrun.sh implements the 3-strikes consistent-failure attribution loop.
 - Timeout-bisect verdict from §1x stands: arena purge (7d02b70553b), download spool (92080fd7), hidden-doc GC (826f3a5) all ruled out — post-fix parity with stock on every repro site.
+### cv ordering bug (fixed in cv-wip c07fe8b859a) — symptom-index entry
+
+Symptom: one-shot dynamic `content-visibility` mutation never repaints (element stays
+invisible/visible forever despite correct computed style readback), while scroll-driven
+relevance changes work fine. → check: determination-pass placement relative to style
+recalc in `run_the_resize_observer_steps` (must be INSIDE the loop after
+`reflow_for_non_flushing_update_the_rendering_queries`, never before the loop — pre-loop
+reads stale styles and nothing schedules the correcting frame afterward). This ordering
+constraint is why the spec puts determination after step 16.2.1. Generalized lesson for
+any rendering-update hook in servo: style/mutation state read before the loop's reflow
+is one frame stale; single-shot mutations never self-correct because rendering updates
+stop once everything settles.
