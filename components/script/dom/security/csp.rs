@@ -203,6 +203,16 @@ impl CspReporting for Option<CspList> {
             // Same-origin parents can go via their own script-thread (fast-path)
             if let Some(container_element) = window_proxy.frame_element() {
                 let container_document = container_element.owner_document();
+                // Opaque origins (sandboxed/srcdoc frames, universal in ad-tech)
+                // serialize as "null", which is not a parseable URL. The spec's
+                // step 6.2 assumes the parse cannot fail; browsers effectively
+                // treat such frames as transparent for the ancestor chain (the
+                // opaque frame is itself a security boundary that was checked
+                // when it was embedded). Skip them rather than panic.
+                if matches!(container_document.origin().immutable(), servo_url::ImmutableOrigin::Opaque(_)) {
+                    window_proxy = container_document.window().window_proxy();
+                    continue;
+                }
                 let parent_origin = Url::parse(
                     container_document
                         .origin()
@@ -222,6 +232,11 @@ impl CspReporting for Option<CspList> {
                 else {
                     break;
                 };
+                if matches!(parent_origin.immutable(), servo_url::ImmutableOrigin::Opaque(_)) {
+                    // See the opaque-origin comment in the same-origin fast path above.
+                    window_proxy = DomRoot::from_ref(parent_proxy);
+                    continue;
+                }
                 let parent_origin = parent_origin.immutable().ascii_serialization();
                 let parent_origin = Url::parse(&parent_origin)
                     .expect("Must always be able to parse document origin");
