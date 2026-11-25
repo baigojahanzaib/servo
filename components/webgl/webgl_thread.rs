@@ -919,23 +919,26 @@ impl WebGLThread {
                         unsafe {
                             data.gl.bind_framebuffer(gl::FRAMEBUFFER, info.framebuffer_object);
                             let stride = w as usize * 4;
+                            // Single full-frame read: one GL driver round trip.
+                            // (Reading row-by-row costs h driver calls per frame —
+                            // at 600 rows that alone was most of the large-canvas
+                            // CPU regression.) GL framebuffers are bottom-up, so
+                            // flip rows in memory afterwards — a single fast pass.
+                            let mut bottom_up = vec![0u8; stride * h as usize];
+                            data.gl.read_pixels(
+                                0,
+                                0,
+                                w,
+                                h,
+                                gl::BGRA,
+                                gl::UNSIGNED_BYTE,
+                                glow::PixelPackData::Slice(Some(&mut bottom_up)),
+                            );
                             let mut pixels = vec![0u8; stride * h as usize];
-                            // Read row by row, flipping into top-down order:
-                            // GL framebuffers are bottom-up, WebRender expects
-                            // top-down rows for RawData external images.
                             for row in 0..h as usize {
-                                let y = h as usize - 1 - row;
-                                data.gl.read_pixels(
-                                    0,
-                                    y as i32,
-                                    w,
-                                    1,
-                                    gl::BGRA,
-                                    gl::UNSIGNED_BYTE,
-                                    glow::PixelPackData::Slice(Some(
-                                        &mut pixels[row * stride..row * stride + stride],
-                                    )),
-                                );
+                                let src = (h as usize - 1 - row) * stride;
+                                pixels[row * stride..row * stride + stride]
+                                    .copy_from_slice(&bottom_up[src..src + stride]);
                             }
                             self.readback_map.write().insert(
                                 context_id,
