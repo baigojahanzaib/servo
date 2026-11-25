@@ -1389,3 +1389,65 @@ constraint is why the spec puts determination after step 16.2.1. Generalized les
 any rendering-update hook in servo: style/mutation state read before the loop's reflow
 is one frame stale; single-shot mutations never self-correct because rendering updates
 stop once everything settles.
+
+
+## HEURISTIC LAYOUT-SKIPPING EXPERIMENT — design (written before code per coordinator directive, 2026-11-25)
+
+### Mission
+Capture the infinite-scroll memory/CPU prize for sites that will never opt into
+content-visibility (reddit/x-class: measured ZERO cv usage across all major targets).
+Reuse the Stage-2a machinery (construction chokepoint + flip-dirtying + frame-delayed
+relevance); change only the determination criterion. RUNTIME-TOGGLEABLE, off by default.
+
+### Determination criterion candidates (in order of implementation)
+1. **v1 — distance-based**: any element whose border box is entirely beyond viewport+Nx
+   viewport-heights (N~3) AND whose subtree layout cost is significant. Significance proxy:
+   skip only elements above a subtree-size threshold — cheapest available proxy is the
+   element's own border-box area (large containers) — finer proxy (subtree node count)
+   requires DOM walking; the document-side determination pass already walks the DOM so
+   child-count accumulation is affordable there.
+2. **v2 — container-aware**: only skip within scrolling containers that show infinite-scroll
+   structure (very tall scrollable content). Avoids touching bounded pages.
+3. Never-skip list regardless of geometry: elements with resize/intersection observers
+   registered, elements matching anchors, focused subtree, anything with running animations,
+   media elements (video/audio), canvases with JS-written content, elements whose subtree
+   contains a scroll container itself.
+
+### Breakage-risk matrix (what breaks and how we'd know)
+- **getBoundingClientRect/offsetWidth of offscreen elements**: sites measuring offscreen
+  content (e.g. virtualized-list libraries measuring row heights!) get wrong answers.
+  This is THE killer risk — react-window-style libraries measure rows. Mitigation: the
+  measurement itself forces layout of that subtree IF servo layout queries dirty-check —
+  since skipped subtrees don't exist in layout, queries return placeholder/zero — WRONG.
+  Partial mitigation: skip only elements that were NEVER relevant (never measured);
+  once constructed, skip only eviction-style (state preserved). TRACK as experiment metric.
+- **IntersectionObserver**: IO targets must never be skipped (they're relevance-by-observation
+  per cv spec too). Servo IO registration is inspectable — exclude observed elements.
+- **scroll anchoring**: browser-native scroll restoration needs positions — collapsed skipped
+  subtrees shift everything. This is intrinsic breakage — the design accepts geometry shift
+  for never-constructed content (same as content-visibility without contain-intrinsic-size).
+- **find-in-page / anchor navigation**: must force-construct on demand — v1 accepts breakage,
+  logged as known-gap.
+- **print**: N/A (no servo print path).
+- **JS frameworks diffing DOM**: unaffected — DOM is intact, only layout is skipped.
+
+### Measurement plan
+- Primary metric: RSS after standardized deep-scroll on real reddit (25 wheel bursts,
+  the retention-protocol from memory-infinite-scroll.md) — baseline ~+1000MB growth documented;
+  target <+300MB, same protocol.
+- Secondary: CPU during scroll (perf-page methodology), layout-time metrics if accessible.
+- Correctness survey: top-20 canonical sites, flag ON vs OFF — scroll through each, screenshot
+  compare key positions, note any missing content / broken scrollback / infinite-scroll
+  malfunction. Binary per-site verdict + notes.
+- Oscillation check: CV-DEBUG-style logging of skipped-set size variance per frame — flip-flop
+  oscillation (skip→relevant→skip) would show as count instability and CPU churn.
+
+### Toggle mechanism
+Env var FEATHER_HEURISTIC_SKIP=1 (v1) — plumbed like FEATHER_CV_DEBUG. Pref-based toggle is
+the follow-up once the experiment proves out.
+
+### Relationship to cv work
+The cv spec path remains the conformant implementation. The heuristic reuses:
+determination-pass structure, NonReplacedContents::traverse chokepoint (extended with a
+heuristic set), flip-dirtying. The difference: heuristic elements have no spec protection —
+the never-skip list and measurement-forcing are what make it survivable.
