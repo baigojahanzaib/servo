@@ -625,10 +625,7 @@ unsafe extern "C" fn sab_cloned_callback(
     _receiving: bool,
     _closure: *mut ::std::os::raw::c_void,
 ) -> bool {
-    // Notification/veto hook for SharedArrayBuffer cloning. Returning false
-    // vetoes the clone; servo permits it (the shared memory machinery lives
-    // entirely inside the engine and servo's agents are in-process threads).
-    true
+    false
 }
 
 static STRUCTURED_CLONE_CALLBACKS: JSStructuredCloneCallbacks = JSStructuredCloneCallbacks {
@@ -643,24 +640,10 @@ static STRUCTURED_CLONE_CALLBACKS: JSStructuredCloneCallbacks = JSStructuredClon
 };
 
 /// Writes a structured clone. Returns a `DataClone` error if that fails.
-/// Writes a structured clone with intra-process semantics: the serialized
-/// form may embed raw-memory references (shared array buffers), valid
-/// because servo's agents are in-process threads. Must NOT be used for data
-/// that crosses a process boundary or is persisted — use
-/// [`write_with_scope`] with `DifferentProcess` there.
 pub(crate) fn write(
     cx: &mut JSContext,
     message: HandleValue,
     transfer: Option<CustomAutoRooterGuard<Vec<*mut JSObject>>>,
-) -> Fallible<StructuredSerializedData> {
-    write_with_scope(cx, message, transfer, StructuredCloneScope::SameProcess)
-}
-
-pub(crate) fn write_with_scope(
-    cx: &mut JSContext,
-    message: HandleValue,
-    transfer: Option<CustomAutoRooterGuard<Vec<*mut JSObject>>>,
-    scope: StructuredCloneScope,
 ) -> Fallible<StructuredSerializedData> {
     unsafe {
         rooted!(&in(cx) let mut val = UndefinedValue());
@@ -670,23 +653,20 @@ pub(crate) fn write_with_scope(
         let mut sc_writer = StructuredDataWriter::default();
         let sc_writer_ptr = &mut sc_writer as *mut _;
 
-        let scbuf = JSAutoStructuredCloneBufferWrapper::new(scope, &STRUCTURED_CLONE_CALLBACKS);
+        let scbuf = JSAutoStructuredCloneBufferWrapper::new(
+            StructuredCloneScope::DifferentProcess,
+            &STRUCTURED_CLONE_CALLBACKS,
+        );
         let scdata = &mut ((*scbuf.as_raw_ptr()).data_);
-        // Shared-memory objects may only be serialized when the data stays
-        // intra-process: the serialized form embeds raw-buffer references
-        // rather than byte copies. IndexedDB and anything that may cross a
-        // process boundary must keep DifferentProcess scope with the policy
-        // denied.
-        let intra_process = matches!(scope, StructuredCloneScope::SameProcess);
         let policy = CloneDataPolicy {
-            allowIntraClusterClonableSharedObjects_: intra_process,
-            allowSharedMemoryObjects_: intra_process,
+            allowIntraClusterClonableSharedObjects_: false,
+            allowSharedMemoryObjects_: false,
         };
         let result = JS_WriteStructuredClone(
             cx,
             message,
             scdata,
-            scope,
+            StructuredCloneScope::DifferentProcess,
             &policy,
             &STRUCTURED_CLONE_CALLBACKS,
             sc_writer_ptr as *mut raw::c_void,
@@ -733,22 +713,11 @@ pub(crate) fn write_with_scope(
 
 /// Read structured serialized data, possibly containing transferred objects.
 /// Returns a vec of rooted transfer-received ports, or an error.
-/// Reads a structured clone written by [`write`] (intra-process semantics).
 pub(crate) fn read(
-    cx: &mut JSContext,
-    global: &GlobalScope,
-    data: StructuredSerializedData,
-    rval: MutableHandleValue,
-) -> Fallible<Vec<DomRoot<MessagePort>>> {
-    read_with_scope(cx, global, data, rval, StructuredCloneScope::SameProcess)
-}
-
-pub(crate) fn read_with_scope(
     cx: &mut JSContext,
     global: &GlobalScope,
     mut data: StructuredSerializedData,
     rval: MutableHandleValue,
-    scope: StructuredCloneScope,
 ) -> Fallible<Vec<DomRoot<MessagePort>>> {
     let mut realm = enter_auto_realm(cx, global);
     let cx = &mut realm.current_realm();
@@ -776,7 +745,10 @@ pub(crate) fn read_with_scope(
     };
     let sc_reader_ptr = &mut sc_reader as *mut _;
     unsafe {
-        let scbuf = JSAutoStructuredCloneBufferWrapper::new(scope, &STRUCTURED_CLONE_CALLBACKS);
+        let scbuf = JSAutoStructuredCloneBufferWrapper::new(
+            StructuredCloneScope::DifferentProcess,
+            &STRUCTURED_CLONE_CALLBACKS,
+        );
         let scdata = &mut ((*scbuf.as_raw_ptr()).data_);
 
         WriteBytesToJSStructuredCloneData(
@@ -785,16 +757,15 @@ pub(crate) fn read_with_scope(
             scdata,
         );
 
-        let intra_process = scope == StructuredCloneScope::SameProcess;
         let result = JS_ReadStructuredClone(
             cx,
             scdata,
             JS_STRUCTURED_CLONE_VERSION,
-            scope,
+            StructuredCloneScope::DifferentProcess,
             rval,
             &CloneDataPolicy {
-                allowIntraClusterClonableSharedObjects_: intra_process,
-                allowSharedMemoryObjects_: intra_process,
+                allowIntraClusterClonableSharedObjects_: false,
+                allowSharedMemoryObjects_: false,
             },
             &STRUCTURED_CLONE_CALLBACKS,
             sc_reader_ptr as *mut raw::c_void,

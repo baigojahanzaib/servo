@@ -1269,3 +1269,13 @@ Symptom: feather pays ~7-8ms+ CPU per composite frame; animated content capped b
   buffered (already correct for MSE).
 - TWITCH VERIFIED PLAYING after the tfdt indexing fix (§1v): live video,
   chat, full UI. hls.js append loop was starving on empty buffered.
+## Symptom index — FINAL VERDICT: heap/clone crash culprit confirmed (2026-11-25)
+
+Symptom: silent death on reddit/amazon-class pages, idle, ~60s, feather shell.
+→ CONFIRMED CAUSE: fork commit 5f26d9f7abf 'structured-clone shared memory — SameProcess scope for in-process messaging'. Evidence: pre-SAB engine (4-file revert — structuredclone.rs + idbcursor/idbobjectstore/idbrequest.rs) + feather shell survives 3/3x420s idle reddit vs 4/5 deaths at 60s with the commit (P(chance)≈0.008).
+→ MECHANISM: SameProcess scope lets SM embed raw memory references in the serialized clone stream. Servo's port plumbing copies serialized bytes OUT to a Rust Vec (write: CopyJSStructuredCloneData+set_len in structuredclone.rs), ships the Vec across threads/pipelines/port-transfer queues with arbitrary delay, then reconstitutes a fresh clone buffer on the receiver thread (read_with_scope: WriteBytesToJSStructuredCloneData then JS_ReadStructuredClone). The byte-copy transposition is outside SM's ownership/lifetime machinery — embedded references dangle → UAF-read. Pageheap-full makes it a deterministic AV in BufferList iteration/allocation during deserialization.
+→ WHY DEATHS CLUSTER ~60s: ad-tech iframes spin up post-load; heavy postMessage/port-transfer traffic begins ~50-60s in.
+→ WHY servoshell survives: UNRESOLVED — same engine, same commit — shell interaction affects exposure (pump timing/lifecycle). The engine bug is real regardless; do NOT re-investigate shell differences unless crash reappears post-revert.
+→ FIX DIRECTIONS: (a) revert commit — stability now, loses SAB cloning; (b) correct fix — clone data for in-process traffic must stay inside SM ownership (carry the clone buffer, not byte copies) — nontrivial design, belongs to SAB lane.
+→ CAUTION for future lanes: yesterday's persite disappearance predates this commit — IF a second rarer bug exists it will show post-revert; do not assume.
+→ symptom index negative results (all verified): chrome/favicon/ucm/controlflow/paint-gating/prefs/media/winhit/input/memreport-instrumentation/OOM/webgl-features — NOT causes. measurement-race in memreport (capture signatures B) is a REAL but separate latent issue: concurrent memory measurement of cross-pipeline MessagePort structures can crash — only triggered when create_memory_report is invoked, which production never does.
