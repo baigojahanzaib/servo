@@ -1414,3 +1414,32 @@ isolation but rasterization is NOT the binding cost of a repaint in situ.
 FEATHER_SWWR_NOREAD=1 (paint but skip readback+upload) and FEATHER_SWWR_NOUPLOAD=1 (readback
 but no texture update) env switches in shell/src/app.rs — binary-search cost attribution of
 the present path in a single build.
+
+## Repaint frame attribution — the complete decomposition (2026-11-25, FEATHER_TIMING)
+
+Measured with env-gated wall-time instrumentation in the shell redraw (FEATHER_TIMING=1),
+anim.html 30fps, ms/frame on main thread:
+- GL mode:   paint=6.9  guipaint=10.6  present=11.4  frame-total=29
+- SW-WR mode: paint=0.3 readback=0.3  guipaint=16.4  present=10.2  frame-total=28
+CPU-math check: ~28ms x ~19fps-effective ~= 560ms/s ~= measured 56-62% CPU — wall-times are
+real CPU, not vsync blocking. Anim achieves only ~19 of 30 target fps — main thread saturated.
+
+### Symptom index entries
+- Symptom: repaint CPU high regardless of webrender backend → check: shell present path
+  (CONFIRMED binding cost: egui tessellation+GL draw of chrome/content = 10-16ms plus
+  surfman present() = 10-11ms of every ~28ms frame — 75-95% of repaint cost lives here,
+  NOT in the engine), webrender rasterization (ruled out as binding: swgl takes it to
+  0.3ms with zero total improvement because cost relocates to texture upload),
+  upstream pipeline JS/layout/DL (ruled out for simple anim: 97.6% of samples on main
+  thread; pipeline threads negligible).
+- Symptom: present() costing 10-11ms per frame → check: surfman/NSOpenGL CGLFlushDrawable
+  path (prime suspect — constant across all modes; the macOS GL window-system tax),
+  vsync blocking (ruled out as explanation: CPU math closes without it).
+- Symptom: texture upload cost appearing in guipaint under swgl → mechanism: egui texture
+  upload of the full-frame content image through Apple GL each repaint (~6ms at retina);
+  this is where raster cost RELOCATES if rasterization moves to CPU — any CPU-raster design
+  must count upload as part of its cost.
+- Experiment machinery now in tree: FEATHER_TIMING=1 (per-phase ms/frame log),
+  FEATHER_NOPAINT / FEATHER_SWWR_NOREAD / FEATHER_SWWR_NOUPLOAD (isolation switches —
+  caveat: NOPAINT removes the pipeline throttle so frames run unthrottled; do not interpret
+  its absolute CPU as upstream cost).
