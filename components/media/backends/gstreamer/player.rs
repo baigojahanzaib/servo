@@ -286,9 +286,12 @@ impl PlayerInner {
         }
         if self.stream_type == StreamType::MediaSource {
             // Push-mode MSE pipelines cannot execute gst seeks (no byte-serving
-            // upstream) and a partial seek wedges playback permanently. Swallow
-            // the seek: playback continues uninterrupted. Proper support needs
-            // in-stream flush+re-sequence machinery — see FEATHER_MEMORY §1q.
+            // upstream). Instead: flush downstream and recreate the track appsrcs
+            // so the page's post-seek appends re-sequence the stream in-band —
+            // the harness-validated design in FEATHER_MEMORY §1q/§1t.
+            if let Some(PlayerSource::Mse(ref source)) = self.source {
+                source.seek_reset();
+            }
             return Ok(());
         }
         if let Some(ref metadata) = self.last_metadata &&

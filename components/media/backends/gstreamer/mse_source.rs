@@ -112,6 +112,57 @@ mod imp {
                 let _ = t.appsrc.end_of_stream();
             }
         }
+
+        /// MSE seek support: flush downstream demuxers/decoders, then recreate
+        /// every track's appsrc. A fresh appsrc re-emits stream-start/caps/segment
+        /// naturally in-stream on the first post-seek push — pushing those events
+        /// manually from the application thread wedges the pipeline (FEATHER_MEMORY
+        /// §1q), this design avoids injection entirely. Validated in the isolated
+        /// gst harness: playback resumes cleanly with continuous position.
+        pub fn seek_reset(&self) {
+            for pad in self.obj().src_pads() {
+                let _ = pad.push_event(gstreamer::event::FlushStart::new());
+                let _ = pad.push_event(gstreamer::event::FlushStop::new(true));
+            }
+            let ids: Vec<u64> = self.tracks.lock().unwrap().keys().copied().collect();
+            for id in ids {
+                self.reset_track(id);
+            }
+        }
+
+        /// Recreate one track's appsrc, re-targeting the existing ghost pad so
+        /// downstream pad identity (and decodebin3's stream collection) is stable.
+        fn reset_track(&self, id: u64) {
+            let mut tracks = self.tracks.lock().unwrap();
+            let Some(old) = tracks.remove(&id) else {
+                return;
+            };
+            let obj = self.obj();
+            let ghost_name = format!("src_{id}");
+            let Some(pad) = obj.static_pad(&ghost_name) else {
+                return;
+            };
+            let Ok(ghost) = pad.downcast::<gstreamer::GhostPad>() else {
+                return;
+            };
+            let _ = ghost.set_target(None::<&gstreamer::Pad>);
+            let _ = obj.remove(&old.appsrc);
+            drop(old);
+
+            let appsrc = gstreamer::ElementFactory::make("appsrc")
+                .build()
+                .map(|elem| elem.downcast::<gstreamer_app::AppSrc>().unwrap())
+                .expect("Could not create appsrc element");
+            obj.add(&appsrc).expect("Could not add appsrc to servomse bin");
+            ghost.set_target(appsrc.static_pad("src").as_ref()).unwrap();
+            appsrc.set_caps(None::<&gstreamer::Caps>);
+            appsrc.set_max_bytes(MAX_SRC_QUEUE_SIZE);
+            appsrc.set_block(false);
+            appsrc.set_format(gstreamer::Format::Bytes);
+            appsrc.set_stream_type(gstreamer_app::AppStreamType::Stream);
+            let _ = appsrc.sync_state_with_parent();
+            tracks.insert(id, MseTrack { appsrc, eos: false });
+        }
     }
 
     #[glib::object_subclass]
@@ -221,6 +272,12 @@ impl ServoMse {
         data: Vec<u8>,
     ) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
         self.imp().push_buffer(track, total_tracks, data)
+    }
+
+    /// Seek support: flush + recreate all track appsrcs so the next pushes
+    /// re-sequence the stream naturally. See imp::ServoMse::seek_reset.
+    pub fn seek_reset(&self) {
+        self.imp().seek_reset()
     }
 
     pub fn end_of_stream_all(&self) {

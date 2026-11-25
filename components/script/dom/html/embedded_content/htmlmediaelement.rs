@@ -2224,15 +2224,6 @@ impl HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-seek>
     fn seek(&self, time: f64, _approximate_for_speed: bool) {
-        // MSE v1: seeking in push-mode MSE pipelines is unsupported (the gst seek
-        // cannot execute and the half-completed element-level seek wedges playback
-        // position reporting permanently — see FEATHER_MEMORY §1q). Swallow the
-        // seek entirely so playback continues uninterrupted; proper support is a
-        // post-stage-6 item requiring in-stream flush+re-sequence machinery.
-        if self.media_source.borrow().is_some() {
-            return;
-        }
-
         // Step 1. Set the media element's show poster flag to false.
         self.show_poster.set(false);
 
@@ -2310,6 +2301,16 @@ impl HTMLMediaElement {
         // playback position must also be after the current playback position.
         // TODO: Note that servo-media with gstreamer does not support inaccurate seeking for now.
 
+        // MSE: the flush+reset in the player genuinely discards all pipelined
+        // media, so the SourceBuffer buffered indexes must be cleared and the
+        // next append must re-feed the init segment (deviation from spec, which
+        // keeps buffered across seeks — impossible in a push pipeline). This has
+        // to happen before the seeking event so handlers observe empty ranges.
+        let is_mse = self.media_source.borrow().is_some();
+        if let Some(ref ms) = *self.media_source.borrow() {
+            ms.notify_seek();
+        }
+
         // Step 10. Queue a media element task given the media element to fire an event named
         // seeking at the element.
         self.queue_media_element_task_to_fire_event(atom!("seeking"));
@@ -2321,6 +2322,29 @@ impl HTMLMediaElement {
             let Err(error) = player.lock().unwrap().seek(time)
         {
             error!("Could not seek player: {error:?}");
+        }
+
+        if is_mse {
+            // The spec's step 12 waits until data for the new position is
+            // available and decoded. In MSE that data arrives only when the
+            // page chooses to append it, so completion can't be data-driven;
+            // queue seek completion directly. Apps append on the seeking event
+            // and playback resumes as the re-fed stream reaches the demuxer.
+            // The position-driven completion path (seek_end via stable state)
+            // still exists underneath and is a harmless no-op once seeking is
+            // already false.
+            let this = Trusted::new(self);
+            let generation_id = self.generation_id.get();
+            self.owner_global()
+                .task_manager()
+                .media_element_task_source()
+                .queue(task!(mse_seek_complete: move |cx| {
+                    let this = this.root();
+                    if generation_id != this.generation_id.get() {
+                        return;
+                    }
+                    this.seek_end(cx);
+                }));
         }
 
         self.current_seek_position.set(time);

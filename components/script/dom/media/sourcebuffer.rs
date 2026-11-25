@@ -33,6 +33,12 @@ pub(crate) struct SourceBuffer {
     mode: Cell<AppendMode>,
     timestamp_offset: Cell<f64>,
     buffered: script_bindings::cell::DomRefCell<TimeRangesContainer>,
+    /// Cached init segment (bytes before the first media cluster/moof), needed
+    /// to re-sequence the demuxer after a seek reset — post-seek appends from
+    /// real players are media-only and a fresh demuxer can't decode them.
+    init_cache: script_bindings::cell::DomRefCell<Vec<u8>>,
+    /// Set by seek: the next append must re-feed the cached init first.
+    needs_init_refeed: std::cell::Cell<bool>,
     track_id: Cell<u64>,
     media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
 }
@@ -46,6 +52,8 @@ impl SourceBuffer {
             mode: Cell::new(AppendMode::Segments),
             timestamp_offset: Cell::new(0.0),
             buffered: script_bindings::cell::DomRefCell::new(TimeRangesContainer::default()),
+            init_cache: script_bindings::cell::DomRefCell::new(Vec::new()),
+            needs_init_refeed: std::cell::Cell::new(false),
             media_source: script_bindings::cell::DomRefCell::new(None),
             track_id: Cell::new(0),
         }
@@ -63,6 +71,14 @@ impl SourceBuffer {
             global,
             None,
         )
+    }
+
+    /// MSE seek support: the pipeline's flush+reset genuinely drops all
+    /// pipelined media, so the buffered index is cleared (deviation from spec,
+    /// which retains ranges across seeks) and the next append re-feeds init.
+    pub(crate) fn handle_seek(&self) {
+        *self.buffered.borrow_mut() = TimeRangesContainer::default();
+        self.needs_init_refeed.set(true);
     }
 
     pub(crate) fn buffered_ranges(&self) -> Vec<(f64, f64)> {
@@ -154,7 +170,27 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         if self.updating.get() {
             return Err(Error::InvalidState(None));
         }
-        let bytes = crate::dom::bindings::buffer_source::get_buffer_source_copy((&data).into());
+        let mut bytes = crate::dom::bindings::buffer_source::get_buffer_source_copy((&data).into());
+        // Init segment caching: detect webm (EBML magic 0x1A45DFA3, init ends at
+        // the first Cluster 0x1F43B675) or fmp4 (init ends at the first moof box).
+        // Needed because post-seek appends are media-only and the reset demuxer
+        // cannot decode them without re-seeing the stream headers.
+        if self.init_cache.borrow().is_empty() {
+            let init_len = webm_init_len(&bytes).or_else(|| fmp4_init_len(&bytes));
+            if let Some(len) = init_len && len > 0 {
+                *self.init_cache.borrow_mut() = bytes[..len].to_vec();
+            }
+        }
+        if self.needs_init_refeed.get() {
+            self.needs_init_refeed.set(false);
+            let cache = self.init_cache.borrow();
+            let already_has_init = webm_init_len(&bytes).is_some() || fmp4_init_len(&bytes).is_some();
+            if !cache.is_empty() && !already_has_init {
+                let mut joined = cache.clone();
+                joined.extend_from_slice(&bytes);
+                bytes = joined;
+            }
+        }
         // <https://w3c.github.io/media-source/#dom-sourcebuffer-appendbuffer>
         // updating flips synchronously, the append completes in a queued task
         // with updatestart/update/updateend — real player JS loops on these.
@@ -244,4 +280,43 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
     event_handler!(updateend, GetOnupdateend, SetOnupdateend);
     event_handler!(error, GetOnerror, SetOnerror);
     event_handler!(abort, GetOnabort, SetOnabort);
+}
+
+/// Length of the webm init portion (everything before the first Cluster), or
+/// None if the buffer doesn't start a fresh webm stream.
+fn webm_init_len(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 4 || bytes[..4] != [0x1A, 0x45, 0xDF, 0xA3] {
+        return None;
+    }
+    let mut pos = 4;
+    while pos + 4 <= bytes.len() {
+        if bytes[pos] == 0x1F && bytes[pos + 1] == 0x43 && bytes[pos + 2] == 0xB6 &&
+            bytes[pos + 3] == 0x75
+        {
+            return Some(pos);
+        }
+        pos += 1;
+    }
+    // No cluster yet — the whole buffer is init.
+    Some(bytes.len())
+}
+
+/// Length of the fmp4 init portion (everything before the first moof box), or
+/// None if the buffer doesn't carry fmp4 init (no ftyp/moov in head).
+fn fmp4_init_len(bytes: &[u8]) -> Option<usize> {
+    if bytes.len() < 8 {
+        return None;
+    }
+    let is_mp4ish = &bytes[4..8] == b"ftyp" || &bytes[4..8] == b"moov" || &bytes[4..8] == b"styp";
+    if !is_mp4ish {
+        return None;
+    }
+    let mut pos = 0;
+    while pos + 8 <= bytes.len() {
+        if &bytes[pos + 4..pos + 8] == b"moof" {
+            return Some(pos);
+        }
+        pos += 1;
+    }
+    Some(bytes.len())
 }

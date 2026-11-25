@@ -104,6 +104,14 @@ impl MediaSource {
     }
 
     /// Merged buffered ranges across all source buffers (union).
+    /// Seek fan-out: every SourceBuffer clears its buffered index and arms
+    /// init re-feed. See SourceBuffer::handle_seek.
+    pub(crate) fn notify_seek(&self) {
+        self.source_buffers.for_each_buffer(|sb| {
+            sb.handle_seek();
+        });
+    }
+
     pub(crate) fn buffered_value(&self) -> crate::dom::timeranges::TimeRangesContainer {
         let mut merged = crate::dom::timeranges::TimeRangesContainer::default();
         self.source_buffers.for_each_buffer(|sb| {
