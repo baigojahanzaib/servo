@@ -1251,3 +1251,21 @@ Symptom: feather pays ~7-8ms+ CPU per composite frame; animated content capped b
 → KEY UNKNOWN: whether multithreaded SIMD swgl rasterization is actually cheaper than Apple's GL-shim draw processing for servo workloads. Firefox public data: SW-WR competitive with GPU-WR on many pages, sometimes faster on weak GPUs — but apple-silicon CPU is fast, so plausibly a large net win vs 78%-CPU-draw-submission status quo. UNKNOWN until measured.
 → CHEAPEST VALIDATION EXPERIMENT (design): stand-alone harness linking swgl + gleam shim rendering representative display lists (solid-color fullscreen rects, text runs, rounded corners) comparing CPU-cost-per-frame vs the measured 7.76ms+ webrender-through-Apple-GL baseline. Est. 1-2 days just to validate, before any servo integration.
 → ESTIMATE if validated: gleam-swgl bridge + painter rewiring + feather present path = days-to-week, comparable uncertainty to ANGLE but all-Rust (no chromium build surgery). Does NOT benefit webgl/canvas GL content — only compositing/rasterization.
+||||||| parent of 8b2c6cff0e6 (docs: timestampOffset + live duration verification (§1w))
+
+## §1w — timestampOffset + live duration (2026-11-25)
+
+- timestampOffset applied via in-place tfdt rewriting at append time
+  (sourcebuffer appendBuffer → rewrite_tfdt_offsets). WebM offsets
+  unimplemented — fmp4-only need so far. Negative shifts saturate at 0.
+- ms.duration=Infinity propagation fixed (was falling through to derived
+  duration — is_finite() rejected Infinity; live streams need it).
+- Symptom: segments land at wrong timeline positions / overlapping appends
+  after transmux → check rewrite_tfdt_offsets (owns shifting), the moof-
+  presence guard in appendBuffer (must fire on concatenated init+media too),
+  timescale parsing (mdhd — wrong timescale = wrong shift magnitude).
+- Symptom: live stream ends prematurely / wrong duration → check
+  duration_value Infinity propagation (mediasource.rs), seekable mirroring
+  buffered (already correct for MSE).
+- TWITCH VERIFIED PLAYING after the tfdt indexing fix (§1v): live video,
+  chat, full UI. hls.js append loop was starving on empty buffered.
