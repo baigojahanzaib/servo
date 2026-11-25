@@ -3657,11 +3657,20 @@ impl Document {
             Au::from_f32_px(viewport_size.height * 0.5),
             Au::from_f32_px(viewport_size.width * 0.5),
         );
-        let viewport_rect: euclid::Rect<Au, CSSPixel> = euclid::Rect::from_size(
+        let base_viewport_rect: euclid::Rect<Au, CSSPixel> = euclid::Rect::from_size(
             euclid::Size2D::new(
                 Au::from_f32_px(viewport_size.width),
                 Au::from_f32_px(viewport_size.height),
             ),
+        );
+        // Relevance must be measured in document space: element border boxes are
+        // document-space, so the viewport rect is translated by the live scroll offset.
+        // Without this, determination is scroll-insensitive and everything collapses.
+        let scroll = window.scroll_offset_query_with_external_scroll_id_no_reflow(
+            window.pipeline_id().root_scroll_id(),
+        );
+        let viewport_rect: euclid::Rect<Au, CSSPixel> = base_viewport_rect.translate(
+            euclid::Vector2D::new(Au::from_f32_px(scroll.x), Au::from_f32_px(scroll.y)),
         )
         .outer_rect(margin);
 

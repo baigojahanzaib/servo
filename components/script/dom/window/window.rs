@@ -3262,7 +3262,7 @@ impl Window {
         self.scroll_offset_query_with_external_scroll_id_no_reflow(external_scroll_id)
     }
 
-    fn scroll_offset_query_with_external_scroll_id_no_reflow(
+    pub(crate) fn scroll_offset_query_with_external_scroll_id_no_reflow(
         &self,
         external_scroll_id: ExternalScrollId,
     ) -> Vector2D<f32, LayoutPixel> {
