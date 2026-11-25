@@ -732,3 +732,15 @@ so this family is an upstream-class fetch-completion/net bug (chunked body strea
 mid-flight, no error ever surfaces), not a feather patch. Fix belongs upstream in the net →
 script fetch handoff; the stall signature is: `blocking_loads` entries whose URLs already show
 `got 200 response` in the net log.
+
+## 1j. WebDriver post-nav hang — root cause + layer-1 fix (2026-11-25)
+
+Whole-actor hang after nav on webex/meraki/cisco-class sites: a long
+page JS task (minutes-long timer callback, heavy NumberToAtom churn)
+starves the single script thread; driver's `wait_for_ipc_response` had
+no timeout so the single dispatcher thread parked forever — even /status
+died. Fix `7d150c23b`: bound every `wait_for_ipc_response*` at session
+script timeout + `IPC_RESPONSE_MARGIN` (30s), expiry → classified
+`timeout` error. Verified on all 7 sites: clean fail-fast + /status
+responsive; 5 sites flipped to ok in the macOS baseline.
+Layer 2 (runaway JS = "slow script" class) is a product decision, deferred.
