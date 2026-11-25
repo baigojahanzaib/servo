@@ -491,6 +491,10 @@ impl DedicatedWorkerGlobalScope {
                 let mut cx = unsafe { runtime.cx() };
                 let cx = &mut cx;
 
+                // Workers are allowed to block in Atomics.wait per spec
+                // (only the window agent is the "main thread" that may not block).
+                unsafe { js::jsapi::JS_SetFutexCanWait(cx.raw_cx()) };
+
                 #[cfg(feature = "devtools")]
                 let debugger_global = DebuggerGlobalScope::new_if_needed(
                     cx,
