@@ -80,7 +80,8 @@ pub use net_traits::CookieSource;
 pub use net_traits::pub_domains::is_reg_domain;
 pub use paint::WebRenderDebugOption;
 pub use paint_api::rendering_context::{
-    OffscreenRenderingContext, RenderingContext, SoftwareRenderingContext, WindowRenderingContext,
+    OffscreenRenderingContext, RenderingContext, SoftwareRenderingContext, SwglRenderingContext,
+    WindowRenderingContext,
 };
 // Expose our profile traits for servoshell, so we can instrument code there, but don't
 // add it as an official API.

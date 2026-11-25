@@ -207,7 +207,8 @@ impl Painter {
 
         // Use same texture upload method as Gecko with ANGLE:
         // https://searchfox.org/mozilla-central/source/gfx/webrender_bindings/src/bindings.rs#1215-1219
-        let upload_method = if webrender_gl.get_string(RENDERER).starts_with("ANGLE") {
+        let is_software_webrender = webrender_gl.get_string(RENDERER).starts_with("Software WebRender");
+        let upload_method = if webrender_gl.get_string(RENDERER).starts_with("ANGLE") || is_software_webrender {
             UploadMethod::Immediate
         } else {
             UploadMethod::PixelBuffer(ONE_TIME_USAGE_HINT)
@@ -252,6 +253,9 @@ impl Painter {
                 allow_texture_swizzling: pref!(gfx_texture_swizzling_enabled),
                 enable_dithering: true,
                 clear_color,
+                // swgl does not implement the depth function this path requires
+                // (verified: assertion in DepthFunc for GL_ALWAYS).
+                clear_caches_with_quads: !is_software_webrender,
                 upload_method,
                 workers,
                 size_of_op: Some(servo_allocator::usable_size),

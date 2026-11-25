@@ -1033,3 +1033,146 @@ mod test {
         }
     }
 }
+
+/// A rendering context backed by swgl (SpiderMonkey/Firefox's software GL
+/// implementation), rasterizing entirely in memory with no GPU driver
+/// involvement. On macOS this avoids the deprecated-GL translation layer
+/// whose CPU-side draw processing dominates composite cost (~78% of redraw
+/// time measured). The output is accessed via [`RenderingContext::read_to_image`].
+///
+/// Memory management note: backing buffers are intentionally leaked on
+/// resize. swgl rasterization jobs may complete asynchronously after the
+/// buffer is swapped out, so freeing is a use-after-free hazard. Resizes
+/// are user-driven and rare; each leak is width*height*4 bytes.
+/// TODO: proper fence/deferred-free when this graduates from pref-gated
+/// experiment status.
+pub struct SwglRenderingContext {
+    gleam_gl: Rc<swgl::Context>,
+    size: Cell<PhysicalSize<u32>>,
+    backing: RefCell<&'static mut [u8]>,
+}
+
+#[allow(unsafe_code)]
+impl SwglRenderingContext {
+    pub fn new(size: PhysicalSize<u32>) -> Result<Self, Error> {
+        if size.width == 0 || size.height == 0 {
+            log::error!("Unable to create SwglRenderingContext with zero size");
+            return Err(Error::Failed);
+        }
+        let context = swgl::Context::create();
+        context.make_current();
+        let backing = Self::allocate_backing(size);
+        let this = SwglRenderingContext {
+            gleam_gl: Rc::new(context),
+            size: Cell::new(size),
+            backing: RefCell::new(backing),
+        };
+        this.init_framebuffer();
+        Ok(this)
+    }
+
+    fn allocate_backing(size: PhysicalSize<u32>) -> &'static mut [u8] {
+        let len = size.width as usize * size.height as usize * 4;
+        let vec = vec![0u8; len.max(4)];
+        Box::leak(vec.into_boxed_slice())
+    }
+
+    fn init_framebuffer(&self) {
+        let size = self.size.get();
+        let ptr = self.backing.borrow().as_ptr() as *mut std::ffi::c_void;
+        self.gleam_gl.init_default_framebuffer(
+            0,
+            0,
+            size.width as i32,
+            size.height as i32,
+            size.width as i32 * 4,
+            ptr,
+        );
+    }
+}
+
+impl RenderingContext for SwglRenderingContext {
+    fn read_to_image(&self, source_rectangle: DeviceIntRect) -> Option<RgbaImage> {
+        let size = self.size.get();
+        let (w, h) = (size.width as usize, size.height as usize);
+        if w == 0 || h == 0 {
+            return None;
+        }
+        let _ = (w, h);
+        let width = source_rectangle.width() as usize;
+        let height = source_rectangle.height() as usize;
+        if width == 0 || height == 0 {
+            return None;
+        }
+        // swgl contexts are thread-local: the embedder reads back on a
+        // different thread than the painter renders on, so re-bind first.
+        self.gleam_gl.make_current();
+        // Flush pending rasterization jobs and obtain the framebuffer memory
+        // through swgl's canonical readback — rasterization is asynchronous
+        // and copying the backing without flushing yields partial frames.
+        let (ptr, buf_w, buf_h, buf_stride) = self.gleam_gl.get_color_buffer(0, true);
+        if ptr.is_null() || buf_w <= 0 || buf_h <= 0 {
+            return None;
+        }
+        let (buf_w, buf_h, buf_stride) = (buf_w as usize, buf_h as usize, buf_stride as usize);
+        let mut img = RgbaImage::new(width as u32, height as u32);
+        // GL framebuffers are bottom-up: flip rows to match the orientation
+        // produced by the surfman readback path.
+        for row in 0..height {
+            let src_y = source_rectangle.min.y as usize + (height - 1 - row);
+            let src_x = source_rectangle.min.x as usize;
+            if src_y >= buf_h || src_x + width > buf_w {
+                return None;
+            }
+            let src_off = src_y * buf_stride + src_x * 4;
+            let dst_off = row * width * 4;
+            #[allow(unsafe_code)]
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    (ptr as *const u8).add(src_off),
+                    img.as_mut()[dst_off..dst_off + width * 4].as_mut_ptr(),
+                    width * 4,
+                );
+            }
+        }
+        // swgl memory is BGRA-ordered (GL native); the trait contract is RGBA.
+        for px in img.as_mut().chunks_exact_mut(4) {
+            px.swap(0, 2);
+        }
+        Some(img)
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.size.get()
+    }
+
+    fn resize(&self, size: PhysicalSize<u32>) {
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        // The old backing is intentionally leaked: swgl rasterization jobs may
+        // still reference it. See the struct-level comment.
+        let new_backing = Self::allocate_backing(size);
+        *self.backing.borrow_mut() = new_backing;
+        self.size.set(size);
+        self.init_framebuffer();
+    }
+
+    fn present(&self) {
+        // Nothing to do: the frame is already in memory.
+    }
+
+    fn make_current(&self) -> Result<(), Error> {
+        self.gleam_gl.make_current();
+        Ok(())
+    }
+
+    fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl> {
+        self.gleam_gl.clone()
+    }
+
+    fn glow_gl_api(&self) -> Arc<glow::Context> {
+        unimplemented!("glow GL API is not available on a software rendering context")
+    }
+}
+
