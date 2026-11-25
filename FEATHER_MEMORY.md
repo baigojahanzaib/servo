@@ -1451,3 +1451,13 @@ The cv spec path remains the conformant implementation. The heuristic reuses:
 determination-pass structure, NonReplacedContents::traverse chokepoint (extended with a
 heuristic set), flip-dirtying. The difference: heuristic elements have no spec protection —
 the never-skip list and measurement-forcing are what make it survivable.
+
+## Heuristic-skipping experiment — investigation index (2026-11-25)
+
+Symptom: heuristic skip set always empty on real sites (skipped=0 with FEATHER_HEURISTIC_SKIP=1) → check: the commit/dirty block gate in `determine_content_visibility_relevance` (owns storing the computed set — was gated on any_cv||stored-nonempty, making the heuristic DEAD CODE on all non-cv sites; confirmed cause #1, fixed), `border_box_without_reflow` geometry semantics (suspect: document-space vs viewport-space coords — cv:auto verification proves unskipping-on-scroll works, so coords are effectively consistent, but exact space unverified), the enter-margin arithmetic (lenient viewport spans -3.5h..+4.5h of the base-margin rect — very strict at load time, suspect #2), wheel-injection scroll reaching the webview (ruled out as primary — same injection drove memory growth in retention measurements).
+
+Symptom: stylo `adjust_for_contain`/`adjust_for_contain_intrinsic_size` ungating fails with `get_effective_containment` missing → check: generated Box struct fields (owns effective_containment — gecko-only generated property, absent in servo builds; confirmed blocker). Ungating the cascade requires porting the effective-containment computed-value infra, not just removing cfgs. REVERTED — documented for the next attempt.
+
+Negative result: zero content-visibility usage on initial render of reddit, x, cnn, espn, bbc, amazon, youtube (surveyed 2026-11-25) — do not re-survey casually; cv-dependent optimizations have zero real-site coverage today.
+
+Negative result: vacuous first replication (OFF growths +945/+92/+357, ON +444/+758 + one death) measured a DISABLED heuristic — do not cite as evidence about the heuristic itself.
