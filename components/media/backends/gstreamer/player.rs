@@ -34,6 +34,7 @@ use super::BACKEND_BASE_TIME;
 use crate::media_stream::GStreamerMediaStream;
 use crate::media_stream_source::{ServoMediaStreamSrc, register_servo_media_stream_src};
 use crate::render::GStreamerRender;
+use crate::mse_source::{ServoMse, register_servo_mse};
 use crate::source::{ServoSrc, register_servo_src};
 
 const DEFAULT_MUTED: bool = false;
@@ -122,6 +123,7 @@ impl AsRef<[f32]> for GStreamerAudioChunk {
 enum PlayerSource {
     Seekable(ServoSrc),
     Stream(ServoMediaStreamSrc),
+    Mse(ServoMse),
 }
 
 impl MallocSizeOf for PlayerSource {
@@ -263,13 +265,16 @@ impl PlayerInner {
     pub fn end_of_stream(&mut self) -> Result<(), PlayerError> {
         match self.source {
             Some(ref mut source) => {
-                if let PlayerSource::Seekable(source) = source {
-                    source
+                match source {
+                    PlayerSource::Seekable(source) => source
                         .push_end_of_stream()
                         .map(|_| ())
-                        .map_err(|_| PlayerError::EOSFailed)
-                } else {
-                    Ok(())
+                        .map_err(|_| PlayerError::EOSFailed),
+                    PlayerSource::Mse(source) => {
+                        source.end_of_stream_all();
+                        Ok(())
+                    },
+                    _ => Ok(()),
                 }
             },
             _ => Ok(()),
@@ -277,7 +282,7 @@ impl PlayerInner {
     }
 
     pub fn seek(&mut self, time: f64) -> Result<(), PlayerError> {
-        if self.stream_type != StreamType::Seekable {
+        if self.stream_type == StreamType::Stream {
             return Err(PlayerError::NonSeekableStream);
         }
         if let Some(ref metadata) = self.last_metadata &&
@@ -319,6 +324,16 @@ impl PlayerInner {
                 .map_err(|_| PlayerError::BufferPushFailed);
         }
         Err(PlayerError::BufferPushFailed)
+    }
+
+    pub fn push_data_track(&mut self, track: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+        if let Some(PlayerSource::Mse(ref mut source)) = self.source {
+            return source
+                .push_buffer(track, data)
+                .map(|_| ())
+                .map_err(|_| PlayerError::BufferPushFailed);
+        }
+        self.push_data(data)
     }
 
     pub fn set_src(&mut self, source: PlayerSource) {
@@ -672,6 +687,12 @@ impl GStreamerPlayer {
                 })?;
                 "servosrc://".to_value()
             },
+            StreamType::MediaSource => {
+                register_servo_mse().map_err(|error| {
+                    PlayerError::Backend(format!("servomse registration error: {error:?}"))
+                })?;
+                "servomse://".to_value()
+            },
         };
         player.set_property("uri", &uri);
 
@@ -997,6 +1018,18 @@ impl GStreamerPlayer {
                         });
                         PlayerSource::Stream(media_stream_src)
                     },
+                    StreamType::MediaSource => {
+                        let mse = source
+                            .dynamic_cast::<ServoMse>()
+                            .expect("Source element is expected to be a ServoMse!");
+                        // MSE data arrives only when the page appends, so the
+                        // pipeline readiness handshake must not wait for data.
+                        let sender_clone = sender.clone();
+                        is_ready_clone.call_once(|| {
+                            let _ = notify!(sender_clone, Ok(()));
+                        });
+                        PlayerSource::Mse(mse)
+                    },
                 };
 
                 inner.set_src(source);
@@ -1081,6 +1114,7 @@ impl Player for GStreamerPlayer {
     inner_player_proxy!(set_playback_rate, playback_rate, f64);
     inner_player_proxy_getter!(playback_rate, f64, DEFAULT_PLAYBACK_RATE);
     inner_player_proxy!(push_data, data, Vec<u8>);
+    inner_player_proxy!(push_data_track, track, u64, data, Vec<u8>);
     inner_player_proxy!(seek, time, f64);
     inner_player_proxy!(set_volume, volume, f64);
     inner_player_proxy_getter!(volume, f64, DEFAULT_VOLUME);

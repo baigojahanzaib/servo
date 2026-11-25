@@ -96,6 +96,9 @@ pub enum StreamType {
     Stream,
     /// The stream is seekable.
     Seekable,
+    /// MSE-tracked playback: multiple independent push streams (one per
+    /// SourceBuffer), data arrives via push_data_track.
+    MediaSource,
 }
 
 pub trait Player: Send + MediaInstance + MallocSizeOf {
@@ -116,6 +119,13 @@ pub trait Player: Send + MediaInstance + MallocSizeOf {
     fn set_playback_rate(&self, playback_rate: f64) -> Result<(), PlayerError>;
     fn playback_rate(&self) -> f64;
     fn push_data(&self, data: Vec<u8>) -> Result<(), PlayerError>;
+    /// Push data for a specific MSE track. The default implementation routes
+    /// everything to the single-stream push_data for backends that do not
+    /// implement multi-track MSE.
+    fn push_data_track(&self, track: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+        let _ = track;
+        self.push_data(data)
+    }
     fn end_of_stream(&self) -> Result<(), PlayerError>;
     /// Get the list of time ranges in seconds that have been buffered.
     fn buffered(&self) -> Vec<Range<f64>>;

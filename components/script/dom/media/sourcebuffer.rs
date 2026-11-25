@@ -33,6 +33,7 @@ pub(crate) struct SourceBuffer {
     mode: Cell<AppendMode>,
     timestamp_offset: Cell<f64>,
     buffered: script_bindings::cell::DomRefCell<TimeRangesContainer>,
+    track_id: Cell<u64>,
     media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
 }
 
@@ -46,6 +47,7 @@ impl SourceBuffer {
             timestamp_offset: Cell::new(0.0),
             buffered: script_bindings::cell::DomRefCell::new(TimeRangesContainer::default()),
             media_source: script_bindings::cell::DomRefCell::new(None),
+            track_id: Cell::new(0),
         }
     }
 
@@ -83,6 +85,10 @@ impl SourceBuffer {
             EventCancelable::NotCancelable,
         );
         event.upcast::<Event>().fire(cx, self.upcast());
+    }
+
+    pub(crate) fn set_track_id(&self, track: u64) {
+        self.track_id.set(track);
     }
 
     pub(crate) fn set_media_source(&self, ms: &crate::dom::media::mediasource::MediaSource) {
@@ -167,7 +173,7 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
             let _ = ranges.add(*first, last + span);
         }
         if let Some(ref ms) = *self.media_source.borrow() {
-            ms.push_appended_data(bytes);
+            ms.push_appended_data(self.track_id.get(), bytes);
         }
         let this = Trusted::new(self);
         self.global()

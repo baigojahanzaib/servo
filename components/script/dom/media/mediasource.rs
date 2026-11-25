@@ -37,6 +37,7 @@ pub(crate) struct MediaSource {
     duration: Cell<f64>,
     #[no_trace]
     id: Uuid,
+    next_track_id: Cell<u64>,
     media_element: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::html::embedded_content::htmlmediaelement::HTMLMediaElement>>>,
 }
 
@@ -52,6 +53,7 @@ impl MediaSource {
             active_source_buffers: Dom::from_ref(active_source_buffers),
             duration: Cell::new(f64::NAN),
             id: Uuid::new_v4(),
+            next_track_id: Cell::new(0),
             media_element: script_bindings::cell::DomRefCell::new(None),
         }
     }
@@ -88,9 +90,9 @@ impl MediaSource {
 
     /// Route appended bytes into the attached element's push player.
     /// Returns false when nothing is attached (bytes are dropped).
-    pub(crate) fn push_appended_data(&self, bytes: Vec<u8>) -> bool {
+    pub(crate) fn push_appended_data(&self, track: u64, bytes: Vec<u8>) -> bool {
         if let Some(ref element) = *self.media_element.borrow() {
-            return element.push_media_source_data(bytes);
+            return element.push_media_source_data(track, bytes);
         }
         false
     }
@@ -232,7 +234,10 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
         if !Self::IsTypeSupported(self.global().as_window(), type_.clone()) {
             return Err(Error::NotSupported(None));
         }
+        let track = self.next_track_id.get();
+        self.next_track_id.set(track + 1);
         let buffer = SourceBuffer::new(cx, &self.global(), type_);
+        buffer.set_track_id(track);
         buffer.set_media_source(self);
         self.source_buffers.add(&buffer);
         Ok(buffer)

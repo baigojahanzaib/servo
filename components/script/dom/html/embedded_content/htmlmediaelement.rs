@@ -1635,6 +1635,15 @@ impl HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#concept-media-load-resource>
     fn resource_fetch_algorithm(&self, cx: &JSContext, resource: Resource) {
+        // MSE attach must happen before the player is created: the player's
+        // stream type (and therefore its source element) depends on it.
+        if let Resource::Url(ref url) = resource &&
+            let Ok(id) = net_traits::blob_url_store::parse_blob_url(url) &&
+            let Some(media_source) = self.owner_global().get_media_source(&id)
+        {
+            self.attach_media_source(&media_source);
+            return;
+        }
         if let Err(e) = self.create_media_player(&resource) {
             error!("Create media player error {:?}", e);
             self.resource_selection_algorithm_failure_steps(cx);
@@ -1694,13 +1703,6 @@ impl HTMLMediaElement {
 
                 // MSE: a blob object URL minted for a MediaSource attaches the
                 // source instead of being fetched over the network.
-                if let Ok(id) = net_traits::blob_url_store::parse_blob_url(&url) &&
-                    let Some(media_source) = self.owner_global().get_media_source(&id)
-                {
-                    self.attach_media_source(&media_source);
-                    return;
-                }
-
                 *self.resource_url.borrow_mut() = Some(url);
 
                 // Steps 5.remote.2-5.remote.8
@@ -1859,9 +1861,9 @@ impl HTMLMediaElement {
     }
 
     /// Push MSE-appended bytes into the push player.
-    pub(crate) fn push_media_source_data(&self, bytes: Vec<u8>) -> bool {
+    pub(crate) fn push_media_source_data(&self, track: u64, bytes: Vec<u8>) -> bool {
         if let Some(ref player) = *self.player.borrow() {
-            return player.lock().unwrap().push_data(bytes).is_ok();
+            return player.lock().unwrap().push_data_track(track, bytes).is_ok();
         }
         false
     }
@@ -2317,7 +2319,13 @@ impl HTMLMediaElement {
                     return Err(());
                 }
             },
-            _ => StreamType::Seekable,
+            _ => {
+                if self.media_source.borrow().is_some() {
+                    StreamType::MediaSource
+                } else {
+                    StreamType::Seekable
+                }
+            },
         };
 
         let window = self.owner_window();
