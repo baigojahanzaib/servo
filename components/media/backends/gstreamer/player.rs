@@ -224,10 +224,9 @@ impl PlayerInner {
     }
 
     pub fn play(&mut self) -> Result<(), PlayerError> {
-        if !self.paused.get() {
-            return Ok(());
-        }
-
+        // Always forward to the pipeline: after natural end-of-stream the
+        // pipeline stops consuming even though this object's paused flag was
+        // never set, so the early-return here used to make replay impossible.
         self.paused.set(false);
         self.can_resume.set(false);
         self.player.play();
@@ -735,9 +734,17 @@ impl GStreamerPlayer {
 
         let inner = self.inner.borrow();
         let inner = inner.as_ref().unwrap();
+        let weak_inner = Arc::downgrade(inner);
         let observer = self.observer.clone();
         // Handle `end-of-stream` signal.
         signal_adapter.connect_end_of_stream(move |_| {
+            // At EOS the pipeline stops consuming regardless of any prior
+            // play() call, so mirror that in our bookkeeping. Without this the
+            // paused flag stays false forever and a later replay never forwards
+            // a fresh play() into the pipeline, freezing replay after EOS.
+            if let Some(inner_clone) = weak_inner.upgrade() {
+                inner_clone.lock().unwrap().paused.set(true);
+            }
             let _ = notify!(observer, PlayerEvent::EndOfStream);
         });
 
