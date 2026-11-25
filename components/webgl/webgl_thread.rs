@@ -73,12 +73,29 @@ fn native_uniform_location(location: i32) -> Option<NativeUniformLocation> {
 /// that all Surfman `Surface`s can be released properly on the [`WebGLThread`].
 pub type WebGLContextBusyMap = Arc<RwLock<HashMap<WebGLContextId, usize>>>;
 
+/// One read back frame of a software-composited WebGL context: raw BGRA
+/// pixels in top-down row order, ready for `ExternalImageSource::RawData`.
+pub struct ReadbackFrame {
+    pub pixels: Vec<u8>,
+    pub width: i32,
+    pub height: i32,
+}
+
+/// Shared between the WebGL thread (producer, written at swap time) and the
+/// compositing side (consumer, read at external-image lock time). Only used
+/// when the painter composites in software: GL textures cannot cross into a
+/// CPU rasterizer, so frames travel as memory instead.
+pub type WebGLContextReadbackMap = Arc<RwLock<HashMap<WebGLContextId, ReadbackFrame>>>;
+
 pub(crate) struct GLContextData {
     pub(crate) ctx: Context,
     pub(crate) gl: Rc<glow::Context>,
     device: Rc<Device>,
     state: GLState,
     attributes: GLContextAttributes,
+    /// True when the owning painter composites in software — frames are read
+    /// back into memory at swap time instead of texture-shared.
+    software_composite: bool,
     /// The context should be removed, but the [`WebGLThread`] is currently waiting on
     /// WebRender to finish rendering to the context in order to delete it.
     marked_for_deletion: bool,
@@ -250,6 +267,7 @@ pub(crate) struct WebGLThread {
     /// A usage map used to delay the deletion of WebGL contexts until all WebRender
     /// rendering is finished, so that any existing `Surface`s can be properly released.
     busy_webgl_context_map: WebGLContextBusyMap,
+    readback_map: WebGLContextReadbackMap,
 
     #[cfg(feature = "webxr")]
     /// The bridge to WebXR
@@ -265,6 +283,7 @@ pub(crate) struct WebGLThreadInit {
     pub webrender_swap_chains: SwapChains<WebGLContextId, Device>,
     pub painter_surfman_details_map: PainterSurfmanDetailsMap,
     pub busy_webgl_context_map: WebGLContextBusyMap,
+    pub readback_map: WebGLContextReadbackMap,
     #[cfg(feature = "webxr")]
     pub webxr_init: WebXRBridgeInit,
 }
@@ -283,6 +302,7 @@ impl WebGLThread {
             webrender_swap_chains,
             painter_surfman_details_map,
             busy_webgl_context_map,
+            readback_map,
             #[cfg(feature = "webxr")]
             webxr_init,
         }: WebGLThreadInit,
@@ -299,6 +319,7 @@ impl WebGLThread {
             webrender_swap_chains,
             painter_surfman_details_map,
             busy_webgl_context_map,
+            readback_map,
             #[cfg(feature = "webxr")]
             webxr_bridge: Some(WebXRBridge::new(webxr_init)),
         }
@@ -689,6 +710,10 @@ impl WebGLThread {
         state.restore_invariant(&gl);
         debug_assert_eq!(unsafe { gl.get_error() }, gl::NO_ERROR);
 
+        let software_composite = self
+            .painter_surfman_details_map
+            .get(painter_id)
+            .is_some_and(|details| details.software_composite);
         self.contexts.insert(
             context_id,
             GLContextData {
@@ -697,6 +722,7 @@ impl WebGLThread {
                 gl,
                 state,
                 attributes,
+                software_composite,
                 marked_for_deletion: false,
             },
         );
@@ -876,6 +902,54 @@ impl WebGLThread {
                 .get(context_id)
                 .expect("Where's the swap chain?");
 
+            if data.software_composite {
+                // The compositor is a CPU rasterizer: the GL texture in the
+                // swap chain can never be sampled. Read the frame back into
+                // memory instead — the composite side picks it up as
+                // `ExternalImageSource::RawData`. Read before the swap, while
+                // the just-rendered surface is still the bound framebuffer.
+                let info = data
+                    .device
+                    .context_surface_info(&data.ctx)
+                    .ok()
+                    .flatten();
+                if let Some(info) = info {
+                    let (w, h) = (info.size.width.max(0), info.size.height.max(0));
+                    if w > 0 && h > 0 {
+                        unsafe {
+                            data.gl.bind_framebuffer(gl::FRAMEBUFFER, info.framebuffer_object);
+                            let stride = w as usize * 4;
+                            let mut pixels = vec![0u8; stride * h as usize];
+                            // Read row by row, flipping into top-down order:
+                            // GL framebuffers are bottom-up, WebRender expects
+                            // top-down rows for RawData external images.
+                            for row in 0..h as usize {
+                                let y = h as usize - 1 - row;
+                                data.gl.read_pixels(
+                                    0,
+                                    y as i32,
+                                    w,
+                                    1,
+                                    gl::BGRA,
+                                    gl::UNSIGNED_BYTE,
+                                    glow::PixelPackData::Slice(Some(
+                                        &mut pixels[row * stride..row * stride + stride],
+                                    )),
+                                );
+                            }
+                            self.readback_map.write().insert(
+                                context_id,
+                                ReadbackFrame {
+                                    pixels,
+                                    width: w,
+                                    height: h,
+                                },
+                            );
+                        }
+                    }
+                }
+            }
+
             debug!("Swapping {:?}", context_id);
             swap_chain
                 .swap_buffers(
@@ -995,17 +1069,27 @@ impl WebGLThread {
 
     /// Helper function to create a `ImageData::External` instance.
     fn external_image_data(&self, context_id: WebGLContextId) -> SerializableImageData {
-        // TODO(pcwalton): Add `GL_TEXTURE_EXTERNAL_OES`?
-        let device = self.device_for_context(context_id);
-        let image_buffer_kind = match device.surface_gl_texture_target() {
-            gl::TEXTURE_RECTANGLE => ImageBufferKind::TextureRect,
-            _ => ImageBufferKind::Texture2D,
+        let software_composite = self
+            .contexts
+            .get(&context_id)
+            .is_some_and(|data| data.software_composite);
+        let image_type = if software_composite {
+            // Frames travel as read-back memory buffers, not GL textures.
+            ExternalImageType::Buffer
+        } else {
+            // TODO(pcwalton): Add `GL_TEXTURE_EXTERNAL_OES`?
+            let device = self.device_for_context(context_id);
+            let image_buffer_kind = match device.surface_gl_texture_target() {
+                gl::TEXTURE_RECTANGLE => ImageBufferKind::TextureRect,
+                _ => ImageBufferKind::Texture2D,
+            };
+            ExternalImageType::TextureHandle(image_buffer_kind)
         };
 
         let data = ExternalImageData {
             id: ExternalImageId(context_id.0),
             channel_index: 0,
-            image_type: ExternalImageType::TextureHandle(image_buffer_kind),
+            image_type,
             normalized_uvs: false,
         };
         SerializableImageData::External(data)

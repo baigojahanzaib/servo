@@ -173,6 +173,7 @@ impl Painter {
                 rendering_context.clone(),
                 paint.webgl_paint.swap_chains.clone(),
                 paint.webgl_paint.busy_webgl_contexts_map.clone(),
+                paint.webgl_paint.readback_map.clone(),
             ));
             external_image_handlers.set_handler(image_handler, WebRenderImageHandlerType::WebGl);
         }

@@ -74,6 +74,7 @@ pub struct WebGLPaint {
     /// WebRender is still rendering the context. This is used to ensure properly clean
     /// up of all Surfman `Surface`s.
     pub(crate) busy_webgl_contexts_map: WebGLContextBusyMap,
+    pub(crate) readback_map: webgl::webgl_thread::WebGLContextReadbackMap,
 
     /// The [`WebGLThreads`] for this renderer.
     webgl_threads: WebGLThreads,
@@ -206,6 +207,7 @@ impl Paint {
             webgl_threads,
             swap_chains,
             busy_webgl_context_map,
+            readback_map,
             #[cfg(feature = "webxr")]
             webxr_layer_grand_manager,
             join_handle: webgl_join_handle,
@@ -228,6 +230,7 @@ impl Paint {
         #[cfg(feature = "webgl")]
         let webgl_paint = WebGLPaint {
             busy_webgl_contexts_map: busy_webgl_context_map,
+            readback_map,
             webgl_threads,
             webgl_join_handle: Cell::new(Some(webgl_join_handle)),
             swap_chains,
@@ -278,14 +281,24 @@ impl Paint {
         self.painters.push(Rc::new(RefCell::new(painter)));
 
         // These are only used to serve WebGL external images, which handles their
-        // absence from the map
-        let Some(connection) = rendering_context.connection() else {
-            warn!("The rendering context has no surfman connection, WebGL will be unavailable");
-            return painter_id;
-        };
-        let Some(adapter) = rendering_context.adapter() else {
-            warn!("Could not retrieve surfman adapter, WebGL will be unavailable");
-            return painter_id;
+        // absence from the map. When the content rasterizer is software (swgl),
+        // the rendering context has no surfman connection of its own — fall back
+        // to an independent hardware-GL connection so WebGL contexts can still
+        // be created. WebGL rendered output then reaches the screen through the
+        // readback composite path rather than texture sharing.
+        let (connection, adapter, software_composite) = match (
+            rendering_context.connection(),
+            rendering_context.adapter(),
+        ) {
+            (Some(connection), Some(adapter)) => (connection, adapter, false),
+            _ => {
+                let connection = surfman::Connection::new()
+                    .expect("independent surfman connection for WebGL");
+                let adapter = connection
+                    .create_hardware_adapter()
+                    .expect("independent surfman adapter for WebGL");
+                (connection, adapter, true)
+            },
         };
 
         self.painter_surfman_details_map.insert(
@@ -293,6 +306,7 @@ impl Paint {
             PainterSurfmanDetails {
                 connection,
                 adapter,
+                software_composite,
             },
         );
 

@@ -521,6 +521,12 @@ impl CrossProcessPaintApi {
 pub struct PainterSurfmanDetails {
     pub connection: Connection,
     pub adapter: Adapter,
+    /// True when the painter composites content in software (swgl) — WebGL
+    /// output then cannot be texture-shared and must reach WebRender through
+    /// the readback composite path. The connection above is still a real
+    /// hardware-GL connection (created independently of the painter), it is
+    /// only the compositing side that is software.
+    pub software_composite: bool,
 }
 
 #[derive(Clone, Default)]
@@ -654,13 +660,22 @@ impl ExternalImageHandler for WebRenderExternalImageHandlers {
         match handler_type {
             WebRenderImageHandlerType::WebGl => {
                 let (source, size) = self.webgl_handler.as_mut().unwrap().lock(key.0);
-                let texture_id = match source {
-                    ExternalImageSource::NativeTexture(b) => b,
-                    _ => panic!("Wrong type"),
-                };
-                ExternalImage {
-                    uv: TexelRect::new(0.0, size.height as f32, size.width as f32, 0.0),
-                    source: ExternalImageSource::NativeTexture(texture_id),
+                match source {
+                    ExternalImageSource::NativeTexture(texture_id) => ExternalImage {
+                        uv: TexelRect::new(0.0, size.height as f32, size.width as f32, 0.0),
+                        source: ExternalImageSource::NativeTexture(texture_id),
+                    },
+                    // Software-composited frames are read back into memory and
+                    // already flipped into top-down row order — pass through
+                    // with an unflipped texel rect.
+                    ExternalImageSource::RawData(_) => ExternalImage {
+                        uv: TexelRect::new(0.0, 0.0, size.width as f32, size.height as f32),
+                        source,
+                    },
+                    other => ExternalImage {
+                        uv: TexelRect::new(0.0, 0.0, size.width as f32, size.height as f32),
+                        source: other,
+                    },
                 }
             },
             WebRenderImageHandlerType::Media => {

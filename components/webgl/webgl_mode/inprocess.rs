@@ -14,12 +14,13 @@ use webxr::SurfmanGL as WebXRSurfman;
 #[cfg(feature = "webxr")]
 use webxr_api::LayerGrandManager as WebXRLayerGrandManager;
 
-use crate::webgl_thread::{WebGLContextBusyMap, WebGLThread, WebGLThreadInit};
+use crate::webgl_thread::{WebGLContextBusyMap, WebGLContextReadbackMap, WebGLThread, WebGLThreadInit};
 
 pub struct WebGLComm {
     pub webgl_threads: WebGLThreads,
     pub swap_chains: SwapChains<WebGLContextId, Device>,
     pub busy_webgl_context_map: WebGLContextBusyMap,
+    pub readback_map: WebGLContextReadbackMap,
     #[cfg(feature = "webxr")]
     pub webxr_layer_grand_manager: WebXRLayerGrandManager<WebXRSurfman>,
     /// A `JoinHandle` which can be joined after sending the `WebGLMsg::Exit`
@@ -38,6 +39,7 @@ impl WebGLComm {
         let (sender, receiver) = webgl_channel::<WebGLMsg>().unwrap();
         let swap_chains = SwapChains::new();
         let busy_webgl_context_map = WebGLContextBusyMap::default();
+        let readback_map = WebGLContextReadbackMap::default();
 
         #[cfg(feature = "webxr")]
         let webxr_init = crate::webxr::WebXRBridgeInit::new(sender.clone());
@@ -53,6 +55,7 @@ impl WebGLComm {
             webrender_swap_chains: swap_chains.clone(),
             painter_surfman_details_map,
             busy_webgl_context_map: busy_webgl_context_map.clone(),
+            readback_map: readback_map.clone(),
             #[cfg(feature = "webxr")]
             webxr_init,
         };
@@ -63,6 +66,7 @@ impl WebGLComm {
             webgl_threads: WebGLThreads(sender),
             swap_chains,
             busy_webgl_context_map,
+            readback_map,
             #[cfg(feature = "webxr")]
             webxr_layer_grand_manager,
             join_handle,
