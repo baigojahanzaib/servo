@@ -1327,3 +1327,10 @@ Verified mechanisms (function-indexed, for future lanes):
 Stage-1 known gaps (deliberate, per scoping doc): no focus/selection relevance term, no
 contain-intrinsic-size consumption (skipped elements lay out at natural size), no memory win
 yet (layout runs — Stage 2 is eviction), dynamic cv toggling and print path untested.
+||||||| parent of c0341b30e (FEATHER_MEMORY: SW-WR validation verdict + integration facts)
+||||||| parent of 1b01fe497 (FEATHER_MEMORY: SW-WR validation verdict + integration facts)
+
+## Symptom index addendum 8 — SW-WR validation verdict + integration facts (2026-11-25)
+→ VERDICT: webrender-over-swgl composites a representative 1440x900 animated frame at ~1.05ms aggregate CPU vs 7.76ms+ through Apple GL translation — ~7x win, multithreaded (sustained 690fps harness vs 31fps feather anim). SW-WR is the validated direction for macOS repaint cost; ANGLE shrinks to webgl-only scope. Harness: /tmp/swwr-val (standalone cargo project, webrender 0.70 + feature sw_compositor).
+→ INTEGRATION FACTS (verified): swgl::Context implements gleam's Gl trait DIRECTLY — no shim crate needed, contrary to earlier scoping. Detection automatic via RENDERER string 'Software WebRender'. GOTCHA: WebRenderOptions::clear_caches_with_quads defaults TRUE and hits an unimplemented swgl path (DepthFunc(GL_ALWAYS) asserts in gl.cc) — must be set false for SW-WR. swgl needs explicit framebuffer backing: Context::create + make_current + init_default_framebuffer(x,y,w,h,stride,buf); readback via get_color_buffer(fbo, flush).
+→ STATUS of alternatives: ANGLE-on-Metal confirmed NOT viable via mozangle (vendored ANGLE has only d3d+gl backends, no metal/vulkan; non-windows egl builds panic) — standalone upstream ANGLE build would be needed, week+ scale, chromium-build risk. mozangle gl-backend on macOS pointless (same deprecated GL).
