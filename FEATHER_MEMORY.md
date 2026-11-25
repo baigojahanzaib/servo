@@ -1490,3 +1490,17 @@ attribution per image key) — do not repeat the mistake of building against an 
 attribution. Alternatively the retention growth driver may not be images at all: candidates
 needing measurement are JS heap growth in iframe pipelines, layout/box-tree accumulation,
 GPU textures. Machinery stays in tree (env-gated, harmless, correct) — budget restored to 384MB.
+
+## ARCHITECTURE FACT (2026-11-25): feather shell runs servo SINGLE-PROCESS
+
+Measured: exactly one feather.exe process on Windows with a live heavy page. The multiprocess
+IPC-duplication analysis (2x decoded bytes) DOES NOT APPLY to feather: in-process mode uses
+GenericSharedMemoryVariant::InProcess zero-copy sharing — decoded image bytes exist exactly
+ONCE. Consequently WR-key eviction (phase 2) is also pointless in this configuration: there is
+no compositor-side duplicate to drop. Combined with the 28MB resident-decoded plateau, images
+are conclusively NOT the heavy-site retention driver in feather — not content-side, not
+compositor-side. Do not build anything image-eviction-related for this mission. The byte-swap
+machinery on imgmem-wip is correct-but-useless here; retain only for possible multiprocess
+embedders. Retention driver candidates requiring measurement: JS heap growth in long-lived
+iframes/pages, layout/box-tree accumulation, texture/GPU allocations in-process, media
+framework buffering.
