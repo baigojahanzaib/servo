@@ -1466,3 +1466,14 @@ Symptom: entire wgpu/Metal window contents vertically flipped on macOS → check
 Symptom: wgpu frame wall-time high (~14ms) but CPU low → check: surface.get_current_texture blocking (CONFIRMED — 13.7ms of the 14.3ms guipaint wall is vsync FIFO backpressure, CPU-free; the frame lands exactly on one 60Hz vsync period meaning the pipeline is vsync-paced not CPU-bound; real GPU present work ~1ms/frame: texupload=0.28 tess=0.03 updbufs=0.11 renderpass=0.1 submit+present=0.46). Do NOT read wall-time frame totals as cost in a vsync-throttled pipeline — use CPU%.
 
 Measured outcome (anim.html benchmark): GL path shell present 21-27ms/frame CPU → Metal ~1ms/frame; whole-process CPU 77-97% → ~24%. Passes the <=4ms success gate of docs/metal-present-design.md. egui-wgpu 0.34.3 + wgpu 29 is a viable present stack for egui 0.34.3 shells on macOS arm64.
+
+## SAB structured-clone correct implementation (landed 2f1ca404c)
+
+Symptom: postMessage of SharedArrayBuffer throws DataCloneError → check: structuredclone::write CloneDataPolicy + scope (FIXED — SameProcess scope with permissive policy for in-process messaging paths; realm gate stage-1 was necessary but not sufficient).
+
+Symptom: ~60s idle-death crash on postMessage-heavy pages after naive SameProcess flip → check: byte-copy transposition of SameProcess clone streams (CONFIRMED cause of 5f26d9f7a crash — CopyJSStructuredCloneData copies only the byte segment; embedded backing-store references dangle when the SM buffer drops; correct fix is carrying the SM-owned buffer end-to-end, implemented via process-global registry keyed by u64 since StructuredSerializedData is serde-transported even in-process).
+
+Invariants future lanes must not break:
+- SameProcess streams never leave SM ownership as bytes. The registry key is single-consumer: any path that deserializes the SAME StructuredSerializedData more than once (performance entries per getEntries, history state per navigation) MUST use DifferentProcess — multi-read of a carried buffer panics on second read by design.
+- BroadcastChannel fanout uses DifferentProcess: SAB-over-broadcast throws DataCloneError (interim deviation; proper fix is per-recipient serialization).
+- clone_for_broadcast copying sm_buffer_key would double the ownership — the warn guard there must stay.
