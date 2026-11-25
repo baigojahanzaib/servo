@@ -1589,3 +1589,14 @@ FIX LANDED: mse_position_offset in player.rs — the MediaSource-branch seek sto
 REMAINING BLOCKER (the last one for real-YouTube seek): post-seek playback RESUME is flaky-to-dead. Instrumented facts: seek completes (seeking flag clears), data flows (YouTube re-appends verified), but position pinned at exactly the target and never advances in most runs — the pipeline accepts re-fed bytes without producing advancing playback. Rare runs do advance — race flavor. Seek-to-0 additionally hard-errors the pipeline (error+emptied events — probably the same stall cascading into YouTube's recovery teardown). This is a gst pipeline-state problem inside the flush+recreate design: re-preroll, multiqueue/decodebin3 state after flush, or segment/clock re-derivation on the recreated appsrc. NEXT INSTRUMENTATION PLANNED: GST_DEBUG pad probes on the recreated appsrc output + demux output post-seek — count buffers actually flowing vs dropped, compare working vs stalled runs.
 
 Disk hygiene (user standing rule): pruned 31GB — feather shell debug/incremental (27G) + stock servo target tree (4.4G, binary preserved at /tmp/stock-servoshell). Free space 7.2G→38G.
+||||||| parent of 60c51177f (memory: webgl2 dogfood findings — black-skinning defect, invariant-cost profile, webgl2 verified)
+
+## Heavy webgl2 dogfooding (2026-11-26, feather docs/webgl2-heavy-dogfood.md)
+
+Symptom: three.js skinned-mesh demo renders model SOLID BLACK while rest of scene correct (metal mode, persists past load) → suspects ranked: compressed texture formats (KTX2/basis) undecoded, vertex-texture/float-texture skinning path, sRGB-in-readback (weakened by aquarium textured fish being correct). Owner: unclaimed defect DQ-webgl-black-skinning.
+
+Symptom: heavy continuous webgl saturates a core in BOTH modes at ~7-8fps on large canvases (aquarium 1024²) → INVARIANT cost, not a bug: GPU sync + swgl CPU raster of dirty region per the zero-copy eval. Metal ~25% cheaper than GL but both bound. Do not re-investigate as a regression.
+
+Symptom: shadertoy.com unreachable — Cloudflare security-verification wall → known turnstile limitation, NOT a webgl defect. Indexed so nobody misattributes.
+
+POSITIVE: webgl2 fully verified — real WebGL 2.0 contexts, core instancing/VAO/texImage3D, GLSL ES 3.00 compile+link+draw correct through the readback bridge in metal mode. Aquarium (instanced textured geometry, multi-pass) pixel-perfect.
