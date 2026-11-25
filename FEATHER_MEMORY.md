@@ -866,3 +866,15 @@ currently creates none; (2) SourceBuffer needs media-source backreference,
 MediaSource needs element backreference; (3) appendBuffer routing +
 updating flag + update events; (4) EOS only from endOfStream — must NOT
 let servosrc auto-EOS; (5) StreamType choice for MSE player.
+
+## 1n. MSE post-stage-3 state (Nov 25, feather-engine 41d0c9c5f64)
+
+DONE: stages 1-3 core. appendBuffer->push_data->decode->playback verified.
+Next in order: (1) buffered-range indexing — SourceBuffer needs segment
+timestamps; design per plan: parse segment boundaries script-side OR query
+player.buffered() (player trait already exposes buffered()! check what it
+returns for push streams — player.rs ~line 356 reads servosrc buffered
+ranges); (2) duration from stream end; (3) updating abort on remove/seek.
+Probe harness: /tmp/mediatest/probe5.html served on :8741, feathers run
+with `pkill -x feather; rm -f session.json` first, read title via xdotool
+after sleep 14. Test segs: /tmp/mediatest/seg_v0.webm seg_v1.webm.
