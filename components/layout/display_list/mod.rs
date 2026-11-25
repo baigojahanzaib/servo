@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use rustc_hash::FxHashSet;
 use std::cell::{OnceCell, RefCell};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, LazyLock};
@@ -206,6 +207,7 @@ impl DisplayListBuilder<'_> {
         paint_timing_handler: &mut PaintTimingHandler,
         reflow_statistics: &mut ReflowStatistics,
         frame_focused: bool,
+        content_visibility_skipped: &FxHashSet<OpaqueNode>,
     ) -> BuiltDisplayList {
         // Build the rest of the display list which inclues all of the WebRender primitives.
         let paint_info = &mut stacking_context_tree.paint_info;
@@ -276,7 +278,11 @@ impl DisplayListBuilder<'_> {
             (0, 0), /* tag */
         );
 
-        PaintTraversal::traverse(&stacking_context_tree.root_stacking_context, &mut builder);
+        PaintTraversal::traverse_with_content_visibility_skip(
+            &stacking_context_tree.root_stacking_context,
+            &mut builder,
+            content_visibility_skipped,
+        );
         builder.paint_dom_inspector_highlight();
 
         webrender_display_list_builder.end().1

@@ -79,7 +79,10 @@ use servo_constellation_traits::{
 };
 use servo_media::{ClientContextId, ServoMedia};
 use servo_url::{ImmutableOrigin, MutableOrigin, ServoUrl};
+use euclid;
 use style::attr::AttrValue;
+use style::values::computed::Au;
+use style_traits::CSSPixel;
 use style::context::QuirksMode;
 use style::dom::OpaqueNode;
 use style::invalidation::element::restyle_hints::RestyleHint;
@@ -646,6 +649,11 @@ pub(crate) struct Document {
     /// - <https://bugzilla.mozilla.org/show_bug.cgi?id=1596992>
     /// - <https://github.com/w3c/csswg-drafts/issues/4518>
     resize_observers: DomRefCell<Vec<Dom<ResizeObserver>>>,
+    /// Elements currently skipped for paint by content-visibility (their subtree is
+    /// laid out but not painted). Recomputed each rendering update; consumed by layout.
+    /// OpaqueNode is a plain integer identifier with no GC references.
+    #[no_trace]
+    content_visibility_skipped: DomRefCell<FxHashSet<OpaqueNode>>,
     /// The set of all fonts loaded by this document.
     /// <https://drafts.csswg.org/css-font-loading/#font-face-source>
     fonts: MutNullableDom<FontFaceSet>,
@@ -3617,6 +3625,73 @@ impl Document {
 
     /// <https://drafts.csswg.org/resize-observer/#gather-active-observations-h>
     /// <https://drafts.csswg.org/resize-observer/#has-active-resize-observations>
+    /// The set of elements whose subtree should currently be skipped for paint
+    /// by content-visibility. Consumed by layout during display list building.
+    pub(crate) fn content_visibility_skipped(&self) -> FxHashSet<OpaqueNode> {
+        self.content_visibility_skipped.borrow().clone()
+    }
+
+    /// Determine which elements with a non-visible `content-visibility` value are
+    /// currently relevant to the user, and update the skipped-element set.
+    ///
+    /// <https://drafts.csswg.org/css-contain/#relevant-to-the-user>
+    fn determine_content_visibility_relevance(&self) {
+        use style::values::computed::box_::ContentVisibility;
+
+        let window = self.window();
+        let viewport_size = window.viewport_details().size;
+        // Spec says UAs may use a margin around the viewport; Chrome uses 50% of the
+        // viewport on each side. This prevents skip/unsnap thrash near the edge.
+        let margin = euclid::SideOffsets2D::new(
+            Au::from_f32_px(viewport_size.height * 0.5),
+            Au::from_f32_px(viewport_size.width * 0.5),
+            Au::from_f32_px(viewport_size.height * 0.5),
+            Au::from_f32_px(viewport_size.width * 0.5),
+        );
+        let viewport_rect: euclid::Rect<Au, CSSPixel> = euclid::Rect::from_size(
+            euclid::Size2D::new(
+                Au::from_f32_px(viewport_size.width),
+                Au::from_f32_px(viewport_size.height),
+            ),
+        )
+        .outer_rect(margin);
+
+        let mut skipped = FxHashSet::default();
+        let mut any_cv = false;
+        for node in self.upcast::<Node>().traverse_preorder(ShadowIncluding::No) {
+            let Some(element) = node.downcast::<Element>() else {
+                continue;
+            };
+            let Some(style) = element.style_without_reflow() else {
+                continue;
+            };
+            match style.get_box().content_visibility {
+                ContentVisibility::Hidden => {
+                    any_cv = true;
+                    skipped.insert(node.to_opaque());
+                },
+                ContentVisibility::Auto => {
+                    any_cv = true;
+                    // Relevant if it intersects the expanded viewport. Focus/selection
+                    // relevance is not yet implemented (TODO); intersection is the
+                    // dominant term for scroll-driven skipping.
+                    let rect = node.border_box_without_reflow();
+                    let intersects = rect
+                        .map(|rect| rect.intersects(&viewport_rect))
+                        .unwrap_or(false);
+                    if !intersects {
+                        skipped.insert(node.to_opaque());
+                    }
+                },
+                ContentVisibility::Visible => {},
+            }
+        }
+
+        if any_cv || !self.content_visibility_skipped.borrow().is_empty() {
+            *self.content_visibility_skipped.borrow_mut() = skipped;
+        }
+    }
+
     pub(crate) fn gather_active_resize_observations_at_depth(
         &self,
         no_gc: &NoGC,
@@ -3637,6 +3712,10 @@ impl Document {
     /// Step 16 from
     /// <https://html.spec.whatwg.org/multipage/#update-the-rendering>
     pub(crate) fn run_the_resize_observer_steps(&self, cx: &mut JSContext) {
+        // Content-visibility relevance determination runs every rendering update,
+        // regardless of whether any ResizeObservers exist.
+        self.determine_content_visibility_relevance();
+
         // Not specified, but allows us to skip work when it isn't necessary.
         if self.resize_observers.borrow().is_empty() {
             return;
@@ -4529,6 +4608,7 @@ impl Document {
             dirty_root: Default::default(),
             declarative_refresh: Default::default(),
             resize_observers: Default::default(),
+            content_visibility_skipped: Default::default(),
             fonts: Default::default(),
             // TODO: This is intended to workaround the issue where `visibilityState`
             // is always hidden. This should really be hooked with system visibility

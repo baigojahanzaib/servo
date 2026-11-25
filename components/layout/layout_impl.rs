@@ -184,6 +184,10 @@ pub struct LayoutThread {
     /// layout requests a display list, it is produced unconditionally, even when the
     /// layout trees remain the same.
     need_new_display_list: Cell<bool>,
+    /// The content-visibility skipped-element set used in the last display list build.
+    /// Compared each reflow; a change forces a display list rebuild even when nothing
+    /// else is dirty, since skipped elements emit no paint items.
+    content_visibility_skipped: RefCell<rustc_hash::FxHashSet<style::dom::OpaqueNode>>,
 
     /// Whether or not cumulative containing blocks offsets have been set into the
     /// [`FragmentTree`]. This typically happens during [`StackingContextTree`]
@@ -926,6 +930,7 @@ impl LayoutThread {
             device_has_changed: false,
             need_containing_block_calculation: Cell::new(false),
             need_new_display_list: Cell::new(false),
+            content_visibility_skipped: RefCell::new(Default::default()),
             need_new_stacking_context_tree: Cell::new(false),
             box_tree: Default::default(),
             fragment_tree: Default::default(),
@@ -1120,6 +1125,16 @@ impl LayoutThread {
     )]
     fn handle_reflow(&mut self, mut reflow_request: ReflowRequest) -> Option<ReflowResult> {
         self.maybe_print_reflow_event(&reflow_request);
+
+        // content-visibility: if the skipped-element set changed since the last display
+        // list build, a rebuild is required even when no other damage exists — skipped
+        // elements emit no paint items, so the display list content itself depends on
+        // this set.
+        if *self.content_visibility_skipped.borrow() != reflow_request.content_visibility_skipped {
+            *self.content_visibility_skipped.borrow_mut() =
+                reflow_request.content_visibility_skipped.clone();
+            self.need_new_display_list.set(true);
+        }
 
         if self.can_skip_reflow_request_entirely(&reflow_request) {
             // We can skip layout, but we might need to update a scroll node.
@@ -1665,6 +1680,7 @@ impl LayoutThread {
             paint_timing_handler,
             reflow_statistics,
             reflow_request.frame_focused,
+            &reflow_request.content_visibility_skipped,
         );
 
         stacking_context_tree.paint_info.paint_timing_info = reflow_request.paint_timing_info;

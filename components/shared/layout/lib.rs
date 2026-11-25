@@ -785,6 +785,9 @@ pub struct ReflowRequest {
     /// Whether or not this document has system focus and is the focused frame
     /// in the frame tree.
     pub frame_focused: bool,
+    /// Elements skipped for paint by content-visibility relevance determination.
+    /// Their subtrees are laid out normally but skipped during display list building.
+    pub content_visibility_skipped: FxHashSet<OpaqueNode>,
     /// Whether LCP computation should be halted for this reflow.
     /// From <https://www.w3.org/TR/largest-contentful-paint/#limitations>:
     /// > The LargestContentfulPaint ... algorithm halts ... inputs.

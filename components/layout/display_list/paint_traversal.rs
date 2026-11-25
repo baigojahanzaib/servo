@@ -24,16 +24,36 @@ pub(crate) struct PaintTraversal<'a, Handler: PaintTraversalHandler> {
     handler: &'a mut Handler,
     outlines: Vec<(TraversalState, Arc<BoxFragment>)>,
     floats: Vec<(TraversalState, Arc<BoxFragment>)>,
+    /// Elements currently skipped for paint by content-visibility. Fragments belonging
+    /// to these elements (and their entire subtrees) emit no paint items, though they
+    /// are still laid out and hit-testable.
+    content_visibility_skipped: &'a rustc_hash::FxHashSet<style::dom::OpaqueNode>,
 }
 
 impl<'a, Handler: PaintTraversalHandler> PaintTraversal<'a, Handler> {
     pub(crate) fn traverse(root_stacking_context: &StackingContext, handler: &'a mut Handler) {
+        static EMPTY: std::sync::LazyLock<rustc_hash::FxHashSet<style::dom::OpaqueNode>> =
+            std::sync::LazyLock::new(Default::default);
+        Self::traverse_with_content_visibility_skip(root_stacking_context, handler, &EMPTY);
+    }
+
+    pub(crate) fn traverse_with_content_visibility_skip(
+        root_stacking_context: &StackingContext,
+        handler: &'a mut Handler,
+        content_visibility_skipped: &'a rustc_hash::FxHashSet<style::dom::OpaqueNode>,
+    ) {
         Self {
             handler,
             outlines: Vec::new(),
             floats: Vec::new(),
+            content_visibility_skipped,
         }
         .traverse_stacking_context(&TraversalState::default(), root_stacking_context);
+    }
+
+    fn is_fragment_content_visibility_skipped(&self, tag: Option<Tag>) -> bool {
+        !self.content_visibility_skipped.is_empty() &&
+            tag.is_some_and(|tag| self.content_visibility_skipped.contains(&tag.node))
     }
 
     /// <https://drafts.csswg.org/css-position-4/#paint-a-stacking-context>
@@ -42,6 +62,14 @@ impl<'a, Handler: PaintTraversalHandler> PaintTraversal<'a, Handler> {
         state: &TraversalState,
         stacking_context: &StackingContext,
     ) {
+        let sc_root_skipped = match &stacking_context.fragment {
+            StackingContextFragments::Root => false,
+            StackingContextFragments::Fragment(fragment) =>
+                self.is_fragment_content_visibility_skipped(fragment.base.tag),
+        };
+        if sc_root_skipped {
+            return;
+        }
         let old_outlines_length = self.outlines.len();
         let state = state.push_stacking_context(stacking_context);
         let stacking_context_state = self.handler.visit_stacking_context(stacking_context);
@@ -191,6 +219,9 @@ impl<'a, Handler: PaintTraversalHandler> PaintTraversal<'a, Handler> {
         root: &BoxFragmentWithStyle<'_>,
         is_block_level: bool,
     ) {
+        if self.is_fragment_content_visibility_skipped(root.base.tag) {
+            return;
+        }
         let old_outlines_length = self.outlines.len();
 
         // > Step 4: If root is a block-level box, paint a block’s decorations given root
@@ -244,6 +275,10 @@ impl<'a, Handler: PaintTraversalHandler> PaintTraversal<'a, Handler> {
                 // is processed.
                 if box_fragment.stacking_context_type().is_some() {
                     return false;
+                }
+
+                if self.is_fragment_content_visibility_skipped(box_fragment.base.tag) {
+                    return true;
                 }
 
                 // We will process inline atomics during the inline level and replaced traversal.
@@ -437,6 +472,10 @@ impl<'a, Handler: PaintTraversalHandler> PaintTraversal<'a, Handler> {
         line_box_rect: PhysicalRect<Au>,
         at_stacking_context_root: bool,
     ) {
+        if self.is_fragment_content_visibility_skipped(box_fragment.base.tag) {
+            return;
+        }
+
         // If this box establishes a stacking context or stacking container, do not paint
         // it during this phase. Instead it is painted when the stacking context or container
         // is processed.
