@@ -1533,3 +1533,9 @@ Symptom index additions:
 ## Metal default-on milestone (feather PR #123, 2026-11-25)
 
 Metal is the default present path on macOS; FEATHER_METAL=0 is the escape hatch. All stage-2 gates passed with the webgl bridge in place: webgl probes+real site, GL regression clean, input latency improved (29.6 vs 23.1 rAF fps), video correct. The repaint-cost program that started with the video-CPU diagnosis is closed: present cost 21-27ms → ~1ms/frame.
+
+## Real-world validation findings (2026-11-26)
+
+Symptom: instant abort loading youtube.com in swgl/metal mode, "unknown shader ps_quad_gradient DITHERING" → FIXED (enable_dithering:!is_software_webrender): swgl lacks runtime shader compile; webrender build strips DITHERING variant. Rule: any webrender feature that mints new shader variants must be checked against swgl's build-time shader set before enabling in software mode.
+
+Symptom: youtube watch page aborts with GLib pthread_mutex_lock invalid-argument (vp9/gst media threads) → PRE-EXISTING, reproduces identically in GL mode — NOT metal-related. Prime suspect: servo-media gst threading on macOS with youtube's streaming format (vp9+adaptive). Local progressive mp4 plays fine. Owner: media lane territory; indexed here so nobody attributes it to Metal.
