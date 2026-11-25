@@ -1694,7 +1694,12 @@ impl HTMLMediaElement {
                 if let Some(ref src_object) = *self.src_object.borrow() {
                     match src_object {
                         SrcObject::Blob(blob) => {
-                            let blob_url = URL::CreateObjectURL(&self.global(), blob);
+                            let blob_url = URL::CreateObjectURL(
+                                &self.global(),
+                                crate::dom::bindings::codegen::UnionTypes::BlobOrMediaSource::Blob(
+                                    DomRoot::from_ref(&**blob),
+                                ),
+                            );
                             *self.blob_url.borrow_mut() =
                                 Some(ServoUrl::parse(&blob_url.str()).expect("infallible"));
                             self.fetch_request(cx, None, None);

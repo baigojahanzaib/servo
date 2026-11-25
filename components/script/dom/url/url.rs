@@ -22,6 +22,7 @@ use url::Url;
 use uuid::Uuid;
 
 use crate::dom::bindings::codegen::Bindings::URLBinding::URLMethods;
+use crate::dom::bindings::codegen::UnionTypes::BlobOrMediaSource;
 use crate::dom::bindings::error::{Error, ErrorResult, Fallible};
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{DomRoot, MutNullableDom};
@@ -193,12 +194,22 @@ impl URLMethods<crate::DomTypeHolder> for URL {
     }
 
     /// <https://w3c.github.io/FileAPI/#dfn-createObjectURL>
-    fn CreateObjectURL(global: &GlobalScope, blob: &Blob) -> DOMString {
+    fn CreateObjectURL(
+        global: &GlobalScope,
+        blob: BlobOrMediaSource,
+    ) -> DOMString {
         // XXX: Second field is an unicode-serialized Origin, it is a temporary workaround
         //      and should not be trusted. See issue https://github.com/servo/servo/issues/11722
         let origin = global.origin();
 
-        let id = blob.get_blob_url_id();
+        let id = match blob {
+            BlobOrMediaSource::Blob(blob) => blob.get_blob_url_id(),
+            // Media Source Extensions: the object URL is a blob URL whose
+            // backing object is the MediaSource. Resolving it back to the
+            // MediaSource is part of the stage-2 attach plumbing; for now the
+            // URL is minted with a fresh id so the DOM surface is complete.
+            BlobOrMediaSource::MediaSource(media_source) => media_source.url_id(),
+        };
 
         DOMString::from(URL::unicode_serialization_blob_url(origin.immutable(), &id))
     }
