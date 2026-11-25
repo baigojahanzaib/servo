@@ -6,6 +6,7 @@
 
 use std::default::Default;
 use std::ops::Range;
+use std::time::Duration;
 
 use app_units::Au;
 use embedder_traits::{
@@ -55,7 +56,8 @@ impl ClipboardProvider for EmbedderClipboardProvider {
         self.embedder_sender
             .send(EmbedderMsg::GetClipboardText(self.webview_id, callback))
             .unwrap();
-        rx.recv().unwrap()
+        rx.try_recv_timeout(Duration::from_secs(5))
+            .unwrap_or_else(|_| Err("Clipboard IPC timed out".into()))
     }
     fn set_text(&mut self, s: String) {
         self.embedder_sender

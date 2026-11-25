@@ -115,12 +115,27 @@ mod fallback_clipboard {
 ))]
 mod clipboard {
     use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     use arboard::Clipboard;
     use parking_lot::Mutex;
 
     use super::StringRequest;
     use crate::clipboard_delegate::fallback_clipboard;
+
+    /// Clipboard operations silently degrade to an in-process string when the
+    /// OS clipboard is unavailable — warn loudly once instead of leaving an
+    /// invisible debugging trap.
+    static FALLBACK_WARNED: AtomicBool = AtomicBool::new(false);
+
+    fn warn_fallback_once(operation: &str, error: &arboard::Error) {
+        if !FALLBACK_WARNED.swap(true, Ordering::Relaxed) {
+            log::warn!(
+                "OS clipboard {operation} failed ({error}); clipboard operations are falling back \
+                 to a process-local in-memory store. Copy/paste will NOT reach the system clipboard."
+            );
+        }
+    }
 
     /// A shared clipboard for use by the [`DefaultClipboardDelegate`](super::DefaultClipboardDelegate).
     /// This is protected by a mutex so that it can only be used by one thread at a time.
@@ -138,21 +153,26 @@ mod clipboard {
     }
 
     pub(super) fn clear() {
-        if with_shared_clipboard(|clipboard| clipboard.clear()).is_err() {
+        if let Err(error) = with_shared_clipboard(|clipboard| clipboard.clear()) {
+            warn_fallback_once("clear", &error);
             fallback_clipboard::clear();
         }
     }
 
     pub(super) fn get_text(request: StringRequest) {
-        if let Ok(text) = with_shared_clipboard(|clipboard| clipboard.get_text()) {
-            request.success(text);
-            return;
-        };
+        match with_shared_clipboard(|clipboard| clipboard.get_text()) {
+            Ok(text) => {
+                request.success(text);
+                return;
+            },
+            Err(error) => warn_fallback_once("get_text", &error),
+        }
         fallback_clipboard::get_text(request);
     }
 
     pub(super) fn set_text(new_contents: String) {
-        if with_shared_clipboard(|clipboard| clipboard.set_text(&new_contents)).is_err() {
+        if let Err(error) = with_shared_clipboard(|clipboard| clipboard.set_text(&new_contents)) {
+            warn_fallback_once("set_text", &error);
             fallback_clipboard::set_text(new_contents);
         }
     }

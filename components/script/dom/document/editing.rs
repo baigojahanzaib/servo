@@ -4,6 +4,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
+use std::time::Duration;
 
 use embedder_traits::{
     ClipboardAction, EditingAction, EditingDirection, EditingMotion, EmbedderMsg, InputEventResult,
@@ -292,8 +293,13 @@ impl Document {
                 let (callback, receiver) =
                     GenericCallback::new_blocking().expect("Could not create callback");
                 self.send_to_embedder(EmbedderMsg::GetClipboardText(self.webview_id(), callback));
+                // Bound the wait: if the embedder never answers, the script
+                // thread would otherwise park forever (the same unbounded-IPC
+                // pattern as the fixed WebDriver hang). A timeout degrades to
+                // an empty paste, which is strictly better than a wedged pipeline.
                 let text_contents = receiver
-                    .recv()
+                    .try_recv_timeout(Duration::from_secs(5))
+                    .ok()
                     .map(Result::unwrap_or_default)
                     .unwrap_or_default();
 
