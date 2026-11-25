@@ -99,8 +99,10 @@ mod imp {
             let Some(ref t) = tracks.get(&track) else {
                 return Err(gstreamer::FlowError::Error);
             };
+            let size = data.len();
             let buffer = gstreamer::Buffer::from_slice(data);
-            t.appsrc.push_buffer(buffer)
+            let r = t.appsrc.push_buffer(buffer);
+            r
         }
 
         /// EOS is per-stream in gstreamer but MSE endOfStream ends the whole
@@ -120,20 +122,26 @@ mod imp {
         /// §1q), this design avoids injection entirely. Validated in the isolated
         /// gst harness: playback resumes cleanly with continuous position.
         pub fn seek_reset(&self) {
+            // Hold the tracks lock for the whole reset: pushes arriving
+            // mid-reset would otherwise land in a dying appsrc (or a removed
+            // track) and be silently lost, permanently starving the demuxer —
+            // the post-seek resume-stall race. Blocking pushes until the new
+            // appsrcs are in place makes the handover lossless.
+            let mut tracks = self.tracks.lock().unwrap();
             for pad in self.obj().src_pads() {
                 let _ = pad.push_event(gstreamer::event::FlushStart::new());
                 let _ = pad.push_event(gstreamer::event::FlushStop::new(true));
+                
             }
-            let ids: Vec<u64> = self.tracks.lock().unwrap().keys().copied().collect();
+            let ids: Vec<u64> = tracks.keys().copied().collect();
             for id in ids {
-                self.reset_track(id);
+                self.reset_track_locked(&mut tracks, id);
             }
         }
 
         /// Recreate one track's appsrc, re-targeting the existing ghost pad so
         /// downstream pad identity (and decodebin3's stream collection) is stable.
-        fn reset_track(&self, id: u64) {
-            let mut tracks = self.tracks.lock().unwrap();
+        fn reset_track_locked(&self, tracks: &mut BTreeMap<u64, MseTrack>, id: u64) {
             let Some(old) = tracks.remove(&id) else {
                 return;
             };
