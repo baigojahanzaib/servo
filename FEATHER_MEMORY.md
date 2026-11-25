@@ -971,7 +971,9 @@ FIXED on feather-engine: viewport-aware eviction — video elements entirely bey
 
 → check: `HTMLMediaElement` / media players (status: ruled out — instrumented scan shows ZERO active media elements during an entire reddit deep scroll; reddit's DASH/HLS videos never become players in servo. The video-eviction fix cannot affect reddit.)
 → check: net `ImageCache` (status: ruled out — see above; 16MB cap experiment)
-→ check: heavy DOM/layout/JS accumulation on real posts (prime suspect — unverified; synthetic trivial-DOM was flat but real posts are far heavier; static-snapshot discriminator pending)
+→ check: heavy DOM/layout accumulation on real posts (status: ruled out — realistic-weight synthetic ~600 elements/post incl. nested comments+svg grew only +16MB over the same scroll protocol)
+→ check: per-pipeline costs of ad/tracking iframes (prime suspect, mechanism evidence: infinite iframe-image synthetic grew +111MB with only ~15 frames ≈ 7MB per iframe pipeline that is never released; the net image cache is per-PIPELINE so each iframe also gets a private 128MB decoded-image budget with zero cross-document pressure. Matches both magnitude and the wild run-to-run variance since ad injection varies per load. Unconfirmed on live reddit — no direct iframe-count measurement yet.)
+→ check: JS heap growth from scroll-triggered execution (unexplored)
 → note: run-to-run variance on live reddit is extreme (+118 to +1060 with identical binary) — single measurements are meaningless here; control content or repeat 3x minimum.
 
 ### Symptom: browser process gone mid-measurement during reddit deep scroll
