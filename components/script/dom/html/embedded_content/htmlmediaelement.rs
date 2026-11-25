@@ -3058,6 +3058,10 @@ impl HTMLMediaElement {
     }
 
     fn seekable(&self) -> TimeRangesContainer {
+        // MSE: seekable mirrors the buffered ranges of the active source buffers.
+        if let Some(ref ms) = *self.media_source.borrow() {
+            return ms.buffered_value();
+        }
         let mut seekable = TimeRangesContainer::default();
         if let Some(ref player) = *self.player.borrow() {
             let ranges = player.lock().unwrap().seekable();
