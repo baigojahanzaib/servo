@@ -1377,3 +1377,40 @@ Residual genuine fails, identical in stock → upstream class, not feather bugs:
 - Symptom: servoshell process vanishes mid-crawl (webdriver port goes connection-refused, rows flip to instant-error at 0ms) → check: structuredclone.rs SameProcess scope (confirmed cause historically — reverted; the UAF mechanism is documented in §1u/line 1276), any future re-implementation of shared-memory cloning that copies serialized bytes out of SM ownership.
 - crawl.py now exits for restart on nav_error/driver_error too, not just timeout (`--stop-on-timeout` semantics widened); xrun.sh implements the 3-strikes consistent-failure attribution loop.
 - Timeout-bisect verdict from §1x stands: arena purge (7d02b70553b), download spool (92080fd7), hidden-doc GC (826f3a5) all ruled out — post-fix parity with stock on every repro site.
+||||||| parent of 543590bf2 (FEATHER_MEMORY: SW-WR outcome — negative-result measurement chain + symptom index)
+
+## SW-WR integration outcome + symptom index (2026-11-25, macOS lane)
+
+### Verdict: negative result for repaint cost — measurement-driven
+swgl integration is COMPLETE and pixel-correct behind FEATHER_SWWR=1 (default off), but A/B
+measurement on the same binary shows NO significant win: anim 52-62% both backends, video
+GL 74% / SW 70% (~marginal), static idle 0.2% both. The harness validated rasterization in
+isolation but rasterization is NOT the binding cost of a repaint in situ.
+
+### Symptom index entries
+- Symptom: black page area with swgl active, webrender initialized fine, high CPU → check:
+  shell present path end-to-end (owns getting pixels to screen — confirmed cause: readback
+  existed in engine but nothing in the shell ever displayed it; a backend swap is not done
+  until pixels reach the window), swgl context threading (status: ruled out — make_current
+  in readback correct but was never the issue), webrender composite target (ruled out).
+- Symptom: red/blue channels swapped under swgl, green/yellow fine → check: byte order of
+  swgl memory (confirmed cause: BGRA memory layout, GL native; RgbaImage contract is RGBA —
+  swizzle in readback), row flip (ruled out — orientation was correct).
+- Symptom: sustained ~55% CPU on static-looking page during tests → check: modal system
+  dialogs stealing osascript keystrokes (confirmed cause once: devtools-auth dialog up meant
+  navigation never happened — the ANIM page was still running; measurement contamination),
+  paint-gating (ruled out — gated idle is 0.2% under both backends).
+- Symptom: repaint CPU cost unchanged after composite backend swap → check: egui/shell
+  present path (prime suspect — the shell's own egui render passes through Apple GL every
+  repaint regardless of webrender backend), upstream pipeline (prime suspect for rAF
+  content: JS/style/layout/display-list/scene-building per frame), webrender rasterization
+  backend (ruled out for total cost — A/B shows it is a minority share), texture upload /
+  readback copies (ruled out — NOREAD experiment: identical CPU with zero readback).
+- Environmental: `sample`/`spindump` on macOS need the Developer-Tools-Access auth dialog
+  approved in the GUI (password devin) or they hang silently forever — and the modal dialog
+  intercepts osascript keystrokes while up, contaminating any concurrent test navigation.
+
+### Experiment infrastructure (reusable)
+FEATHER_SWWR_NOREAD=1 (paint but skip readback+upload) and FEATHER_SWWR_NOUPLOAD=1 (readback
+but no texture update) env switches in shell/src/app.rs — binary-search cost attribution of
+the present path in a single build.
