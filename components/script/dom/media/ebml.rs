@@ -162,3 +162,201 @@ pub(crate) fn rewrite_tfdt_offsets(data: &mut [u8], delta_units: i64) {
 pub(crate) fn fmp4_timescale(init: &[u8]) -> u32 {
     mdhd_timescale(init).unwrap_or(90000)
 }
+
+/// Streaming EBML indexer for WebM MSE byte streams. Unlike the flat scanner
+/// (scan_cluster_timecodes), this parses the concatenated byte stream
+/// sequentially with cross-append state: real players (YouTube verified) split
+/// single clusters across multiple appendBuffer calls, so per-append scanning
+/// both misses split clusters and false-positives on the 1F43B675 byte pattern
+/// inside binary payload — producing swiss-cheese buffered ranges that poison
+/// player append scheduling. This parser skips element payloads by their exact
+/// declared sizes, so payload bytes are never misinterpreted as element headers.
+#[derive(JSTraceable, MallocSizeOf)]
+pub(crate) struct WebmIndexer {
+    /// Unparsed stream tail — only holds the current partial element, bounded
+    /// by the largest single cluster size (a few MB at most).
+    pending: Vec<u8>,
+    last_timecode: Option<f64>,
+}
+
+impl WebmIndexer {
+    pub(crate) fn new() -> Self {
+        WebmIndexer {
+            pending: Vec::new(),
+            last_timecode: None,
+        }
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.pending.clear();
+        self.last_timecode = None;
+    }
+
+    /// Feed appended bytes; returns timecodes (seconds) of clusters whose
+    /// heads are now fully parsed, in stream order. Cluster payload need not
+    /// be complete for the timecode to count — the timecode element sits in
+    /// the cluster head — but consumption only advances past complete
+    /// elements so a partial tail is re-parsed with the next append.
+    pub(crate) fn feed(&mut self, data: &[u8]) -> Vec<f64> {
+        let mut stream = std::mem::take(&mut self.pending);
+        stream.extend_from_slice(data);
+        let mut out = Vec::new();
+        let mut pos = 0usize;
+        loop {
+            let avail = stream.len() - pos;
+            if avail < 2 {
+                break;
+            }
+            let (id, idlen) = read_id(&stream[pos..]);
+            if idlen == 0 || avail < idlen + 1 {
+                break;
+            }
+            let (raw_size, szlen) = read_vint(&stream[pos + idlen..]);
+            if szlen == 0 {
+                break;
+            }
+            let header = idlen + szlen;
+            const ID_EBML_HEADER: u64 = 0x1A45DFA3;
+            const ID_SEGMENT: u64 = 0x18538067;
+            const ID_CLUSTER: u64 = 0x1F43B675;
+            const UNKNOWN: usize = usize::MAX;
+            let size = if raw_size == vint_unknown_value(szlen) {
+                UNKNOWN
+            } else {
+                raw_size
+            };
+            if id == ID_SEGMENT {
+                // master element: descend — content continues inline. Unknown
+                // size is normal for segments.
+                pos += header;
+                continue;
+            }
+            if id == ID_CLUSTER {
+                if size == UNKNOWN {
+                    // cannot delimit — index the head if present, then resync
+                    // to the next cluster marker; if none yet, wait for more.
+                    if let Some(tc) = scan_cluster_head_timecode(&stream[pos + header..]) {
+                        out.push(tc);
+                    }
+                    match find_next_cluster(&stream[pos + header..]) {
+                        Some(off) => {
+                            pos += header + off;
+                            continue;
+                        },
+                        None => break,
+                    }
+                }
+                let total = header + size;
+                if avail < total {
+                    // partial cluster: keep everything for the next append.
+                    break;
+                }
+                if let Some(tc) = scan_cluster_head_timecode(&stream[pos + header..pos + total]) {
+                    out.push(tc);
+                }
+                pos += total;
+                continue;
+            }
+            if size == UNKNOWN && id != ID_EBML_HEADER {
+                // unknown-size non-cluster element: cannot skip safely —
+                // resync to next cluster or wait.
+                match find_next_cluster(&stream[pos + header..]) {
+                    Some(off) => {
+                        pos += header + off;
+                        continue;
+                    },
+                    None => break,
+                }
+            }
+            let total = header + size;
+            if avail < total {
+                break;
+            }
+            pos += total;
+        }
+        self.pending = stream[pos..].to_vec();
+        if let Some(last) = out.last() {
+            self.last_timecode = Some(*last);
+        }
+        out
+    }
+
+    pub(crate) fn last_timecode(&self) -> Option<f64> {
+        self.last_timecode
+    }
+}
+
+/// value a vint size field takes when it means "unknown size" — all payload
+/// bits set for its length.
+fn vint_unknown_value(len: usize) -> usize {
+    if len >= 8 {
+        return usize::MAX;
+    }
+    (1usize << (7 * len)) - 1
+}
+
+/// read an ebml element id (vint WITH marker bits retained). returns (id, len).
+fn read_id(data: &[u8]) -> (u64, usize) {
+    if data.is_empty() {
+        return (0, 0);
+    }
+    let first = data[0];
+    for len in 1..=4usize {
+        if first & (0x80 >> (len - 1)) != 0 {
+            if data.len() < len {
+                return (0, 0);
+            }
+            let mut val: u64 = first as u64;
+            for b in &data[1..len] {
+                val = (val << 8) | (*b as u64);
+            }
+            return (val, len);
+        }
+    }
+    (0, 0)
+}
+
+/// scan a cluster head for the Timecode element (0xE7) by properly walking
+/// child elements — never byte-guessing inside payload. bounded to the first
+/// 512 bytes or the cluster size, whichever is smaller.
+fn scan_cluster_head_timecode(payload: &[u8]) -> Option<f64> {
+    let end = payload.len().min(512);
+    let mut i = 0usize;
+    while i + 2 <= end {
+        let (id, idlen) = read_id(&payload[i..]);
+        if idlen == 0 || i + idlen >= end {
+            return None;
+        }
+        let (size, szlen) = read_vint(&payload[i + idlen..]);
+        if szlen == 0 {
+            return None;
+        }
+        if id == 0xE7 {
+            let start = i + idlen + szlen;
+            if size == 0 || size > 8 || start + size > payload.len() {
+                return None;
+            }
+            let mut val: u64 = 0;
+            for b in &payload[start..start + size] {
+                val = (val << 8) | (*b as u64);
+            }
+            // webm timecodes are in the segment timecode scale, 1ms in
+            // practice for youtube and ffmpeg-produced streams.
+            return Some(val as f64 / 1000.0);
+        }
+        // skip this child element
+        let next = i + idlen + szlen + size;
+        if next <= i {
+            return None;
+        }
+        i = next;
+    }
+    None
+}
+
+/// find the next cluster element id byte pattern — used only as a resync
+/// fallback for unknown-size elements, never as the primary parse mechanism.
+fn find_next_cluster(data: &[u8]) -> Option<usize> {
+    data.windows(4)
+        .position(|w| w == [0x1F, 0x43, 0xB6, 0x75])
+}

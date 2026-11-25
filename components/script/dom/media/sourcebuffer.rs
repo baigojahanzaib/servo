@@ -41,6 +41,9 @@ pub(crate) struct SourceBuffer {
     needs_init_refeed: std::cell::Cell<bool>,
     track_id: Cell<u64>,
     media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
+    /// Streaming webm indexer — parses the concatenated byte stream with
+    /// cross-append state, immune to clusters split across appendBuffer calls.
+    webm_indexer: script_bindings::cell::DomRefCell<crate::dom::media::ebml::WebmIndexer>,
 }
 
 impl SourceBuffer {
@@ -56,6 +59,7 @@ impl SourceBuffer {
             needs_init_refeed: std::cell::Cell::new(false),
             media_source: script_bindings::cell::DomRefCell::new(None),
             track_id: Cell::new(0),
+            webm_indexer: script_bindings::cell::DomRefCell::new(crate::dom::media::ebml::WebmIndexer::new()),
         }
     }
 
@@ -79,6 +83,7 @@ impl SourceBuffer {
     pub(crate) fn handle_seek(&self) {
         *self.buffered.borrow_mut() = TimeRangesContainer::default();
         self.needs_init_refeed.set(true);
+        self.webm_indexer.borrow_mut().reset();
     }
 
     pub(crate) fn buffered_ranges(&self) -> Vec<(f64, f64)> {
@@ -209,7 +214,8 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // updating flips synchronously, the append completes in a queued task
         // with updatestart/update/updateend — real player JS loops on these.
         self.updating.set(true);
-        let timecodes = crate::dom::media::ebml::scan_cluster_timecodes(&bytes);
+        let prev_indexed_tc = self.webm_indexer.borrow().last_timecode();
+        let timecodes = self.webm_indexer.borrow_mut().feed(&bytes);
         // fmp4 path: webm scan finds nothing in mp4 — fall back to tfdt scanning
         // so buffered indexing works for twitch/vimeo-class mp4 appends.
         let mut fmp4_range = None;
@@ -226,8 +232,15 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
             // extend the trailing range or start a new one. Estimating the
             // tail duration from cluster spacing is refined in later stages.
             let mut ranges = self.buffered.borrow_mut();
+            // span estimate: prefer in-batch spacing; otherwise use the gap
+            // from the previous append's last cluster — real players (youtube
+            // verified) often append one cluster per call, so in-batch spacing
+            // is unavailable and a fixed 1s guess fragments the ranges.
             let span = if timecodes.len() > 1 {
                 (last - first) / (timecodes.len() - 1) as f64
+            } else if let Some(prev) = prev_indexed_tc {
+                let gap = *first - prev;
+                if gap > 0.05 && gap < 30.0 { gap } else { 1.0 }
             } else {
                 1.0
             };
