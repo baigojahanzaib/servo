@@ -920,7 +920,6 @@ Symptom: copy puts an internal GUID/token on the clipboard instead of visible te
 Symptom: copy works in-page but never reaches the system clipboard → check: `clipboard` module in servo/clipboard_delegate (owns arboard access; CONFIRMED trap — silent in-memory fallback on any arboard error; loud warn-once added in a922f7fa4), `DefaultClipboardDelegate` wiring (status: ruled out — delegate chain is sound).
 
 Symptom: script thread wedges during paste (page unresponsive, no crash) → check: paste-path `GetClipboardText` blocking reads in editing paste handling and `EmbedderClipboardProvider::get_text` in text_input (CONFIRMED unbounded IPC — bounded to 5s in a922f7fa4), script-event-loop starvation by runaway JS (status: ruled out for this symptom — separate slow-script class, see PR #58 docs).
-||||||| parent of 0c938fe77f3 (media: servomse multi-track MSE element + MediaSource stream type plumbing)
 
 ## 1o. MSE stage 5 — multi-track servomse (IN PROGRESS checkpoint, 2026-11-25)
 
@@ -951,7 +950,6 @@ rpath symlink dir for the dylibs). EOS 540MB RSS after playback.
 Symptom: video plays first time but replay-after-end never advances (playing state, time frozen at 00:00) → check: servo media EOS handling in the gstreamer player integration (prime suspect — the replay-after-end EOS defect documented by the Windows lane REPRODUCES on macOS identically), HTMLMediaElement seek-on-replay logic (status: unchecked), gst pipeline state reset (status: unchecked).
 
 Symptom: video element renders black/no frames on macOS → check: GST_PLUGIN_PATH/DYLD fallback env at runtime (CONFIRMED requirement — without the framework plugin path no playback pipeline exists), rotation metadata in render path (status: Windows-lane defect, unverified on macOS), gst pipeline init (status: ruled out — frames render correctly with env set).
-||||||| parent of 16dec4b52bc (media: fix servomse preroll deadlock — drop is-live from track appsrcs)
 
 - Symptom: gst pipeline stuck pre-preroll forever, zero errors, events flow but no buffers → check: `is-live` property on any appsrc/basesrc in the chain (CONFIRMED cause — live sources hold all output until PLAYING, which can never arrive without their data; evidence string `live source waiting for running` in gst_base_src_wait_playing_unlocked). Also check `current-level-bytes` on each appsrc: nonzero-and-static = upstream blockage, draining-then-stall = downstream backpressure.
 - Symptom: typefind errors "Stream doesn't contain enough data" on EOS → check: whether EOS raced ahead of data because a pad flush event destroyed queued buffers in transit (evidence: burst of `_gst_buffer_free` finalizes at flush time) — likely artifact of manual state cycling, NOT a real MSE hazard (ruled out for normal operation).
