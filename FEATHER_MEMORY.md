@@ -1160,3 +1160,6 @@ REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-cra
 
 ## Symptom: claude.ai turnstile still loops/restarts with real SAB + working Atomics.wait/notify + OffscreenCanvas-2d all verified
 → check: WebGL-on-OffscreenCanvas TypeError (prime suspect — unguarded access would kill the payload chain), WebGL fingerprint surface generally, wasm threads (unprobed), behavioral/TLS signals (out of JS-engine scope — do not chase per Google decision), payload opacity (sufficiency unprovable from outside; shim stays the only working path).
+
+## Symptom/probe verdicts: wasm capabilities (turnstile residual sweep)
+→ check: WebAssembly basic compile/exec (status: ruled out — present and correct), WebAssembly.Memory({shared:true}) construction (status: ruled out — constructs OK), wasm atomic instructions (status: INCONCLUSIVE — hand-assembled probe module failed with a byte-encoding error in the probe itself, not an engine verdict; needs a properly assembled threads-test module or wat2wasm tooling).
