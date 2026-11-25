@@ -846,3 +846,23 @@ timestampOffset before pushing to appsrc.
 Probe harness pattern that works without webdriver: results into
 document.title, read via `xdotool search --name PROBE | xdotool
 getwindowname` after sleep 10. Probe pages in /tmp/msetest/probe*.html.
+
+## 1m. MSE stage 3 KEY INSIGHT — push API already exists (Nov 25)
+
+`servo_media::player::Player` trait ALREADY exposes `push_data(Vec<u8>)` and
+`end_of_stream()` — the byte-injection API MSE needs. Progressive playback
+feeds bytes through the same path from the fetch machinery
+(htmlmediaelement.rs:3988 DataBuffer::Payload → player.push_data).
+
+Therefore stage 3/4 minimal path needs NO new gst element for the
+single-SourceBuffer case: attach creates a normal servosrc-backed player,
+appendBuffer routes bytes to player.push_data, endOfStream routes to
+player.end_of_stream. Concatenated webm segments demux fine (validated
+1l). The multi-pad servomse element (separate audio+video appsrc pads) is
+deferred to stage 5 where two SourceBuffers must coexist.
+
+Glue gaps being built: (1) attach_media_source must create the player —
+currently creates none; (2) SourceBuffer needs media-source backreference,
+MediaSource needs element backreference; (3) appendBuffer routing +
+updating flag + update events; (4) EOS only from endOfStream — must NOT
+let servosrc auto-EOS; (5) StreamType choice for MSE player.
