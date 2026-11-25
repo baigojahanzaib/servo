@@ -1510,3 +1510,21 @@ Mechanism notes for future lanes:
 - webgl frames in software mode register as ExternalImageType::Buffer; the outer handler in shared/paint/lib.rs must pass RawData through with UNFLIPPED texel rect (GL textures use flipped uv, memory buffers are already flipped at readback).
 - JS readPixels returning 0,0,0,0 after present is SPEC-CORRECT when preserveDrawingBuffer=false (default) — not a bug.
 - WebGL thread surfaces are IOSurface-backed on macOS — a zero-copy optimization over glReadPixels exists but is unwired; current readback cost is one copy per canvas-frame.
+||||||| parent of 7f2f74a47c1 (docs: real-YouTube seek verification failures + instrumented facts (§1zb))
+
+## §1zb. Real-YouTube seek verification — harness-verified seek FAILS on real content (2026-11-25/26)
+
+End-to-end verification of the §1t seek implementation against signed-in real YouTube (watch?v=Uc726aogLjw, servoshell webdriver probes /tmp/seekverify2.py, /tmp/seekdiag2.py, /tmp/appendtrace.py): the seek implementation passes the controlled harness but FAILS on real YouTube. Defects, most damning first:
+
+1. Position frozen at X.001 values (11.001, 30.001, 40.001 observed) after seeks — playback feeding continues (network appends flow, verified) but position never advances. rs stuck at 4. Sometimes position frozen even PRE-seek (7.873373 across reads in one run) — non-deterministic across runs.
+2. Post-seek position misaligned when it does advance: seek +60 from t≈8 → position reports 43.4 advancing to 50 — matches neither target (~68) nor any obvious landmark.
+3. Buffered index does not match the presentation timeline on real YouTube: buf end 11.0 while playing at t=15 in one run; buf 43 while t=8 in another. Post-seek buf jumps to 71.001.
+4. Seek-to-0 hard-fails: media error + emptied events — pipeline teardown, player dead.
+5. getVideoPlaybackQuality unimplemented (returns undefined) — no frame-counter motion detection available.
+
+INSTRUMENTED FACTS (appendtrace): YouTube NEVER uses timestampOffset for regular appends (always 0) — segments carry timeline position in their internal tfdt. Post-seek YouTube re-appends init segments (small 220-266 byte appends) + media segments, including re-appending byte-identical lengths already fed pre-seek. So the "page re-appends on its own seeking handler" assumption holds — data IS flowing post-seek; the failure is in position/timeline machinery, not starvation.
+
+Symptom index additions:
+- Symptom: position frozen at exactly X.001 while playback feeding continues (rs 4, no error) → check: post-flush-recreate position derivation in servomse/mse_source.rs (owns the gst segment base after appsrc recreation — prime suspect: recreated appsrc emits segment starting at/near 0 and position mapping clamps or mismatches), video track decode stall after seek (first-frame-only decode if post-seek media doesn't align), per-track position selection logic in servo-media player (which track provides position and whether it re-bases after recreate). NOT the network layer (appends verified flowing), NOT timestampOffset handling (YouTube uses 0 always).
+- Symptom: buffered ranges disagreeing with playback position on real YouTube (index ahead OR behind position) → check: tfdt-scanning indexer vs multi-init quality-switch streams (YouTube switches init segments across bitrates — each quality has own init; indexer may mis-parse across the switch), appendWindow clipping unimplemented?, the X.001 offset pattern suggesting +1ms frame-duration artifacts. WebM indexer verified accurate on uniform content — fMP4 multi-init real-world content is the untested class.
+- Symptom: media error + emptied events immediately after seek-to-zero → check: seek_reset path with target 0 / pipeline state when seek arrives while previous recreate still in flight (three rapid seeks in probe), error propagation from qtdemux on re-fed init segments.
