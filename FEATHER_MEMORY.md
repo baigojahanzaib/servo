@@ -1430,3 +1430,19 @@ pixels/lib.rs webrender_image_descriptor_and_data_for_frame is the paint-path co
 consumers in components/script (canvas_state, createImageBitmap) read frame ranges directly.
 All must go through a materializing accessor. Re-decode for v1 raster formats: pixels::load_from_memory
 re-run on encoded bytes — must match original decode exactly (deterministic — same code path).
+
+## IMGMEM lane state at context exhaustion (continuation notes)
+DONE+committed on imgmem-wip: encoded_bytes retention (pixels/lib.rs + decoding.rs compile-clean).
+NEXT INCREMENT (start here): swap-aware decoded storage. Concretely: RasterImage.bytes is the
+decoded buffer indexed by frame byte_ranges; introduce interior-mutable residency:
+`decoded: RwLock<DecodedState>` where DecodedState = Resident(Arc<Vec<u8>>) | Evicted, replacing
+the plain bytes field. Consumers to migrate (exhaustive list to grep): pixels/lib.rs
+webrender_image_descriptor_and_data_for_frame (paint upload — from_arc_vec(self.bytes.clone()));
+script canvas crate canvas_state / createImageBitmap frame-range reads; snapshot.rs in pixels.
+Accessor contract: materialize_decoded(&self) -> Arc<Vec<u8>> — re-decodes from encoded_bytes
+via load_from_memory decode path when Evicted (frames byte_ranges stay valid because re-decode
+is deterministic — VERIFY this invariant for animated multi-frame; v1 skips frames.len()>1).
+Eviction entry point: net/image_cache.rs — a global resident-decoded LRU budget, pref-gated
+(default-off), counting bytes across pipelines. Evict = swap to Evicted + drop Arc (WR copy
+keeps painting correct — zero visual impact for static painted images). NEVER evict frames.len()>1.
+Then verification: deep-scroll reddit memory growth vs control + scrollback flash check.
