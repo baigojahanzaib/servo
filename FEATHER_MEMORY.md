@@ -1443,3 +1443,18 @@ real CPU, not vsync blocking. Anim achieves only ~19 of 30 target fps — main t
   FEATHER_NOPAINT / FEATHER_SWWR_NOREAD / FEATHER_SWWR_NOUPLOAD (isolation switches —
   caveat: NOPAINT removes the pipeline throttle so frames run unthrottled; do not interpret
   its absolute CPU as upstream cost).
+||||||| parent of c51f942c2fb (docs: timeout-wedge regression verdict — not live on Linux, trap index (§1z))
+
+## 1z. Timeout-wedge "regression" verdict: NOT live on Linux HEAD — full survival chain verified (2026-11-25)
+**Claim tested**: "any single timed-out page load permanently kills the browser session" — ordered bisected among arena purge / download spool / hidden-doc GC.
+**Verdict: no repro on Linux, nothing to bisect.** Full chain on HEAD (post-SAB-revert):
+- Webdriver: aol.com times out with proper error at exactly 30s → example.com nav succeeds → current-url + title both confirm real load. Session fully healthy post-timeout.
+- Real feather shell: aol.com loads + streams forever (never-finishing load class) → omnibox nav to example.com succeeds, window retitles. No wedge.
+- The three bisect suspects are exonerated for the wedge itself, not just crawl artifacts — they all PREDATE the original passing wedge-fix verification, and survival still works with them in-tree today.
+
+**Traps that produce false wedge positives (symptom-index entries):**
+- Symptom: webdriver navigation NEVER returns (no response even at 95s+) → check: whether the client set an explicit pageLoad timeout — servo's default is effectively unbounded (spec says 300s default; servo does not appear to enforce any). Without `/timeouts` the nav command hangs forever and every later command queues behind it — looks exactly like the permanent wedge but is just a missing default-timeout implementation. REAL MINOR GAP: implement the 300s spec default in webdriver_server.
+- Symptom: typing into feather's omnibox does nothing in Xvfb/xdotool testing → check: Xvfb has no WM, so winit never gets focus — must `xdotool windowfocus <id>` explicitly; ctrl+a/click selection feedback can misleadingly work while keystrokes go nowhere.
+- Symptom: post-timeout crawl rows garbage → see §1y (crash-fallout ordering; first error row is the suspect, the rest are fallout).
+
+**Platform caveat**: this verdict is Linux-only. If the wedge reproduces on Windows/macOS, it is platform-specific — the Linux exoneration does not transfer, but the repro sequence above (30s timeout + post-timeout nav + current-url verification) is the exact test to run there.
