@@ -65,9 +65,6 @@ mod imp {
             appsrc.set_block(false);
             appsrc.set_format(gstreamer::Format::Bytes);
             appsrc.set_stream_type(gstreamer_app::AppStreamType::Stream);
-            // MSE tracks are live-ish push streams: timestamps come from the
-            // segment data itself.
-            appsrc.set_property("is-live", true);
 
             // Sync state only after the pad chain exists end-to-end, so the
             // src pad activation can actually start the streaming task.
