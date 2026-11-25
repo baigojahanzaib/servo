@@ -889,7 +889,7 @@ impl Handler {
             VerifyBrowsingContextIsOpen::No,
         )?;
 
-        let url = wait_for_ipc_response(receiver)?;
+        let url = wait_for_ipc_response(receiver, self.ipc_response_timeout()?)?;
 
         Ok(WebDriverResponse::Generic(ValueResponse(
             serde_json::to_value(url)?,
@@ -1038,7 +1038,7 @@ impl Handler {
         )?;
 
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1059,7 +1059,7 @@ impl Handler {
         )?;
 
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1136,7 +1136,7 @@ impl Handler {
 
         // Step 3. Let title be the session's current top-level
         // browsing context's active document's title.
-        let title = wait_for_ipc_response(receiver)?;
+        let title = wait_for_ipc_response(receiver, self.ipc_response_timeout()?)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
             serde_json::to_value(title)?,
         )))
@@ -1343,7 +1343,7 @@ impl Handler {
 
         // Step 4. If session's current parent browsing context is not null,
         // set the current browsing context with session and current parent browsing context.
-        let browsing_context_id = wait_for_ipc_response_flatten(receiver)?;
+        let browsing_context_id = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         self.session_mut()?
             .set_browsing_context_id(browsing_context_id);
         // Step 5. Update any implementation-specific state that would result from
@@ -1396,7 +1396,7 @@ impl Handler {
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::Yes)?;
         self.handle_any_user_prompts(self.webview_id()?)?;
 
-        let browsing_context_id = wait_for_ipc_response_flatten(receiver)?;
+        let browsing_context_id = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         self.session_mut()?
             .set_browsing_context_id(browsing_context_id);
         // Step 4. Update any implementation-specific state that would result from
@@ -1492,7 +1492,11 @@ impl Handler {
             };
             self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)
                 .map_err(|error| (ImplicitWait::Return.into(), error))?;
-            wait_for_ipc_response_flatten(receiver)
+            wait_for_ipc_response_flatten(
+                receiver,
+                self.ipc_response_timeout()
+                    .map_err(|error| (ImplicitWait::Return.into(), error))?,
+            )
                 .map(|value| (!value.is_empty(), value))
                 .map_err(|error| (ImplicitWait::Return.into(), error))
         })
@@ -1566,7 +1570,11 @@ impl Handler {
             };
             self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)
                 .map_err(|error| (ImplicitWait::Return.into(), error))?;
-            wait_for_ipc_response_flatten(receiver)
+            wait_for_ipc_response_flatten(
+                receiver,
+                self.ipc_response_timeout()
+                    .map_err(|error| (ImplicitWait::Return.into(), error))?,
+            )
                 .map(|value| (!value.is_empty(), value))
                 .map_err(|error| (ImplicitWait::Return.into(), error))
         })
@@ -1631,7 +1639,11 @@ impl Handler {
             };
             self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)
                 .map_err(|error| (ImplicitWait::Return.into(), error))?;
-            wait_for_ipc_response_flatten(receiver)
+            wait_for_ipc_response_flatten(
+                receiver,
+                self.ipc_response_timeout()
+                    .map_err(|error| (ImplicitWait::Return.into(), error))?,
+            )
                 .map(|value| (!value.is_empty(), value))
                 .map_err(|error| (ImplicitWait::Return.into(), error))
         })
@@ -1670,7 +1682,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::GetElementShadowRoot(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         // Step 5. If shadow root is null, return error with error code no such shadow root.
-        let Some(value) = wait_for_ipc_response_flatten(receiver)? else {
+        let Some(value) = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)? else {
             return Err(WebDriverError::new(ErrorStatus::NoSuchShadowRoot, ""));
         };
         Ok(WebDriverResponse::Generic(ValueResponse(
@@ -1688,7 +1700,7 @@ impl Handler {
         let (sender, receiver) = generic_channel::channel().unwrap();
         let cmd = WebDriverScriptCommand::GetElementRect(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        let rect = wait_for_ipc_response_flatten(receiver)?;
+        let rect = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         let response = ElementRectResponse {
             x: rect.origin.x,
             y: rect.origin.y,
@@ -1709,7 +1721,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::GetElementText(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1724,7 +1736,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::GetActiveElement(sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         let value =
-            wait_for_ipc_response(receiver)?.map(|x| serde_json::to_value(WebElement(x)).unwrap());
+            wait_for_ipc_response(receiver, self.ipc_response_timeout()?)?.map(|x| serde_json::to_value(WebElement(x)).unwrap());
         // Step 4. If active element is a non-null element, return success
         // with data set to web element reference object for session and active element.
         // Otherwise, return error with error code no such element.
@@ -1751,7 +1763,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::GetComputedRole(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1766,7 +1778,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::GetElementTagName(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1789,7 +1801,7 @@ impl Handler {
         );
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1814,7 +1826,7 @@ impl Handler {
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
 
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(SendableJSValue(wait_for_ipc_response_flatten(receiver)?))?,
+            serde_json::to_value(SendableJSValue(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?))?,
         )))
     }
 
@@ -1834,7 +1846,7 @@ impl Handler {
             WebDriverScriptCommand::GetElementCSS(element.to_string(), name.to_owned(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -1848,7 +1860,7 @@ impl Handler {
         let (sender, receiver) = generic_channel::channel().unwrap();
         let cmd = WebDriverScriptCommand::GetCookies(sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        let cookies = wait_for_ipc_response_flatten(receiver)?;
+        let cookies = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         let response = cookies
             .into_iter()
             .map(|cookie| cookie_msg_to_cookie(cookie.into_inner()))
@@ -1866,7 +1878,7 @@ impl Handler {
         let (sender, receiver) = generic_channel::channel().unwrap();
         let cmd = WebDriverScriptCommand::GetCookie(name, sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        let cookies = wait_for_ipc_response_flatten(receiver)?;
+        let cookies = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         let Some(response) = cookies
             .into_iter()
             .map(|cookie| cookie_msg_to_cookie(cookie.into_inner()))
@@ -1931,7 +1943,7 @@ impl Handler {
 
         let cmd = WebDriverScriptCommand::AddCookie(cookie_builder.build(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         Ok(WebDriverResponse::Void)
     }
 
@@ -1945,7 +1957,7 @@ impl Handler {
         let (sender, receiver) = generic_channel::channel().unwrap();
         let cmd = WebDriverScriptCommand::DeleteCookie(name, sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         Ok(WebDriverResponse::Void)
     }
 
@@ -1959,7 +1971,7 @@ impl Handler {
         let (sender, receiver) = generic_channel::channel().unwrap();
         let cmd = WebDriverScriptCommand::DeleteCookies(sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         Ok(WebDriverResponse::Void)
     }
 
@@ -2009,7 +2021,7 @@ impl Handler {
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
 
         Ok(WebDriverResponse::Generic(ValueResponse(
-            serde_json::to_value(wait_for_ipc_response_flatten(receiver)?)?,
+            serde_json::to_value(wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?)?,
         )))
     }
 
@@ -2228,7 +2240,7 @@ impl Handler {
 
         // File input and non-typeable form control should have
         // been handled in `webdriver_handler.rs`.
-        if !wait_for_ipc_response_flatten(receiver)? {
+        if !wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)? {
             return Ok(WebDriverResponse::Void);
         }
 
@@ -2302,7 +2314,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::ElementClear(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
 
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         Ok(WebDriverResponse::Void)
     }
 
@@ -2322,7 +2334,7 @@ impl Handler {
         let cmd = WebDriverScriptCommand::ElementClick(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::No)?;
 
-        match wait_for_ipc_response_flatten(receiver)? {
+        match wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)? {
             Some(element_id) => {
                 self.perform_element_click(element_id)?;
 
@@ -2498,7 +2510,7 @@ impl Handler {
             WebDriverScriptCommand::ScrollAndGetBoundingClientRect(element.to_string(), sender);
         self.browsing_context_script_command(cmd, VerifyBrowsingContextIsOpen::Yes)?;
 
-        let rect = wait_for_ipc_response_flatten(receiver)?;
+        let rect = wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
 
         // Step 5
         let encoded = self.take_screenshot(Some(Rect::from_untyped(&rect)))?;
@@ -2707,6 +2719,19 @@ impl Handler {
             Err(status) => Err(WebDriverError::new(status, "failed to set permission")),
         }
     }
+
+    /// Bound for blocking on a reply from a pipeline's script thread: the
+    /// session script timeout (the WebDriver default when unset) plus a
+    /// fixed margin. A runaway page task would otherwise park the
+    /// single-threaded dispatcher forever and jam the whole driver.
+    pub(crate) fn ipc_response_timeout(&self) -> WebDriverResult<Duration> {
+        Ok(Duration::from_millis(
+            self.session()?
+                .session_timeouts()
+                .script
+                .unwrap_or(timeout::DEFAULT_SCRIPT_TIMEOUT),
+        ) + timeout::IPC_RESPONSE_MARGIN)
+    }
 }
 
 impl WebDriverHandler<ServoExtensionRoute> for Handler {
@@ -2866,27 +2891,44 @@ where
         .map_err(|_| WebDriverError::new(ErrorStatus::NoSuchWindow, ""))
 }
 
-fn wait_for_ipc_response<T>(receiver: GenericReceiver<T>) -> Result<T, WebDriverError>
-where
-    T: for<'de> Deserialize<'de> + Serialize,
-{
-    receiver
-        .recv()
-        .map_err(|_| WebDriverError::new(ErrorStatus::NoSuchWindow, ""))
-}
-
-/// This function is like `wait_for_ipc_response`, but works on a channel that
-/// returns a `Result<T, ErrorStatus>`, mapping all errors into `WebDriverError`.
-fn wait_for_ipc_response_flatten<T>(
-    receiver: GenericReceiver<Result<T, ErrorStatus>>,
+fn wait_for_ipc_response<T>(
+    receiver: GenericReceiver<T>,
+    timeout: Duration,
 ) -> Result<T, WebDriverError>
 where
     T: for<'de> Deserialize<'de> + Serialize,
 {
-    match receiver.recv() {
+    receiver
+        .try_recv_timeout(timeout)
+        .map_err(|error| match error {
+            generic_channel::TryReceiveError::ReceiveError(_) => {
+                WebDriverError::new(ErrorStatus::NoSuchWindow, "")
+            },
+            generic_channel::TryReceiveError::Empty => {
+                WebDriverError::new(ErrorStatus::Timeout, "Timed out waiting for IPC response")
+            },
+        })
+}
+
+/// This function is like `wait_for_ipc_response`, but works on a channel that
+/// returns a `Result<T, ErrorStatus>`, mapping all errors into `WebDriverError`.
+pub(crate) fn wait_for_ipc_response_flatten<T>(
+    receiver: GenericReceiver<Result<T, ErrorStatus>>,
+    timeout: Duration,
+) -> Result<T, WebDriverError>
+where
+    T: for<'de> Deserialize<'de> + Serialize,
+{
+    match receiver.try_recv_timeout(timeout) {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error_status)) => Err(WebDriverError::new(error_status, "")),
-        Err(_) => Err(WebDriverError::new(ErrorStatus::NoSuchWindow, "")),
+        Err(generic_channel::TryReceiveError::ReceiveError(_)) => {
+            Err(WebDriverError::new(ErrorStatus::NoSuchWindow, ""))
+        },
+        Err(generic_channel::TryReceiveError::Empty) => Err(WebDriverError::new(
+            ErrorStatus::Timeout,
+            "Timed out waiting for IPC response",
+        )),
     }
 }
 

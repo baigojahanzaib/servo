@@ -19,6 +19,10 @@ pub(crate) const DEFAULT_PAGE_LOAD_TIMEOUT: u64 = 300_000;
 /// <https://w3c.github.io/webdriver/#dfn-timeouts-configuration>.
 pub(crate) const DEFAULT_IMPLICIT_WAIT: u64 = 0;
 
+/// Extra time added to the session script timeout to bound how long a
+/// command may wait for a reply from a pipeline's script thread.
+pub(crate) const IPC_RESPONSE_MARGIN: Duration = Duration::from_secs(30);
+
 /// An amount of time to wait before considering that a screenshot has timed out.
 /// If after 10 seconds the screenshot cannot be taken, assume that the test has
 /// timed out.

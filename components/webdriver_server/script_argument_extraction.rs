@@ -51,7 +51,7 @@ impl Handler {
             VerifyBrowsingContextIsOpen::No,
         )?;
 
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         // Step 4. Return success with data element.
         Ok(format!("window.webdriverElement(\"{}\")", element_ref))
     }
@@ -71,7 +71,7 @@ impl Handler {
             VerifyBrowsingContextIsOpen::No,
         )?;
 
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         // Step 4. Return success with data element.
         Ok(format!(
             "window.webdriverShadowRoot(\"{}\")",
@@ -121,7 +121,7 @@ impl Handler {
 
         // Step 4. If browsing context is null or not a top-level browsing context,
         // return error with error code no such window.
-        wait_for_ipc_response_flatten(receiver)?;
+        wait_for_ipc_response_flatten(receiver, self.ipc_response_timeout()?)?;
         // Step 5. Return success with data browsing context's associated window.
         Ok(format!("window.webdriverWindow(\"{window_ref}\")"))
     }
