@@ -285,6 +285,13 @@ impl PlayerInner {
         if self.stream_type == StreamType::Stream {
             return Err(PlayerError::NonSeekableStream);
         }
+        if self.stream_type == StreamType::MediaSource {
+            // Push-mode MSE pipelines cannot execute gst seeks (no byte-serving
+            // upstream) and a partial seek wedges playback permanently. Swallow
+            // the seek: playback continues uninterrupted. Proper support needs
+            // in-stream flush+re-sequence machinery — see FEATHER_MEMORY §1q.
+            return Ok(());
+        }
         if let Some(ref metadata) = self.last_metadata &&
             let Some(ref duration) = metadata.duration &&
             duration < &time::Duration::new(time as u64, 0)

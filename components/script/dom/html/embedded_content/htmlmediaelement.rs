@@ -2224,6 +2224,15 @@ impl HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-seek>
     fn seek(&self, time: f64, _approximate_for_speed: bool) {
+        // MSE v1: seeking in push-mode MSE pipelines is unsupported (the gst seek
+        // cannot execute and the half-completed element-level seek wedges playback
+        // position reporting permanently — see FEATHER_MEMORY §1q). Swallow the
+        // seek entirely so playback continues uninterrupted; proper support is a
+        // post-stage-6 item requiring in-stream flush+re-sequence machinery.
+        if self.media_source.borrow().is_some() {
+            return;
+        }
+
         // Step 1. Set the media element's show poster flag to false.
         self.show_poster.set(false);
 
