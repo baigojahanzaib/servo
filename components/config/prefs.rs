@@ -481,7 +481,7 @@ impl Preferences {
             dom_navigator_protocol_handlers_enabled: false,
             dom_notification_enabled: false,
             dom_parallel_css_parsing_enabled: true,
-            dom_offscreen_canvas_enabled: false,
+            dom_offscreen_canvas_enabled: true,
             dom_permissions_enabled: false,
             dom_permissions_testing_allowed_in_nonsecure_contexts: false,
             dom_sanitizer_enabled: false,

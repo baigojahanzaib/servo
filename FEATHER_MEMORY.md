@@ -1154,3 +1154,9 @@ REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-cra
 
 ## Symptom: worker posts pre-wait message then never wakes despite main-thread Atomics.notify
 → check: JS_SetFutexCanWait (status: ruled out for the wake path — with the flag set, probe verified worker blocks ~600ms, notify returns exactly 1 waiter, woken worker observes updated value; sabwait2.html localhost probe), lost-wakeup race in probe design (status: ruled in for the first flaky probe run — notify fired before worker parked; not an engine defect), turnstile live behavior (status: real-SAB claude.ai STILL stalls with correct wait/notify — challenge restarts, Ray ID cycles; residuals: OffscreenCanvas absent (confirmed missing), wasm threads, canvas/webgl fingerprint hardening).
+
+## Symptom: OffscreenCanvas undefined on window and worker despite servo shipping an implementation
+→ check: dom_offscreen_canvas_enabled pref in components/config/prefs.rs (CONFIRMED CAUSE — defaults false; the 614-line implementation in components/script/dom/canvas/offscreencanvas.rs is complete enough for 2d use and WPT-exercised upstream; flipping the pref enables constructor/2d/fillRect/transferToImageBitmap on window+worker, verified), getContext('webgl') on OffscreenCanvas (status: broken/throws TypeError even after the pref flip — separate unowned gap), HTMLCanvasElement.transferControlToOffscreen + createImageBitmap (status: ruled out — both present and functional).
+
+## Symptom: claude.ai turnstile still loops/restarts with real SAB + working Atomics.wait/notify + OffscreenCanvas-2d all verified
+→ check: WebGL-on-OffscreenCanvas TypeError (prime suspect — unguarded access would kill the payload chain), WebGL fingerprint surface generally, wasm threads (unprobed), behavioral/TLS signals (out of JS-engine scope — do not chase per Google decision), payload opacity (sufficiency unprovable from outside; shim stays the only working path).
