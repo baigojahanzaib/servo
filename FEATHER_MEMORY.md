@@ -1500,3 +1500,13 @@ Bridge options indexed for the future implementer: (1) independent surfman conne
 ## Unresolved observations
 
 Observation: 2026-11-25, one GL-mode (default, non-metal) feather launch died silently mid-run on fpsprobe.html — no panic in log (18 lines, ends at favicon 404), process simply gone. Not reproducible on immediate retry with identical input. Suspect class: segfault in GL path (rust panics would print). If this recurs anywhere it becomes a priority — watch for it.
+
+## WebGL bridge for software compositing (landed 015512402)
+
+Symptom: getContext('webgl') null under swgl/metal → FIXED: independent hardware-GL surfman connection for the WebGL thread + readback composite (glReadPixels BGRA row-flipped at swap time → shared map → ExternalImageSource::RawData). Verified: runtime shader compile+link+draw correct under FEATHER_METAL, animated compositing correct orientation.
+
+Mechanism notes for future lanes:
+- swgl CANNOT back webgl: shader_source panics on any shader not build-time-transpiled — no runtime GLSL compilation exists in swgl, and webgl is nothing but runtime shaders. Dead end, do not re-walk.
+- webgl frames in software mode register as ExternalImageType::Buffer; the outer handler in shared/paint/lib.rs must pass RawData through with UNFLIPPED texel rect (GL textures use flipped uv, memory buffers are already flipped at readback).
+- JS readPixels returning 0,0,0,0 after present is SPEC-CORRECT when preserveDrawingBuffer=false (default) — not a bug.
+- WebGL thread surfaces are IOSurface-backed on macOS — a zero-copy optimization over glReadPixels exists but is unwired; current readback cost is one copy per canvas-frame.
