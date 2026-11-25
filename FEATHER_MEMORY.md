@@ -935,3 +935,14 @@ Landed/working tree: `servomse` GstBin element (components/media/backends/gstrea
 - Symptom: MSE playback works but zero servomse activity → check: whether `create_media_player` ran before `attach_media_source` (confirmed cause — see above); symptom masks itself completely because the servosrc fallback plays single-track content fine.
 - Symptom: pipeline stalls pre-preroll with no error, no EOS, position frozen at 0 → check: dynamically-added element states (`state=Null` in topology walk means missing `sync_state_with_parent` — confirmed first cause), then appsrc `current-level-bytes` property (if bytes accumulate = streaming task never started — OPEN, see above).
 - Symptom: gst element added to running bin accepts data but never processes → check: `sync_state_with_parent` call (owns state propagation for runtime-added elements — gst_bin_add does NOT reliably propagate; silent because pushes return Ok into the internal queue regardless).
+
+## macOS video playback verification + symptom index entries
+Progressive MP4 (h264/aac 720p, ffmpeg-generated) plays to completion in
+feather on macOS with correct frame rendering — gstreamer pipeline initializes
+fine against the GStreamer.framework build (needs GST_PLUGIN_PATH +
+DYLD_FALLBACK_LIBRARY_PATH pointing at the framework at runtime, plus the
+rpath symlink dir for the dylibs). EOS 540MB RSS after playback.
+
+Symptom: video plays first time but replay-after-end never advances (playing state, time frozen at 00:00) → check: servo media EOS handling in the gstreamer player integration (prime suspect — the replay-after-end EOS defect documented by the Windows lane REPRODUCES on macOS identically), HTMLMediaElement seek-on-replay logic (status: unchecked), gst pipeline state reset (status: unchecked).
+
+Symptom: video element renders black/no frames on macOS → check: GST_PLUGIN_PATH/DYLD fallback env at runtime (CONFIRMED requirement — without the framework plugin path no playback pipeline exists), rotation metadata in render path (status: Windows-lane defect, unverified on macOS), gst pipeline init (status: ruled out — frames render correctly with env set).
