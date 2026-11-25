@@ -1106,3 +1106,23 @@ decode (impossible when data is app-driven).
 
 **Verification (probe6, live engine):** seek to 5.0 → position 5.35 then
 7.88 advancing, seeking+seeked fired, seeking flag false, rs 4, playing.
+
+## §1u — fMP4/H.264 mechanism diagnosis (2026-11-25)
+
+**Verdict: the fMP4/H.264 engine path WORKS** — probe7 live-verified:
+isTypeSupported true for avc1/mp4a, fMP4 init+media appends decode and play
+(t advancing, rs 4, zero errors). Pure-gst harness agrees.
+
+**Symptom index additions:**
+- Symptom: twitch-class sites black player with working page chrome → check:
+  SourceBuffer::SetTimestampOffset (accept-and-ignore — hls.js transmuxing
+  rewrites ALL timestamps through it; PRIME SUSPECT), live-edge semantics
+  (seekable ranges/duration Infinity unimplemented), avdec_h264 absence
+  (ruled out — openh264dec covers decode, verified), qtdemux push-mode fMP4
+  (ruled out — verified working in harness + engine), isTypeSupported mp4
+  (ruled out — returns true correctly).
+- Symptom: vimeo "Technical Difficulties" / shaka demo shell broken → NOT
+  media machinery; player JS fails before any append. General web-compat.
+- Symptom: fMP4 MSE append produces no playback → NOT a real symptom class;
+  verified working end-to-end. If seen, suspect timestampOffset confusion
+  or missing init re-feed post-seek instead.
