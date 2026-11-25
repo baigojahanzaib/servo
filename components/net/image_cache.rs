@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use std::cell::{Cell, OnceCell};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::cmp::min;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -76,6 +77,17 @@ const MAX_SVG_PIXMAP_DIMENSION: u32 = 5000;
 /// the least-recently-used entries are evicted; an evicted image is fetched
 /// and decoded again if the page asks for it later.
 const MAX_COMPLETED_LOAD_BYTES: usize = 128 * 1024 * 1024;
+
+/// Process-wide decoded byte total across ALL pipeline image caches.
+/// Per-pipeline caps let every iframe retain a private 128 MiB with zero
+/// cross-document pressure (measured: infinite iframe-image scroll +111MB
+/// over only ~15 frames); the global budget is the real bound.
+static GLOBAL_COMPLETED_LOADS_BYTES: AtomicUsize = AtomicUsize::new(0);
+
+/// Global decoded-image budget across all pipelines. 384 MiB initial value:
+/// generous enough for a heavy main document (~128 MiB) plus dozens of live
+/// iframe caches, small enough to bound infinite-scroll accumulation.
+const GLOBAL_COMPLETED_LOADS_BUDGET: usize = 384 * 1024 * 1024;
 
 //
 // TODO(gw): Remaining work on image cache:
@@ -746,9 +758,11 @@ impl ImageCacheStore {
             self.completed_loads_bytes = self
                 .completed_loads_bytes
                 .saturating_sub(previous.image_bytes);
+            GLOBAL_COMPLETED_LOADS_BYTES.fetch_sub(previous.image_bytes, Ordering::Relaxed);
             self.remove_from_lru(&completed_key);
         }
         self.completed_loads_bytes += image_bytes;
+        GLOBAL_COMPLETED_LOADS_BYTES.fetch_add(image_bytes, Ordering::Relaxed);
         self.completed_loads_lru.push_back(completed_key);
         self.enforce_completed_load_budget();
 
@@ -763,7 +777,10 @@ impl ImageCacheStore {
     /// skipped: evicting them frees no memory and only forces a re-fetch.
     fn enforce_completed_load_budget(&mut self) {
         let mut rotations = self.completed_loads_lru.len();
-        while self.completed_loads_bytes > MAX_COMPLETED_LOAD_BYTES && rotations > 0 {
+        while (self.completed_loads_bytes > MAX_COMPLETED_LOAD_BYTES ||
+            GLOBAL_COMPLETED_LOADS_BYTES.load(Ordering::Relaxed) > GLOBAL_COMPLETED_LOADS_BUDGET) &&
+            rotations > 0
+        {
             rotations -= 1;
             let Some(key) = self.completed_loads_lru.pop_front() else {
                 break;
@@ -801,6 +818,7 @@ impl ImageCacheStore {
             self.completed_loads_bytes = self
                 .completed_loads_bytes
                 .saturating_sub(loaded_image.image_bytes);
+            GLOBAL_COMPLETED_LOADS_BYTES.fetch_sub(loaded_image.image_bytes, Ordering::Relaxed);
             self.remove_from_lru(&key);
             if let ImageResponse::Loaded(Image::Raster(image), _) = loaded_image.image_response &&
                 let Some(id) = image.id
