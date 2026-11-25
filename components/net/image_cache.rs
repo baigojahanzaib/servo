@@ -814,15 +814,12 @@ impl ImageCacheStore {
         if !*ENABLED {
             return;
         }
-        const RESIDENT_BYTE_BUDGET: usize = 256 * 1024 * 1024;
-        let mut resident_total: usize = self
-            .completed_loads
-            .values()
-            .map(|load| match &load.image_response {
-                ImageResponse::Loaded(Image::Raster(image), _) => image.resident_decoded_len(),
-                _ => 0,
-            })
-            .sum();
+        const RESIDENT_BYTE_BUDGET: usize = 384 * 1024 * 1024;
+        let mut resident_total =
+            pixels::GLOBAL_RESIDENT_DECODED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
+        if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
+            eprintln!("IMGMEM probe: enforcement entered, global resident={}MB", resident_total / (1024*1024));
+        }
         if resident_total <= RESIDENT_BYTE_BUDGET {
             return;
         }

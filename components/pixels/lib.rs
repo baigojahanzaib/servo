@@ -323,6 +323,12 @@ pub struct SharedRasterImage {
 /// Decoded-byte residency for image-memory eviction. Interior-mutable inside the
 /// shared RasterImage so every pin holder observes eviction through the same allocation
 /// (the arc-swap-at-cache-level design cannot work — see FEATHER_MEMORY).
+/// Global resident decoded-byte counter across all pipelines — the enforcement
+/// budget must be global because heavy-site memory distributes across many small
+/// iframe pipelines, each individually under any per-pipeline limit.
+pub static GLOBAL_RESIDENT_DECODED_BYTES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 pub enum DecodedBytes {
     Resident(Arc<Vec<u8>>),
     Evicted,
@@ -467,6 +473,7 @@ impl RasterImage {
         let redecoded = load_from_memory(encoded, self.cors_status)
             .expect("Re-decode of previously-decoded image failed");
         let bytes = redecoded.bytes.clone();
+        GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
         *guard = DecodedBytes::Resident(bytes.clone());
         bytes
     }
@@ -479,7 +486,10 @@ impl RasterImage {
         }
         let mut guard = self.decoded_residency.write().unwrap();
         match std::mem::replace(&mut *guard, DecodedBytes::Evicted) {
-            DecodedBytes::Resident(bytes) => bytes.len(),
+            DecodedBytes::Resident(bytes) => {
+                GLOBAL_RESIDENT_DECODED_BYTES.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+                bytes.len()
+            },
             DecodedBytes::Evicted => 0,
         }
     }
@@ -642,6 +652,10 @@ pub fn load_from_memory(buffer: &[u8], cors_status: CorsStatus) -> Option<Raster
             };
             if let Some(ref mut image) = image {
                 image.encoded_bytes = Some(Arc::new(buffer.to_vec()));
+                if std::env::var("FEATHER_IMGMEM").is_ok() {
+                    eprintln!("IMGMEM probe: decoded +{}KB", image.bytes.len() / 1024);
+                }
+                GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(image.bytes.len(), std::sync::atomic::Ordering::Relaxed);
                 *image.decoded_residency.write().unwrap() =
                     DecodedBytes::Resident(image.bytes.clone());
             }

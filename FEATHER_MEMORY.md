@@ -1473,3 +1473,20 @@ on the calling thread for v1 (async re-decode is a later refinement).
 ## IMGMEM measurement checkpoint (2026-11-25): machinery complete, NEVER ENGAGED — budget scoping flaw
 
 Feature-complete on imgmem-wip (tip ~4321ea928c0): swap-aware residency + accessors + consumer migration + eviction trigger, compile-clean, FEATHER_IMGMEM=1 gated. MEASURED: zero evictions in a 20-burst reddit deep scroll with debug logging. ROOT CAUSE: the 256MB budget is enforced PER-PIPELINE (per image cache instance), but heavy-site memory distributes across many small iframe pipelines — each stays far under budget while the total explodes. This is the cross-pipeline accumulation pattern established in the iframe-attribution work (~150MB per iframe pipeline). ALSO: measurement protocol caveat — the OFF-control runs showed negative growth (unsettled baseline at 12s post-launch; page still loading at baseline capture), so the raw growth numbers are uninterpretable either way. NEXT INCREMENT (exact): make the budget GLOBAL across pipelines — static AtomicUsize global resident-byte counter updated in materialize_decoded (+len on Evicted→Resident) and evict_decoded (−len), enforcement checks the global counter instead of per-cache sum. Sites: pixels/lib.rs accessors + net/image_cache.rs enforcement. Then re-measure with SETTLED baseline (wait 20s post-load before baseline) and confirm evictions>0 before interpreting memory numbers.
+
+## IMGMEM DECISIVE RESULT (2026-11-25): attack surface refuted — the memory isn't there
+
+Instrumented probe on reddit deep scroll (20 bursts): 113 decode events, 197 enforcement
+entries, global resident decoded bytes PLATEAUED at 28MB. Zero evictions at a 32MB probe
+budget is CORRECT behavior — the machinery works end-to-end. VERDICT: decoded RasterImage
+bytes in content processes are NOT the reddit memory hog. Even a perfect byte-eviction
+implementation caps savings at tens of MB per tab. The earlier 5:1 image attribution must
+have been counting compositor-side duplicated image memory (the IPC copy keyed by ImageKey
+in the paint process) — which this mechanism cannot touch. REDIRECT: the only image-memory
+attack with real upside is WR-key eviction (drop the compositor copy for offscreen images,
+re-upload on re-paint) — phase 2 in the original design, now the ONLY phase that matters.
+Before building it, MEASURE the compositor-side image memory directly (paint-process RSS
+attribution per image key) — do not repeat the mistake of building against an unverified
+attribution. Alternatively the retention growth driver may not be images at all: candidates
+needing measurement are JS heap growth in iframe pipelines, layout/box-tree accumulation,
+GPU textures. Machinery stays in tree (env-gated, harmless, correct) — budget restored to 384MB.
