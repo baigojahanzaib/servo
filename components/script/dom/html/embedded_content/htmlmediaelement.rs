@@ -202,6 +202,11 @@ pub(crate) struct HTMLMediaElement {
     error: MutNullableDom<MediaError>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-paused>
     paused: Cell<bool>,
+    /// Set when playback was automatically paused because the element scrolled
+    /// far outside the viewport (memory-saving eviction); used to resume on scroll-back.
+    evicted_offscreen: Cell<bool>,
+    /// Playback position saved when evicted, restored on resume; negative = none.
+    evicted_resume_position: Cell<f64>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-defaultplaybackrate>
     default_playback_rate: Cell<f64>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-playbackrate>
@@ -422,6 +427,8 @@ impl HTMLMediaElement {
             fired_loadeddata_event: Cell::new(false),
             error: Default::default(),
             paused: Cell::new(true),
+            evicted_offscreen: Cell::new(false),
+            evicted_resume_position: Cell::new(-1.0),
             default_playback_rate: Cell::new(1.0),
             playback_rate: Cell::new(1.0),
             muted_state: Default::default(),
@@ -523,6 +530,10 @@ impl HTMLMediaElement {
         let document = self.owner_document();
         if !document.is_active() || document.is_prompting_or_unloading() {
             return false;
+        }
+
+        if self.evicted_offscreen.get() {
+            return true;
         }
 
         if self.in_error_state() {
@@ -843,6 +854,49 @@ impl HTMLMediaElement {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#internal-play-steps>
+    /// Memory management: automatically pause video playback when the element is far
+    /// outside the viewport, and resume playback when it approaches the viewport again.
+    /// Hysteresis bands prevent pause/resume thrashing near the viewport edge; content
+    /// inside or near the viewport is never affected.
+    pub(crate) fn check_offscreen_eviction(&self, cx: &mut JSContext) {
+        if !self.is::<HTMLVideoElement>() {
+            return;
+        }
+        let rect = self.upcast::<Node>().border_box(cx).unwrap_or_default();
+        let vh = f64::from(self.owner_window().InnerHeight());
+        if vh <= 0.0 {
+            return;
+        }
+        let top = rect.origin.y.to_f64_px();
+        let bottom = top + rect.size.height.to_f64_px();
+
+        if self.evicted_offscreen.get() {
+            // Resume once the element re-enters the near-viewport band.
+            if top < vh * 1.5 && bottom > -vh * 0.5 {
+                self.evicted_offscreen.set(false);
+                // Player was torn down on eviction; rebuild it from the resource.
+                self.invoke_resource_selection_algorithm(cx);
+                self.internal_play_steps(cx);
+            }
+            return;
+        }
+
+        if self.Paused() {
+            return;
+        }
+        // Evict when the element is entirely beyond the far bands: pause, then
+        // fully tear down the media pipeline — pausing alone does not release the
+        // decoder/backend memory (measured: pause leaves per-player cost resident).
+        if top > vh * 3.0 || bottom < -vh * 2.0 {
+            self.evicted_offscreen.set(true);
+            self.evicted_resume_position
+                .set(self.current_playback_position.get());
+            self.internal_pause_steps();
+            let no_gc = cx.no_gc();
+            self.reset_media_player(no_gc);
+        }
+    }
+
     fn internal_play_steps(&self, cx: &mut JSContext) {
         // Step 1. If the media element's networkState attribute has the value NETWORK_EMPTY, invoke
         // the media element's resource selection algorithm.
@@ -2637,6 +2691,13 @@ impl HTMLMediaElement {
         // engine.
         if self.ready_state.get() != ReadyState::HaveNothing {
             return;
+        }
+
+        // Restore the saved position when rebuilding after an offscreen eviction.
+        if self.evicted_resume_position.get() >= 0.0 {
+            let position = self.evicted_resume_position.get();
+            self.evicted_resume_position.set(-1.0);
+            self.seek(position, /* approximate_for_speed */ false);
         }
 
         // https://html.spec.whatwg.org/multipage/#media-data-processing-steps-list

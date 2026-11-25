@@ -13,7 +13,7 @@ use std::ops::Deref;
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::{Arc as StdArc, LazyLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use atomic_refcell::{AtomicRef, AtomicRefCell};
 use bitflags::bitflags;
@@ -747,6 +747,7 @@ pub(crate) struct Document {
     /// <https://html.spec.whatwg.org/multipage/#playing-the-media-resource>
     /// Active media elements that are kept alive while playing or eligible for autoplay.
     active_media_elements: DomRefCell<FxHashSet<Dom<HTMLMediaElement>>>,
+    last_media_eviction_scan: Cell<Instant>,
 
     /// <https://html.spec.whatwg.org/multipage/#details-name-group>
     details_name_groups: DomRefCell<Option<DetailsNameGroups>>,
@@ -1814,7 +1815,11 @@ impl Document {
             // fire an event named type that bubbles at target.
             let event = pending_event.event.clone();
             if pending_event.target.is::<Document>() {
+                let is_scroll = *event == *"scroll";
                 pending_event.target.fire_bubbling_event(cx, event);
+                if is_scroll {
+                    self.scan_media_viewport_eviction(cx);
+                }
             }
             // Step 2.2: Otherwise, if type is "scrollsnapchange", then:
             //  ....
@@ -1837,6 +1842,20 @@ impl Document {
     ///
     /// > Whenever a viewport gets scrolled (whether in response to user interaction or
     /// > by an API), the user agent must run these steps:
+    /// Memory management: pause video elements that are far outside the viewport and
+    /// resume them on scroll-back. Throttled; runs from the viewport scroll path.
+    fn scan_media_viewport_eviction(&self, cx: &mut JSContext) {
+        let now = Instant::now();
+        if now < self.last_media_eviction_scan.get() + Duration::from_millis(500) {
+            return;
+        }
+        self.last_media_eviction_scan.set(now);
+        rooted_vec!(let media_elements <- self.active_media_elements.borrow().iter().map(|e| e.as_rooted()));
+        for element in media_elements.iter() {
+            element.check_offscreen_eviction(cx);
+        }
+    }
+
     pub(crate) fn handle_viewport_scroll_event(&self) {
         // Step 1: Let doc be the viewport’s associated Document.
         //
@@ -4541,6 +4560,7 @@ impl Document {
             ever_had_favicon_link: Cell::new(false),
             websockets: DOMTracker::new(),
             active_media_elements: Default::default(),
+            last_media_eviction_scan: Cell::new(Instant::now()),
             details_name_groups: Default::default(),
             protocol_handler_automation_mode: Default::default(),
             layout_animations_test_enabled: pref!(layout_animations_test_enabled),

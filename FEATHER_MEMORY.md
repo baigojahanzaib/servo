@@ -955,3 +955,25 @@ Symptom: video element renders black/no frames on macOS → check: GST_PLUGIN_PA
 
 - Symptom: gst pipeline stuck pre-preroll forever, zero errors, events flow but no buffers → check: `is-live` property on any appsrc/basesrc in the chain (CONFIRMED cause — live sources hold all output until PLAYING, which can never arrive without their data; evidence string `live source waiting for running` in gst_base_src_wait_playing_unlocked). Also check `current-level-bytes` on each appsrc: nonzero-and-static = upstream blockage, draining-then-stall = downstream backpressure.
 - Symptom: typefind errors "Stream doesn't contain enough data" on EOS → check: whether EOS raced ahead of data because a pad flush event destroyed queued buffers in transit (evidence: burst of `_gst_buffer_free` finalizes at flush time) — likely artifact of manual state cycling, NOT a real MSE hazard (ruled out for normal operation).
+
+## Symptom index additions — media/memory investigations (Windows lane)
+
+
+### Symptom: memory grows without bound scrolling an infinite media feed (synthetic mp4 autoplay test: +386MB over 25 scroll bursts)
+
+→ check: `HTMLMediaElement` player lifecycle in `components/script/dom/html/embedded_content/htmlmediaelement.rs` (owns per-element gstreamer pipeline; confirmed cause — players were never suspended/torn down when scrolled offscreen, ~15MB/player accumulating with count; single player is flat over time so NOT a frame-queue leak)
+→ check: net `ImageCache` in `components/net/image_cache.rs` (owns decoded image bytes; status: ruled out — already LRU-capped per pipeline and evicts with WR `DeleteImage`; dropping the cap 128→16MB left reddit scroll growth unchanged at ~+1100MB)
+→ check: WR-side image resources / DOM node retention (status: ruled out at synthetic scale — infinite-images +3MB and infinite-DOM +6MB over the same scroll protocol)
+
+FIXED on feather-engine: viewport-aware eviction — video elements entirely beyond −2vh/+3vh bands are paused AND fully torn down (`reset_media_player`), resumed with position restore inside the 1.5vh/0.5vh hysteresis band; scan in `Document::scan_media_viewport_eviction` throttled to 500ms from the scroll dispatch path. Verified: synthetic +386→+154MB (residual = band-resident players, by design). Hysteresis mandatory — pausing alone does NOT release gst memory (measured), teardown is required.
+
+### Symptom: memory grows ~+1000MB deep-scrolling reddit (chrome flat on the same scroll)
+
+→ check: `HTMLMediaElement` / media players (status: ruled out — instrumented scan shows ZERO active media elements during an entire reddit deep scroll; reddit's DASH/HLS videos never become players in servo. The video-eviction fix cannot affect reddit.)
+→ check: net `ImageCache` (status: ruled out — see above; 16MB cap experiment)
+→ check: heavy DOM/layout/JS accumulation on real posts (prime suspect — unverified; synthetic trivial-DOM was flat but real posts are far heavier; static-snapshot discriminator pending)
+→ note: run-to-run variance on live reddit is extreme (+118 to +1060 with identical binary) — single measurements are meaningless here; control content or repeat 3x minimum.
+
+### Symptom: browser process gone mid-measurement during reddit deep scroll
+
+→ check: teardown/resume churn panic in media pipeline (suspect, unconfirmed — one observation, stderr capture now mandatory on all runs)
