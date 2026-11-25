@@ -878,3 +878,25 @@ ranges); (2) duration from stream end; (3) updating abort on remove/seek.
 Probe harness: /tmp/mediatest/probe5.html served on :8741, feathers run
 with `pkill -x feather; rm -f session.json` first, read title via xdotool
 after sleep 14. Test segs: /tmp/mediatest/seg_v0.webm seg_v1.webm.
+
+## CSP opaque-origin panic — fixed upstreamably (Nov 25, macOS lane)
+
+`csp.rs` frame-ancestors ancestor walk `.expect()`ed every ancestor origin to parse
+as a URL; opaque origins (sandboxed/srcdoc frames — universal ad-tech pattern on
+amazon/bbc/cnn/espn) serialize as `null` → panic → with feather's `panic=abort`
+production profile the whole browser died at 5-40 real-world tabs. Root-caused
+during the bakeoff2 memory-scaling pass (deaths had no crash reports/jetsam traces
+because abort+strip leaves nothing; NOT memory pressure — reproduced at 5 tabs/1GB).
+
+Fix `1bf410a0e`: skip opaque entries in both the same-origin fast path and the
+cross-origin constellation path, continuing the walk upward (spec step 6.2 is itself
+incomplete — it assumes the parse cannot fail). Verified 20/20 consecutive 6-tab
+amazon/bbc/cnn/espn/reddit/ebay sessions survive on macOS (previously
+near-deterministic death by ~tab 6 in the same scenario).
+
+Upstreamable-gold notes: the spec gap is real (w3c/webappsec-csp step 6.2 of
+frame-ancestors navigation check); a servo upstream PR should reference it.
+WPT CSP-subset regression run not yet done — no servoshell build fits the macOS
+box's disk (needs ~10GB, had ~2GB); behaviorally no test can regress since the
+only changed path previously crashed. Lane with disk should run
+`tests/wpt/tests/content-security-policy` stock-vs-patched when convenient.
