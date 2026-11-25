@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::Heap;
 use js::jsval::{JSVal, NullValue, UndefinedValue};
@@ -208,7 +209,7 @@ impl History {
         // https://github.com/servo/servo/issues/19159
 
         // Step 4. Let serializedData be StructuredSerializeForStorage(data). Rethrow any exceptions.
-        let serialized_data = structuredclone::write(cx, data, None)?;
+        let serialized_data = structuredclone::write(cx, data, None, StructuredCloneScope::DifferentProcess)?;
 
         // Step 5. Let newURL be document's URL.
         let new_url: ServoUrl = match url {

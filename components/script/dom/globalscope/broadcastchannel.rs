@@ -5,6 +5,7 @@
 use std::cell::Cell;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::rust::{HandleObject, HandleValue};
 use script_bindings::domstring::TracedDOMString;
@@ -89,7 +90,7 @@ impl BroadcastChannelMethods<crate::DomTypeHolder> for BroadcastChannel {
         }
 
         // Step 6, StructuredSerialize(message).
-        let data = structuredclone::write(cx, message, None)?;
+        let data = structuredclone::write(cx, message, None, StructuredCloneScope::DifferentProcess)?;
 
         let global = self.global();
 

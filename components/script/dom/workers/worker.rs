@@ -12,6 +12,7 @@ use crossbeam_channel::{Sender, unbounded};
 #[cfg(feature = "devtools")]
 use devtools_traits::{DevtoolsPageInfo, ScriptToDevtoolsControlMsg};
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::JSObject;
 use js::jsval::UndefinedValue;
@@ -145,7 +146,7 @@ impl Worker {
         message: HandleValue,
         transfer: CustomAutoRooterGuard<Vec<*mut JSObject>>,
     ) -> ErrorResult {
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
         let address = Trusted::new(self);
 
         // NOTE: step 9 of https://html.spec.whatwg.org/multipage/#dom-messageport-postmessage

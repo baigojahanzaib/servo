@@ -26,6 +26,15 @@ pub use transferable::*;
 pub struct StructuredSerializedData {
     /// Data serialized by SpiderMonkey.
     pub serialized: Vec<u8>,
+    /// Key into the script crate's process-global registry of
+    /// SpiderMonkey-owned clone buffers. Present only when the stream was
+    /// serialized with `SameProcess` scope: such streams embed references to
+    /// engine-owned memory and must never be transposed into bytes, so the
+    /// buffer itself is parked in-process and only this key travels.
+    /// Invariant: exactly one reader may consume the key.
+    #[serde(default)]
+    #[ignore_malloc_size_of = "process-global registry ownership"]
+    pub sm_buffer_key: Option<u64>,
     /// Serialized in a structured callback,
     pub blobs: Option<FxHashMap<BlobId, BlobImpl>>,
     /// Serialized files.
@@ -102,6 +111,13 @@ impl StructuredSerializedData {
                     transferrable,
                 );
             }
+        }
+
+        if self.sm_buffer_key.is_some() {
+            // Not panicking only because this is called from the constellation.
+            // Broadcast writes use `DifferentProcess` scope, so a carried
+            // single-owner buffer should never reach this fanout path.
+            warn!("Attempt to broadcast a SameProcess-scope clone buffer (should never happen).");
         }
 
         let serialized = self.serialized.clone();

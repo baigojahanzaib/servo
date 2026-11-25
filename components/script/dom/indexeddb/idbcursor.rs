@@ -7,6 +7,7 @@
 use std::cell::Cell;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::Heap;
 use js::jsval::{JSVal, NullValue, UndefinedValue};
@@ -659,7 +660,7 @@ impl IDBCursorMethods<crate::DomTypeHolder> for IDBCursor {
             }
         }
 
-        let cloned_value = structuredclone::write(cx, cloned_js_value.handle(), None)?;
+        let cloned_value = structuredclone::write(cx, cloned_js_value.handle(), None, StructuredCloneScope::DifferentProcess)?;
         let Ok(serialized_value) = postcard::to_stdvec(&cloned_value) else {
             return Err(Error::InvalidState(Some(
                 "Failed to serialize cloned value".to_owned(),

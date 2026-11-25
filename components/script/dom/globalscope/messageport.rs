@@ -6,6 +6,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::conversions::ToJSValConvertible;
 use js::jsapi::JSObject;
@@ -154,7 +155,7 @@ impl MessagePort {
         }
 
         // Step 5
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
 
         if doomed {
             // TODO: The spec says to optionally report such a case to a dev console.

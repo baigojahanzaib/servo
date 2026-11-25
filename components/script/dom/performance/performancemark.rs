@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::gc::HandleValue;
 use js::jsapi::Heap;
 use js::jsval::{JSVal, NullValue};
@@ -125,7 +126,7 @@ impl PerformanceMarkMethods<crate::DomTypeHolder> for PerformanceMark {
         // Step 8 Otherwise:
         if !mark_options.detail.get().is_null_or_undefined() {
             // Step 8.1. Let record be the result of calling the StructuredSerialize algorithm on markOptions’s detail.
-            let record = structuredclone::write(cx, mark_options.detail.as_handle_value(), None)?;
+            let record = structuredclone::write(cx, mark_options.detail.as_handle_value(), None, StructuredCloneScope::DifferentProcess)?;
 
             // Step 8.2. Set entry’s detail to the result of calling the StructuredDeserialize algorithm on record and the current realm.
             structuredclone::read(cx, global, record, detail.handle_mut())?;

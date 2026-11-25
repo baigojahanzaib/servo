@@ -13,7 +13,8 @@ use std::ptr::{self, NonNull};
 use js::context::{JSContext, NoGC};
 use js::conversions::ToJSValConvertible;
 use js::glue::{
-    CopyJSStructuredCloneData, GetLengthOfJSStructuredCloneData, WriteBytesToJSStructuredCloneData,
+    CopyJSStructuredCloneData, DeleteJSAutoStructuredCloneBuffer,
+    GetLengthOfJSStructuredCloneData, WriteBytesToJSStructuredCloneData,
 };
 use js::jsapi::{
     CloneDataPolicy, HandleObject as RawHandleObject, Heap, JS_ReadUint32Pair,
@@ -625,7 +626,7 @@ unsafe extern "C" fn sab_cloned_callback(
     _receiving: bool,
     _closure: *mut ::std::os::raw::c_void,
 ) -> bool {
-    false
+    true
 }
 
 static STRUCTURED_CLONE_CALLBACKS: JSStructuredCloneCallbacks = JSStructuredCloneCallbacks {
@@ -639,11 +640,53 @@ static STRUCTURED_CLONE_CALLBACKS: JSStructuredCloneCallbacks = JSStructuredClon
     sabCloned: Some(sab_cloned_callback),
 };
 
+/// Process-global registry of SpiderMonkey-owned structured-clone buffers.
+///
+/// In `SameProcess` scope the serialized stream can embed references to
+/// engine-owned memory (shared-array-buffer backing stores, transferred
+/// backing stores) whose lifetimes are managed by the sidecar ownership
+/// tables inside the `JSAutoStructuredCloneBuffer` object. Bytes may never
+/// be transposed out of such a buffer — the buffer itself must travel with
+/// the message. Since servo's message plumbing serde-serializes
+/// `StructuredSerializedData` even in-process, the buffer cannot travel as a
+/// typed payload; instead it is parked here and only a u64 key crosses in
+/// the serde stream. The read path removes the entry, so ownership passes
+/// exactly once. Entries for messages that are never read leak (bounded by
+/// undelivered-message volume); they can never dangle.
+static SM_BUFFER_REGISTRY: std::sync::LazyLock<
+    std::sync::Mutex<(u64, FxHashMap<u64, usize>)>,
+> = std::sync::LazyLock::new(|| std::sync::Mutex::new((0, FxHashMap::default())));
+
+fn park_sm_buffer(ptr: *mut js::jsapi::JSAutoStructuredCloneBuffer) -> u64 {
+    let mut registry = SM_BUFFER_REGISTRY.lock().unwrap();
+    registry.0 += 1;
+    let key = registry.0;
+    registry.1.insert(key, ptr as usize);
+    key
+}
+
+fn take_sm_buffer(key: u64) -> *mut js::jsapi::JSAutoStructuredCloneBuffer {
+    SM_BUFFER_REGISTRY
+        .lock()
+        .unwrap()
+        .1
+        .remove(&key)
+        .expect("SM clone buffer key missing — buffer already consumed or never parked")
+        as *mut js::jsapi::JSAutoStructuredCloneBuffer
+}
+
 /// Writes a structured clone. Returns a `DataClone` error if that fails.
+///
+/// `DifferentProcess` scope produces a pure byte stream (copied into
+/// `serialized` as before); `SameProcess` scope parks the SpiderMonkey-owned
+/// buffer in the process-global registry and only a key travels in the
+/// message — the invariant that SameProcess streams never leave SM ownership
+/// is upheld by construction.
 pub(crate) fn write(
     cx: &mut JSContext,
     message: HandleValue,
     transfer: Option<CustomAutoRooterGuard<Vec<*mut JSObject>>>,
+    scope: StructuredCloneScope,
 ) -> Fallible<StructuredSerializedData> {
     unsafe {
         rooted!(&in(cx) let mut val = UndefinedValue());
@@ -653,20 +696,18 @@ pub(crate) fn write(
         let mut sc_writer = StructuredDataWriter::default();
         let sc_writer_ptr = &mut sc_writer as *mut _;
 
-        let scbuf = JSAutoStructuredCloneBufferWrapper::new(
-            StructuredCloneScope::DifferentProcess,
-            &STRUCTURED_CLONE_CALLBACKS,
-        );
+        let same_process = matches!(scope, StructuredCloneScope::SameProcess);
+        let scbuf = JSAutoStructuredCloneBufferWrapper::new(scope, &STRUCTURED_CLONE_CALLBACKS);
         let scdata = &mut ((*scbuf.as_raw_ptr()).data_);
         let policy = CloneDataPolicy {
-            allowIntraClusterClonableSharedObjects_: false,
-            allowSharedMemoryObjects_: false,
+            allowIntraClusterClonableSharedObjects_: same_process,
+            allowSharedMemoryObjects_: same_process,
         };
         let result = JS_WriteStructuredClone(
             cx,
             message,
             scdata,
-            StructuredCloneScope::DifferentProcess,
+            scope,
             &policy,
             &STRUCTURED_CLONE_CALLBACKS,
             sc_writer_ptr as *mut raw::c_void,
@@ -682,13 +723,23 @@ pub(crate) fn write(
             return Err(error);
         }
 
-        let nbytes = GetLengthOfJSStructuredCloneData(scdata);
-        let mut data = Vec::with_capacity(nbytes);
-        CopyJSStructuredCloneData(scdata, data.as_mut_ptr());
-        data.set_len(nbytes);
+        let (serialized, sm_buffer_key) = if same_process {
+            // Park the SM-owned buffer and move only the key; the wrapper is
+            // forgotten so the buffer survives for its future reader.
+            let key = park_sm_buffer(scbuf.as_raw_ptr());
+            std::mem::forget(scbuf);
+            (Vec::new(), Some(key))
+        } else {
+            let nbytes = GetLengthOfJSStructuredCloneData(scdata);
+            let mut data = Vec::with_capacity(nbytes);
+            CopyJSStructuredCloneData(scdata, data.as_mut_ptr());
+            data.set_len(nbytes);
+            (data, None)
+        };
 
         let data = StructuredSerializedData {
-            serialized: data,
+            serialized,
+            sm_buffer_key,
             ports: sc_writer.ports.take(),
             transform_streams: sc_writer.transform_streams_port.take(),
             points: sc_writer.points.take(),
@@ -745,31 +796,42 @@ pub(crate) fn read(
     };
     let sc_reader_ptr = &mut sc_reader as *mut _;
     unsafe {
-        let scbuf = JSAutoStructuredCloneBufferWrapper::new(
-            StructuredCloneScope::DifferentProcess,
-            &STRUCTURED_CLONE_CALLBACKS,
-        );
-        let scdata = &mut ((*scbuf.as_raw_ptr()).data_);
-
-        WriteBytesToJSStructuredCloneData(
-            data.serialized.as_mut_ptr() as *const u8,
-            data.serialized.len(),
-            scdata,
-        );
+        let (scope, scbuf_ptr) = if let Some(key) = data.sm_buffer_key {
+            (StructuredCloneScope::SameProcess, take_sm_buffer(key))
+        } else {
+            let scbuf = JSAutoStructuredCloneBufferWrapper::new(
+                StructuredCloneScope::DifferentProcess,
+                &STRUCTURED_CLONE_CALLBACKS,
+            );
+            WriteBytesToJSStructuredCloneData(
+                data.serialized.as_mut_ptr() as *const u8,
+                data.serialized.len(),
+                &mut ((*scbuf.as_raw_ptr()).data_),
+            );
+            let ptr = scbuf.as_raw_ptr();
+            // Ownership unified below: the byte path buffer is deleted
+            // manually after the read, same as the carried one.
+            std::mem::forget(scbuf);
+            (StructuredCloneScope::DifferentProcess, ptr)
+        };
+        let scdata = &mut ((*scbuf_ptr).data_);
+        let same_process = matches!(scope, StructuredCloneScope::SameProcess);
 
         let result = JS_ReadStructuredClone(
             cx,
             scdata,
             JS_STRUCTURED_CLONE_VERSION,
-            StructuredCloneScope::DifferentProcess,
+            scope,
             rval,
             &CloneDataPolicy {
-                allowIntraClusterClonableSharedObjects_: false,
-                allowSharedMemoryObjects_: false,
+                allowIntraClusterClonableSharedObjects_: same_process,
+                allowSharedMemoryObjects_: same_process,
             },
             &STRUCTURED_CLONE_CALLBACKS,
             sc_reader_ptr as *mut raw::c_void,
         );
+        // The buffer is consumed by the read (success or failure); delete it.
+        DeleteJSAutoStructuredCloneBuffer(scbuf_ptr);
         if !result {
             let error = if JS_IsExceptionPending(cx) {
                 Error::JSFailed

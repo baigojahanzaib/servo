@@ -5,6 +5,7 @@
 #![cfg_attr(crown, allow(crown::jscontext_first_arg))]
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::JSObject;
 use js::jsval::UndefinedValue;
@@ -252,7 +253,7 @@ impl DissimilarOriginWindow {
         transfer: CustomAutoRooterGuard<Vec<*mut JSObject>>,
     ) -> ErrorResult {
         // Step 6-7.
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
 
         self.post_message(target_origin, data)
     }

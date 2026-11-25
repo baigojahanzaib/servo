@@ -6,6 +6,7 @@ use std::cell::Cell;
 use std::rc::Rc;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::Heap;
 use js::jsval::{JSVal, UndefinedValue};
@@ -130,7 +131,7 @@ impl DefaultTeeReadRequest {
         // If canceled_2 is false and cloneForBranch2 is true,
         if !self.canceled_2.get() && self.clone_for_branch_2.get() {
             // Let cloneResult be StructuredClone(chunk2).
-            let data = match structuredclone::write(cx, chunk2_value.handle(), None) {
+            let data = match structuredclone::write(cx, chunk2_value.handle(), None, StructuredCloneScope::SameProcess) {
                 Ok(data) => data,
                 Err(error) => {
                     // If cloneResult is an abrupt completion,

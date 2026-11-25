@@ -15,6 +15,7 @@ use crossbeam_channel::{Receiver, Sender, unbounded};
 use devtools_traits::DevtoolScriptControlMsg;
 use dom_struct::dom_struct;
 use fonts::FontContext;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::JSObject;
 use js::jsval::UndefinedValue;
@@ -1054,7 +1055,7 @@ impl DedicatedWorkerGlobalScope {
         message: HandleValue,
         transfer: CustomAutoRooterGuard<Vec<*mut JSObject>>,
     ) -> ErrorResult {
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
         let worker = self.worker.borrow().as_ref().unwrap().clone();
         let global_scope = self.upcast::<GlobalScope>();
         let pipeline_id = global_scope.pipeline_id();

@@ -32,6 +32,7 @@ use embedder_traits::{
 use euclid::{Point2D, Rect, Scale, Size2D, Vector2D};
 use fonts::{CspViolationHandler, FontContext, NetworkTimingHandler, WebFontSetDifference};
 use html5ever::LocalName;
+use js::jsapi::StructuredCloneScope;
 use js::context::{JSContext, NoGC};
 use js::conversions::ToJSValConvertible;
 use js::glue::DumpJSStack;
@@ -2547,7 +2548,7 @@ impl Window {
         transfer: CustomAutoRooterGuard<Vec<*mut JSObject>>,
     ) -> ErrorResult {
         // Step 1-2, 6-8.
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
 
         // Step 3-5.
         let target_origin = match target_origin.0[..].as_ref() {

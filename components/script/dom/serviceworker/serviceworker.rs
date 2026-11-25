@@ -5,6 +5,7 @@
 use std::cell::Cell;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::JSObject;
 use js::rust::{CustomAutoRooterGuard, HandleValue};
@@ -122,7 +123,7 @@ impl ServiceWorker {
             return Err(Error::InvalidState(None));
         }
         // Step 7
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
         let incumbent = GlobalScope::incumbent().expect("no incumbent global?");
         let pipeline_id = incumbent.pipeline_id();
         let msg_vec = DOMMessage {

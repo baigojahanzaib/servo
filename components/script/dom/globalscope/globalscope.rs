@@ -24,6 +24,7 @@ use embedder_traits::{
     ConsoleLogLevel, EmbedderMsg, JavaScriptEvaluationError, ScriptToEmbedderChan,
 };
 use fonts::{FontContext, WebFontDocumentContext};
+use js::jsapi::StructuredCloneScope;
 use js::context::{JSContext, NoGC};
 use js::jsapi::{GetNonCCWObjectGlobal, HandleObject, Heap, JSObject};
 use js::jsval::UndefinedValue;
@@ -3181,7 +3182,7 @@ impl GlobalScope {
                 .map(|js| js.get())
                 .collect::<Vec<_>>());
 
-        let data = structuredclone::write(cx, value, Some(guard))?;
+        let data = structuredclone::write(cx, value, Some(guard), StructuredCloneScope::SameProcess)?;
 
         structuredclone::read(cx, self, data, retval)?;
 

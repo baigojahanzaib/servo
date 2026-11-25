@@ -7,6 +7,7 @@ use std::cmp::Ordering;
 use std::collections::VecDeque;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsval::NullValue;
 use script_bindings::cell::DomRefCell;
@@ -762,7 +763,7 @@ impl PerformanceMethods<crate::DomTypeHolder> for Performance {
             !options.detail.get().is_null_or_undefined()
         {
             // Step 9.1.1. Let record be the result of calling the StructuredSerialize algorithm on startOrMeasureOptions’s detail.
-            let record = structuredclone::write(cx, options.detail.as_handle_value(), None)?;
+            let record = structuredclone::write(cx, options.detail.as_handle_value(), None, StructuredCloneScope::DifferentProcess)?;
 
             // Step 9.1.2. Set entry’s detail to the result of calling the StructuredDeserialize algorithm on record and the current realm.
             structuredclone::read(cx, &self.global(), record, detail.handle_mut())?;

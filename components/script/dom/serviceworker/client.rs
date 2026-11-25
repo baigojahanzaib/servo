@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::jsapi::JSObject;
 use js::rust::{CustomAutoRooterGuard, HandleValue};
@@ -94,7 +95,7 @@ impl Client {
         // Note: done here and passing origin along in the message.
         let origin = global.origin();
 
-        let data = structuredclone::write(cx, message, Some(transfer))?;
+        let data = structuredclone::write(cx, message, Some(transfer), StructuredCloneScope::SameProcess)?;
         self.swmanager_sender
             .send(ServiceWorkerMsg::ForwardWorkerMessage {
                 data,

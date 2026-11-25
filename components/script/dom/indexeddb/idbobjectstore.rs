@@ -5,6 +5,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 
 use dom_struct::dom_struct;
+use js::jsapi::StructuredCloneScope;
 use js::context::JSContext;
 use js::conversions::ToJSValConvertible;
 use js::gc::MutableHandleValue;
@@ -252,7 +253,7 @@ impl IDBObjectStore {
 
         let result = (|| {
             // Step 3. Let serialized be ? StructuredSerializeForStorage(value).
-            let serialized = structuredclone::write(cx, value, None)?;
+            let serialized = structuredclone::write(cx, value, None, StructuredCloneScope::DifferentProcess)?;
 
             // Step 4. Let clone be ? StructuredDeserialize(serialized, targetRealm).
             let _ = structuredclone::read(cx, &self.global(), serialized, clone)?;
@@ -464,9 +465,9 @@ impl IDBObjectStore {
                     },
                 }
 
-                structuredclone::write(cx, cloned_js_value.handle(), None)?
+                structuredclone::write(cx, cloned_js_value.handle(), None, StructuredCloneScope::DifferentProcess)?
             },
-            None => structuredclone::write(cx, cloned_js_value.handle(), None)?,
+            None => structuredclone::write(cx, cloned_js_value.handle(), None, StructuredCloneScope::DifferentProcess)?,
         };
         let Ok(serialized_value) = postcard::to_stdvec(&cloned_value) else {
             return Err(Error::InvalidState(None));
