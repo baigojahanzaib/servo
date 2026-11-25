@@ -29,6 +29,7 @@ pub(crate) struct SourceBuffer {
     mode: Cell<AppendMode>,
     timestamp_offset: Cell<f64>,
     buffered: Dom<TimeRanges>,
+    media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
 }
 
 impl SourceBuffer {
@@ -40,6 +41,7 @@ impl SourceBuffer {
             mode: Cell::new(AppendMode::Segments),
             timestamp_offset: Cell::new(0.0),
             buffered: Dom::from_ref(buffered),
+            media_source: script_bindings::cell::DomRefCell::new(None),
         }
     }
 
@@ -55,6 +57,10 @@ impl SourceBuffer {
             global,
             None,
         )
+    }
+
+    pub(crate) fn set_media_source(&self, ms: &crate::dom::media::mediasource::MediaSource) {
+        *self.media_source.borrow_mut() = Some(Dom::from_ref(ms));
     }
 
     pub(crate) fn mime_type(&self) -> String {
@@ -116,9 +122,10 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         if self.updating.get() {
             return Err(Error::InvalidState(None));
         }
-        let _bytes = crate::dom::bindings::buffer_source::get_buffer_source_copy((&data).into());
-        // Stage-1 skeleton: bytes are accepted and dropped. The pipeline into
-        // the media stack lands in stages 3+ of the MSE plan.
+        let bytes = crate::dom::bindings::buffer_source::get_buffer_source_copy((&data).into());
+        if let Some(ref ms) = *self.media_source.borrow() {
+            ms.push_appended_data(bytes);
+        }
         Ok(())
     }
 

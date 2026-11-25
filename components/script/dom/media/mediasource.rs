@@ -37,6 +37,7 @@ pub(crate) struct MediaSource {
     duration: Cell<f64>,
     #[no_trace]
     id: Uuid,
+    media_element: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::html::embedded_content::htmlmediaelement::HTMLMediaElement>>>,
 }
 
 impl MediaSource {
@@ -51,6 +52,7 @@ impl MediaSource {
             active_source_buffers: Dom::from_ref(active_source_buffers),
             duration: Cell::new(f64::NAN),
             id: Uuid::new_v4(),
+            media_element: script_bindings::cell::DomRefCell::new(None),
         }
     }
 
@@ -74,6 +76,29 @@ impl MediaSource {
 impl MediaSource {
     pub(crate) fn url_id(&self) -> Uuid {
         self.id
+    }
+
+    pub(crate) fn set_media_element(&self, element: &crate::dom::html::embedded_content::htmlmediaelement::HTMLMediaElement) {
+        *self.media_element.borrow_mut() = Some(Dom::from_ref(element));
+    }
+
+    pub(crate) fn clear_media_element(&self) {
+        self.media_element.borrow_mut().take();
+    }
+
+    /// Route appended bytes into the attached element's push player.
+    /// Returns false when nothing is attached (bytes are dropped).
+    pub(crate) fn push_appended_data(&self, bytes: Vec<u8>) -> bool {
+        if let Some(ref element) = *self.media_element.borrow() {
+            return element.push_media_source_data(bytes);
+        }
+        false
+    }
+
+    pub(crate) fn signal_end_of_stream(&self) {
+        if let Some(ref element) = *self.media_element.borrow() {
+            element.push_media_source_eos();
+        }
     }
 
     pub(crate) fn duration_value(&self) -> f64 {
@@ -181,6 +206,7 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
             return Err(Error::NotSupported(None));
         }
         let buffer = SourceBuffer::new(cx, &self.global(), type_);
+        buffer.set_media_source(self);
         self.source_buffers.add(&buffer);
         Ok(buffer)
     }
@@ -197,6 +223,7 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
             return Err(Error::InvalidState(None));
         }
         self.ready_state.set(MediaSourceReadyState::Ended);
+        self.signal_end_of_stream();
         Ok(())
     }
 

@@ -1840,14 +1840,37 @@ impl HTMLMediaElement {
     fn attach_media_source(&self, media_source: &crate::dom::media::mediasource::MediaSource) {
         *self.media_source.borrow_mut() = Some(Dom::from_ref(media_source));
         media_source.attach_to_media_element();
+        media_source.set_media_element(self);
+        // MSE plays through the same servosrc-backed push player as
+        // progressive media; bytes arrive from appendBuffer instead of fetch.
+        if self.player.borrow().is_none() {
+            let _ = self.create_media_player(&Resource::Url(
+                servo_url::ServoUrl::parse("servomse://mse").expect("infallible"),
+            ));
+        }
         // Per spec the element goes to NETWORK_IDLE once attached; data
         // arrives via appendBuffer rather than the network.
         self.network_state.set(NetworkState::Idle);
         self.ready_state.set(ReadyState::HaveNothing);
     }
 
+    /// Push MSE-appended bytes into the push player.
+    pub(crate) fn push_media_source_data(&self, bytes: Vec<u8>) -> bool {
+        if let Some(ref player) = *self.player.borrow() {
+            return player.lock().unwrap().push_data(bytes).is_ok();
+        }
+        false
+    }
+
+    pub(crate) fn push_media_source_eos(&self) {
+        if let Some(ref player) = *self.player.borrow() {
+            let _ = player.lock().unwrap().end_of_stream();
+        }
+    }
+
     fn detach_media_source(&self) {
         if let Some(ms) = self.media_source.borrow_mut().take() {
+            ms.clear_media_element();
             ms.detach_from_media_element();
         }
     }
