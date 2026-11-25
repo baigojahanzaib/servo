@@ -779,3 +779,39 @@ Verified working end-to-end on Linux: MP4 h264(+aac), mp4 video-only,
 webm vp9+opus — realtime playback, exact forward/backward seeks, stable
 pause, resume. WebM/VP9+Opus (the MSE target family) works — the
 WebM-first plan in docs/mse-plan.md holds.
+
+## 1k. MSE stage 1 — DOM surface (Nov 25, feather-engine `a1f0fcde987`)
+
+MediaSource/SourceBuffer/SourceBufferList exist per spec; isTypeSupported
+answers honestly from the gst registry via `ServoMedia::can_play_type`.
+Verified live: vp9/opus webm true, fake codecs false, spec-correct
+InvalidStateError behavior in closed state.
+
+Binding-authoring lessons that cost compile iterations (read before writing
+the next interface):
+
+- Trait signatures are the ground truth: attribute accessors are
+  `Get`/`Set`-prefixed only for `[Throws]` attributes or when codegen decides
+  so — read the generated trait in
+  `target/debug/build/servo-script-bindings-*/out/Bindings/<Iface>Binding.rs`
+  before writing the impl, not after.
+- `double` args arrive as `Finite<f64>`; `unrestricted double` attrs stay `f64`.
+- Static methods take `&D::Window` (concrete `&Window`) as first param.
+- Constructors implicitly receive cx — never list 'Constructor' in
+  Bindings.conf `cx` arrays (hard build error).
+- Methods that need cx for object creation: list the method name in
+  Bindings.conf `'cx': [...]` — do NOT use `script_runtime::temp_cx()`.
+- Union args arrive as `codegen::UnionTypes::FooOrBar` enums holding DomRoot
+  values; changing a signature to a union breaks all callers — construction
+  is `Union::Variant(DomRoot::from_ref(&**x))`.
+- Event handlers: `event_handler!(name, GetOnname, SetOnname);` inside the
+  methods impl, no manual plumbing.
+- `#[no_trace]` on struct fields that aren't JSTraceable (Uuid etc).
+- webidl files are auto-scanned (no registration list); DOM impls need
+  `pub(crate) mod` in the parent mod.rs only.
+- cargo check from the servo repo root fails on missing pkg-config deps;
+  always check/build from `~/feather/shell` (the proven env).
+
+Probe harness: write results into `document.title`, read with
+`xdotool search --name PROBE | xdotool getwindowname` — no webdriver needed
+for pure-JS surface verification.
