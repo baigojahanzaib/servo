@@ -1400,3 +1400,33 @@ Implementation notes for lane continuity: branch imgmem-wip off feather-engine.
 RasterImage in components/pixels/lib.rs (~line 324). ImageFrame struct nearby. Byte consumers
 to migrate: grep '.frames' and frame byte access across components/paint, components/script
 (canvas drawImage, createImageBitmap), components/net. Animated = frames.len()>1 — skip in v1.
+
+## IMGMEM phase 1 refinement — duplication mechanics CORRECTED + design inversion (2026-11-25)
+
+CORRECTION to KEY UNKNOWN #1: GenericSharedMemory::from_arc_vec (components/shared/base/
+generic_channel/shared_memory.rs ~96): in IPC/multiprocess mode (feather default) bytes are
+COPIED via IpcSharedMemory::from_bytes — full duplication confirmed: content-process RasterImage
+copy + compositor-side shared-memory copy. In-process mode shares zero-copy, but multiprocess
+is what ships. Also CORRECTION to KEY UNKNOWN #2: RasterImage.bytes is the DECODED buffer —
+ImageFrame.byte_range indexes INTO it (decoded RGBA, all frames concatenated). Encoded bytes
+are NOT retained after decode — must be added for any re-decode path (~10-20x smaller, cheap).
+
+DESIGN INVERSION (important — simplifies v1 enormously): because the WR copy persists keyed
+by ImageKey independently of the content-process copy, evicting RasterImage decoded bytes of
+STATIC ALREADY-PAINTED images has ZERO visual impact — painting continues entirely from the
+WR copy. Re-decode becomes necessary ONLY for: canvas drawImage/createImageBitmap reads,
+encode paths (toDataURL), animated frame updates. v1 scope shrinks to:
+1. Retain encoded bytes on RasterImage (new field, Arc<Vec<u8>> clone of source at decode).
+2. Swap-aware decoded storage: bytes behind RwLock, accessor re-materializes on demand.
+3. Eviction trigger: global LRU budget counting resident decoded bytes, evicting static
+   (frames.len()==1) images coldest-first. NOTE: no viewport relevance needed at all in v1 —
+   pure memory-pressure LRU, because the WR copy keeps painting correct regardless of eviction.
+   The experiment risk profile collapses: worst case is re-decode CPU churn, never visual breakage.
+4. Phase 2 (later): evict WR keys of offscreen images too (the other half) — needs paint-side
+   re-upload on display-list rebuild, riskier, separate verification.
+
+WARNING for byte-accessor migration: GenericSharedMemory::from_arc_vec(self.bytes.clone()) in
+pixels/lib.rs webrender_image_descriptor_and_data_for_frame is the paint-path consumer; canvas
+consumers in components/script (canvas_state, createImageBitmap) read frame ranges directly.
+All must go through a materializing accessor. Re-decode for v1 raster formats: pixels::load_from_memory
+re-run on encoded bytes — must match original decode exactly (deterministic — same code path).
