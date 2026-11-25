@@ -1012,3 +1012,11 @@ Two-layer seek swallow for StreamType::MediaSource: player-level early-return in
 
 ### Symptom index additions (per standing rule)
 - Symptom: playback position frozen at exactly the seek target after any seek attempt, clock never advances again, no error → check: `HTMLMediaElement::seek` seeking-state completion path (CONFIRMED cause — element enters seeking state, position pinned to target, `seek_end` never fires because the gst-level seek can't complete in push mode; player-level swallow alone is INSUFFICIENT), player position reporting (ruled out — pipeline keeps playing fine underneath).
+
+### Symptom: images on infinite-scroll pages accumulate decoded bytes without bound (big-image synthetic +214MB over 25 scrolls)
+
+→ check: DOM pin `HTMLImageElement.current_request.image` (status: INSUFFICIENT — dropping it verified working, but memory unchanged)
+→ check: net cache `completed_loads` entry (status: INSUFFICIENT — evicting it alongside the pin verified working, memory unchanged; also the reason ALL cache-budget approaches — per-pipeline 128MB, 16MB, or the shipped global 384MB — can never bound live-document images: eviction skips entries pinned by strong_count>1)
+→ check: layout `ReplacedContents` in the fragment tree (CONFIRMED final pin — the decoded Arc<RasterImage> is shared single-copy across DOM/cache/layout; ALL THREE pins must drop to free anything. The layout pin only drops via layout-data invalidation → reflow → box reconstruction → image re-request → instant re-pin. Churn is structural: infinite scroll triggers constant reflows via content insertion.)
+→ VERDICT: no cheap safe win. The real fix requires either content-visibility-style layout skipping of offscreen subtrees (servo lacks it — large feature) or byte-swappable RasterImage shells with paint-time re-decode (deep engine surgery). Weeks-scale either way. The pin-release implementation was built, verified mechanically correct (113 evictions logged in one scroll test), measured useless, and REVERTED — do not re-attempt the same two-pin variant.
+→ note: images below the initial viewport appear NOT to decode until scrolled near (has_image=false below viewport in scan logs) — servo already has partial lazy behavior; retention is for once-visible content only.
