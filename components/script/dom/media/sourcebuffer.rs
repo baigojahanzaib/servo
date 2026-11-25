@@ -195,7 +195,47 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
     }
 
     /// <https://w3c.github.io/media-source/#dom-sourcebuffer-remove>
-    fn Remove(&self, _start: Finite<f64>, _end: Finite<f64>) -> Fallible<()> {
+    fn Remove(&self, start: Finite<f64>, end: Finite<f64>) -> Fallible<()> {
+        if self.updating.get() {
+            return Err(Error::InvalidState(None));
+        }
+        if *end <= *start || start.is_nan() || end.is_nan() {
+            return Err(Error::Type(c"Invalid removal range".into()));
+        }
+        self.updating.set(true);
+        // The bytes were already handed to the pipeline; removal is honest
+        // index bookkeeping so eviction loops see the ranges they expect.
+        let (rs, re) = (*start, *end);
+        let mut kept = crate::dom::timeranges::TimeRangesContainer::default();
+        {
+            let ranges = self.buffered.borrow();
+            for i in 0..ranges.len() {
+                if let (Ok(a), Ok(b)) = (ranges.start(i), ranges.end(i)) {
+                    if b <= rs || a >= re {
+                        let _ = kept.add(a, b);
+                    } else {
+                        if a < rs {
+                            let _ = kept.add(a, rs);
+                        }
+                        if b > re {
+                            let _ = kept.add(re, b);
+                        }
+                    }
+                }
+            }
+        }
+        *self.buffered.borrow_mut() = kept;
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .media_element_task_source()
+            .queue(task!(mse_remove_complete: move |cx| {
+                let this = this.root();
+                this.fire_simple_event_cx(cx, Atom::from("updatestart"));
+                this.fire_simple_event_cx(cx, Atom::from("update"));
+                this.updating.set(false);
+                this.fire_simple_event_cx(cx, Atom::from("updateend"));
+            }));
         Ok(())
     }
 

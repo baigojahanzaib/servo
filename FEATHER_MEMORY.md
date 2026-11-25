@@ -981,3 +981,14 @@ DECOMPOSITION (2026-11-25, controlled variants): empty iframes cost ~0.5MB each 
 ### Symptom: browser process gone mid-measurement during reddit deep scroll
 
 → check: teardown/resume churn panic in media pipeline (suspect, unconfirmed — one observation, stderr capture now mandatory on all runs)
+
+## 1p. MSE remove() + YouTube-choreography validation (2026-11-25)
+
+`SourceBuffer::Remove` implemented: validates updating/range, spec lifecycle (updatestart/update/updateend from queued task, updating synchronous-true then false), range subtraction rebuilt into the script-side TimeRangesContainer (piecewise: overlap clips at [rs,re) boundaries; no fractional merging).
+
+probe10 verified end-to-end in feather-shell: strictly updateend-gated alternating video/audio appends (YouTube's exact feed pattern), endOfStream, playback continues while remove(0,4) evicts — post-remove buffered ranges exactly [4.3-5.3][8.5-9.5], clock advancing. This is the permanent stage-6 regression harness: it replicates YouTube's append choreography without the bot wall.
+
+### Symptom index additions (per standing rule)
+- Symptom: `remove()` throws NotSupportedError or leaves buffered unchanged → check: `SourceBuffer::Remove` in components/script/dom/media/sourcebuffer.rs (owns the range subtraction — was unimplemented stub, now implemented and verified), TimeRangesContainer piecewise arithmetic (prime suspect for boundary bugs — half-open [rs,re) semantics, no fp epsilon merging).
+- Symptom: YouTube page loads but no videoplayback segment requests → check: bot-wall layer FIRST before any engine work — `rr*.googlevideo.com` NXDOMAIN or IPv6-only resolution means CDN null-routing (CONFIRMED environmental on v4-only VMs — engine is innocent; evidence: 9 videoplayback requests issued = player JS accepted our MSE), "Sign in to confirm you're not a bot" overlay (anti-bot, not an engine defect), embed Error 153 (embedder-identity rejection).
+- Symptom: MSE playback appears to work but eviction logic never fires → check: buffered end reaching the eviction window (if buffered is indexed correctly per §82af8c9113e the problem is downstream), updateend-gated append loop (ruled out — verified correct lifecycle in 41d0c9c5f64).
