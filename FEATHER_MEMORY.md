@@ -1519,3 +1519,21 @@ heap-level measurement: SpiderMonkey JS heap across iframe workers (reddit loads
 ifames each with own JS realm), layout trees, webrender texture cache. Next measurement must be
 heap-level: servo memory reporting (about:memory/memreport path — Windows status unverified)
 or differential binary instrumentation. RSS-only behavioral attribution is exhausted as a method.
+
+## Memreport on Windows (2026-11-25): instrument built, output EMPTY — reporter plumbing broken
+
+Instrument delivered: FEATHER_MEMREP=<seconds> env var in feather shell app.rs user_event —
+periodic engine memory-report dumps to stderr (keystroke injection unreliable on Windows:
+SetForegroundWindow+keybd_event does not deliver; window titles enumerate empty). MEASURED on
+idle reddit: report generates but is nearly empty — 0.53MB total attributed, all categories
+zero. Missing entirely: js/* (SpiderMonkey heap/malloc-heap/gc-heap), layout/*, system-heap.
+INTERPRETATION: the per-pipeline script memory reporters do not contribute on Windows (report
+collection doesn't reach or doesn't receive responses from script threads), and system-heap
+reporting is glibc-mallinfo-only (no Windows equivalent in system_reporter). THE MEASUREMENT
+INSTRUMENT ITSELF NEEDS FIXING before heap attribution is possible: either (a) fix reporter
+plumbing — why script-thread reports don't return on Windows — unknown, possibly channel/
+threading related, or (b) jemalloc stats on Windows — check whether Windows build even uses
+the jemalloc global allocator. UNVERIFIED alternate hypothesis: reporters may never have been
+wired for in-process single-process mode — servo multiprocess architecture assumption may
+permeate the memory-report collection path. Meanwhile: feather shell change is in
+shell/src/app.rs (uncommitted as of writing).
