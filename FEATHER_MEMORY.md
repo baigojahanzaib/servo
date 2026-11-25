@@ -1600,3 +1600,19 @@ Symptom: heavy continuous webgl saturates a core in BOTH modes at ~7-8fps on lar
 Symptom: shadertoy.com unreachable — Cloudflare security-verification wall → known turnstile limitation, NOT a webgl defect. Indexed so nobody misattributes.
 
 POSITIVE: webgl2 fully verified — real WebGL 2.0 contexts, core instancing/VAO/texImage3D, GLSL ES 3.00 compile+link+draw correct through the readback bridge in metal mode. Aquarium (instanced textured geometry, multi-pass) pixel-perfect.
+
+## sec1zf — post-seek resume-stall ROOT-CAUSED + FIXED (027251a9ed2)
+
+**Symptom: post-seek playback stall (position pinned at target, never advances) → check: servomse seek_reset lossy-handover race (CONFIRMED CAUSE — fixed), matroskademux state (status: ruled out — when handover is lossless the demux re-parses init+clusters fine), appsrc enough-data signaling (status: ruled out — pushes returned Ok throughout), multiqueue/decodebin3 (status: partially involved downstream but not the root — flow resumes once input is lossless).**
+
+Evidence chain (pad probes + push counting on signed-in YouTube):
+- post-seek pushes accepted: 268, buffers exiting ghost pads: 3 — data swallowed at the source, never reaching demux
+- stall vs resume is a RACE: identical builds sometimes resume (19+ buffers out) depending on whether re-appends arrive during the flush/recreate window
+- pushes in the window land in the old appsrc being destroyed, or hit a removed track key → bytes silently lost → demux starves permanently (first cluster partial/unparseable)
+- fix: seek_reset holds the tracks mutex across the entire flush+recreate so pushes block and land in the new appsrcs losslessly. Verified: consecutive runs resume with advancing position.
+
+**Symptom: post-seek position reads higher than seek target (~78-88 when target 30) → check: htmlmediaelement seek clamping vs seekable ranges (prime suspect — clamp target varies run to run with buffered extent; sec1zd structural tension unresolved), mse_position_offset double-counting (status: ruled out arithmetically — neither rebase nor absolute pts theory reproduces observed values without a varying clamp input), demux timebase re-basing (mechanism confirmed but correctly compensated by the offset fix).**
+
+**Symptom: rs collapses to 0 / currentTime resets to 0 some seconds after a stalled seek → check: YouTube player.js error recovery resetting MSE state (prime suspect — application-level response to starvation, not engine). Not an engine crash.**
+
+Debug-instrumentation recipe (reusable): eprintln in mse_source push_buffer + pad probe on ghost pads post-flush — buffer OUT count vs push count is the decisive lossless-handover metric.
