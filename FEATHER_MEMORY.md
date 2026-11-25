@@ -1462,3 +1462,10 @@ SharedRasterImage::to_shared (needs the resident copy materialized at conversion
 Eviction trigger lives in net/image_cache.rs (global resident-byte LRU budget, pref-gated).
 Skip frames.len()>1. The decoded_evicted flag half-increment was reverted uncommitted — do not
 resurrect it.
+
+## IMGMEM increment-2 state: skeleton committed (imgmem-wip). NEXT: write materialize_decoded()
+accessor on RasterImage (read residency; if Evicted re-decode from encoded_bytes via the same
+decoder used in load_from_memory and swap to Resident), migrate the 5 consumer sites listed in
+the arc-swap-trap entry, then the eviction trigger in net/image_cache.rs. IMPORTANT invariant:
+Evicted is only valid for frames.len()==1 static images; the accessor must handle re-decode
+on the calling thread for v1 (async re-decode is a later refinement).
