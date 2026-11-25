@@ -1485,3 +1485,15 @@ INVALIDATION TRIGGERS (spacer height must be discarded when):
 TOGGLE: unchanged — FEATHER_HEURISTIC_SKIP=1, off by default. Hysteresis unchanged (3h enter / 1.5h exit) since hysteresis was never the failure.
 
 KNOWN RESIDUAL RISKS: heights that legitimately change while skipped but WITHOUT mutation events hitting the dirty path (async layout-affecting style changes); scroll anchoring behavior when spacers compress/expand on unskip. Both visible-in-test, not fatal by design.
+
+## Heuristic experiment FINAL VERDICT (2026-11-25) — negative+, three-layer root cause
+
+The experiment "can heuristic layout-skipping ever work" is answered: NOT at days-scale. Three independent defects were found and fixed in sequence, each revealing the next:
+
+1. Gate bug (fixed): commit block required any_cv — heuristic was dead code on all real sites.
+2. Scroll-insensitivity (fixed): layout rects are document-space; the lenient viewport must be translated by the live scroll offset, and layout's no-reflow scroll cache is ALWAYS ZERO — scroll state is compositor-owned, only the reflow-query path synchronizes it.
+3. UNSOLVED — oscillation survives both fixes AND spacer height reservation. Final signature on cnn: duty-cycled 6×skipped=0 / 1×skipped=18 repeating. Remaining mechanism candidates, in suspected order: (a) margin-collapse semantics change when children are pruned — a spacer box does NOT reproduce the collapsed-margin geometry of the real subtree, so positions genuinely shift on skip, moving elements back into relevance; (b) one-frame-stale measurement vs reconstruction timing creates a measurement feedback loop independent of geometry; (c) heights recorded border-box but applied through content-box edges in some box types. ANY of these requires real layout-semantics work, not tuning.
+
+FUNDAMENTAL FINDING: the spec's contain-intrinsic-size + containment bundle is not an optimization hint, it is the load-bearing correctness mechanism. Skipping without geometry-exact substitution is inherently self-destabilizing because relevance determination depends on the very geometry that skipping mutates. Heuristic skipping done right amounts to implementing layout containment + margin-exact spacers + per-scroll-container relevance — i.e. reimplementing most of the spec machinery AND THEN guessing sizes the spec requires authors to provide. Verdict: pivot away; the conformant cv path (2b containment cascade) is cheaper than the heuristic path and actually correct. Experiment artifacts preserved on cv-wip, runtime-gated off.
+
+Symptom: skip oscillation surviving spacer injection → check: margin-collapse geometry of pruned subtrees (prime suspect, unchecked), measurement staleness vs reconstruction ordering (suspect), box-sizing edge semantics (suspect), spacer injection failure (ruled out partially — spikes of 18 prove engagement+scroll-tracking work).

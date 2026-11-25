@@ -3642,8 +3642,7 @@ impl Document {
     ///
     /// <https://drafts.csswg.org/css-contain/#relevant-to-the-user>
     fn determine_content_visibility_relevance(&self, cx: &mut js::context::JSContext) {
-        let no_gc_value = cx.no_gc();
-        let no_gc = &no_gc_value;
+
         use style::values::computed::box_::ContentVisibility;
         use crate::dom::node::NodeDamage;
 
@@ -3666,9 +3665,11 @@ impl Document {
         // Relevance must be measured in document space: element border boxes are
         // document-space, so the viewport rect is translated by the live scroll offset.
         // Without this, determination is scroll-insensitive and everything collapses.
-        let scroll = window.scroll_offset_query_with_external_scroll_id_no_reflow(
-            window.pipeline_id().root_scroll_id(),
-        );
+        // Layout's no-reflow scroll cache is stale (always zero): scroll state is
+        // compositor-owned and only synchronized through the query path.
+        let scroll = window.scroll_offset(cx);
+        let no_gc_value = cx.no_gc();
+        let no_gc = &no_gc_value;
         let viewport_rect: euclid::Rect<Au, CSSPixel> = base_viewport_rect.translate(
             euclid::Vector2D::new(Au::from_f32_px(scroll.x), Au::from_f32_px(scroll.y)),
         )
