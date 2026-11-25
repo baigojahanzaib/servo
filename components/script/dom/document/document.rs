@@ -3756,7 +3756,7 @@ impl Document {
             }
         }
 
-        if any_cv || !self.content_visibility_skipped.borrow().is_empty() {
+        if any_cv || heuristic || !self.content_visibility_skipped.borrow().is_empty() {
             if std::env::var("FEATHER_CV_DEBUG").is_ok() {
                 eprintln!("CV-DEBUG skipped={} any_cv={}", skipped.len(), any_cv);
             }
