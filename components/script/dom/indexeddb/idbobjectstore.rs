@@ -252,10 +252,10 @@ impl IDBObjectStore {
 
         let result = (|| {
             // Step 3. Let serialized be ? StructuredSerializeForStorage(value).
-            let serialized = structuredclone::write(cx, value, None)?;
+            let serialized = structuredclone::write_with_scope(cx, value, None, js::jsapi::StructuredCloneScope::DifferentProcess)?;
 
             // Step 4. Let clone be ? StructuredDeserialize(serialized, targetRealm).
-            let _ = structuredclone::read(cx, &self.global(), serialized, clone)?;
+            let _ = structuredclone::read_with_scope(cx, &self.global(), serialized, clone, js::jsapi::StructuredCloneScope::DifferentProcess)?;
             Ok(())
         })();
 
@@ -464,9 +464,9 @@ impl IDBObjectStore {
                     },
                 }
 
-                structuredclone::write(cx, cloned_js_value.handle(), None)?
+                structuredclone::write_with_scope(cx, cloned_js_value.handle(), None, js::jsapi::StructuredCloneScope::DifferentProcess)?
             },
-            None => structuredclone::write(cx, cloned_js_value.handle(), None)?,
+            None => structuredclone::write_with_scope(cx, cloned_js_value.handle(), None, js::jsapi::StructuredCloneScope::DifferentProcess)?,
         };
         let Ok(serialized_value) = postcard::to_stdvec(&cloned_value) else {
             return Err(Error::InvalidState(None));

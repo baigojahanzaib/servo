@@ -659,7 +659,7 @@ impl IDBCursorMethods<crate::DomTypeHolder> for IDBCursor {
             }
         }
 
-        let cloned_value = structuredclone::write(cx, cloned_js_value.handle(), None)?;
+        let cloned_value = structuredclone::write_with_scope(cx, cloned_js_value.handle(), None, js::jsapi::StructuredCloneScope::DifferentProcess)?;
         let Ok(serialized_value) = postcard::to_stdvec(&cloned_value) else {
             return Err(Error::InvalidState(Some(
                 "Failed to serialize cloned value".to_owned(),
@@ -1034,7 +1034,7 @@ pub(crate) fn iterate_cursor(
         postcard::from_bytes(&found_record.value)
             .map_err(|_| Error::Data(None))
             .and_then(|data| {
-                structuredclone::read(cx, global, data, new_cursor_value.handle_mut())
+                structuredclone::read_with_scope(cx, global, data, new_cursor_value.handle_mut(), js::jsapi::StructuredCloneScope::DifferentProcess)
             })?;
         cursor.value.set(new_cursor_value.get());
     }
