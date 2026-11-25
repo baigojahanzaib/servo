@@ -14,10 +14,14 @@ use crate::dom::bindings::codegen::Bindings::SourceBufferBinding::{
 };
 use crate::dom::bindings::codegen::UnionTypes::ArrayBufferViewOrArrayBuffer;
 use crate::dom::bindings::error::{Error, ErrorResult, Fallible};
+use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::DOMString;
+use crate::dom::bindings::refcounted::Trusted;
+use crate::dom::event::{Event, EventBubbles, EventCancelable};
 use crate::dom::eventtarget::EventTarget;
+use stylo_atoms::Atom;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::timeranges::{TimeRanges, TimeRangesContainer};
 
@@ -57,6 +61,17 @@ impl SourceBuffer {
             global,
             None,
         )
+    }
+
+    pub(crate) fn fire_simple_event_cx(&self, cx: &mut JSContext, name: Atom) {
+        let event = Event::new(
+            cx,
+            &self.global(),
+            name,
+            EventBubbles::DoesNotBubble,
+            EventCancelable::NotCancelable,
+        );
+        event.upcast::<Event>().fire(cx, self.upcast());
     }
 
     pub(crate) fn set_media_source(&self, ms: &crate::dom::media::mediasource::MediaSource) {
@@ -123,9 +138,24 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
             return Err(Error::InvalidState(None));
         }
         let bytes = crate::dom::bindings::buffer_source::get_buffer_source_copy((&data).into());
+        // <https://w3c.github.io/media-source/#dom-sourcebuffer-appendbuffer>
+        // updating flips synchronously, the append completes in a queued task
+        // with updatestart/update/updateend — real player JS loops on these.
+        self.updating.set(true);
         if let Some(ref ms) = *self.media_source.borrow() {
             ms.push_appended_data(bytes);
         }
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .media_element_task_source()
+            .queue(task!(mse_append_complete: move |cx| {
+                let this = this.root();
+                this.fire_simple_event_cx(cx, Atom::from("updatestart"));
+                this.fire_simple_event_cx(cx, Atom::from("update"));
+                this.updating.set(false);
+                this.fire_simple_event_cx(cx, Atom::from("updateend"));
+            }));
         Ok(())
     }
 

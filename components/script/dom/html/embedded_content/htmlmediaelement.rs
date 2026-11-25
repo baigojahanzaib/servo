@@ -1543,6 +1543,10 @@ impl HTMLMediaElement {
     }
 
     fn fetch_request(&self, cx: &JSContext, offset: Option<u64>, seek_lock: Option<SeekLock>) {
+        // MSE: data arrives via appendBuffer, never the network.
+        if self.media_source.borrow().is_some() {
+            return;
+        }
         if self.resource_url.borrow().is_none() && self.blob_url.borrow().is_none() {
             error!("Missing request url");
             if let Some(seek_lock) = seek_lock {
