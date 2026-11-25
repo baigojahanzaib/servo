@@ -1446,3 +1446,19 @@ Eviction entry point: net/image_cache.rs — a global resident-decoded LRU budge
 (default-off), counting bytes across pipelines. Evict = swap to Evicted + drop Arc (WR copy
 keeps painting correct — zero visual impact for static painted images). NEVER evict frames.len()>1.
 Then verification: deep-scroll reddit memory growth vs control + scrollback flash check.
+
+## IMGMEM correction — arc-swap trap (do not implement the wrong design)
+A tempting wrong design: keep RasterImage immutable-style and evict by swapping the whole
+Arc<RasterImage> at the image-cache level for an "evicted" variant. THIS DOES NOT WORK — it is
+the same trap as the pin-release experiment: DOM ImageRequest.image, layout ReplacedContents,
+and the animation map all hold the ORIGINAL Arc; evicting only the cache's reference frees
+nothing. Eviction MUST be interior-mutable INSIDE the shared RasterImage so every pin holder
+observes it through the same allocation: `bytes` moves behind `std::sync::RwLock<DecodedBytes>`
+where `enum DecodedBytes { Resident(Arc<Vec<u8>>), Evicted }`, with accessor
+`materialize_decoded(&self) -> Arc<Vec<u8>>` that re-decodes from encoded_bytes when Evicted.
+Consumers (compile-driven migration, all mechanical): pixels/lib.rs lines ~430/455/460/464/534
+(self.bytes.clone() → self.materialize_decoded()), favicon.rs ~174, image_cache.rs ~268 (len),
+SharedRasterImage::to_shared (needs the resident copy materialized at conversion time).
+Eviction trigger lives in net/image_cache.rs (global resident-byte LRU budget, pref-gated).
+Skip frames.len()>1. The decoded_evicted flag half-increment was reverted uncommitted — do not
+resurrect it.
