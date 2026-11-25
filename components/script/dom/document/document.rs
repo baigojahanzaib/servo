@@ -654,6 +654,12 @@ pub(crate) struct Document {
     /// OpaqueNode is a plain integer identifier with no GC references.
     #[no_trace]
     content_visibility_skipped: DomRefCell<FxHashSet<OpaqueNode>>,
+    /// Heuristic-skipping v2: reserved spacer heights for construction-skipped elements.
+    #[no_trace]
+    heuristic_spacer_heights: DomRefCell<rustc_hash::FxHashMap<OpaqueNode, f32>>,
+    /// Original inline style attribute text saved before spacer-height injection.
+    #[no_trace]
+    heuristic_saved_styles: DomRefCell<rustc_hash::FxHashMap<OpaqueNode, Option<String>>>,
     /// The set of all fonts loaded by this document.
     /// <https://drafts.csswg.org/css-font-loading/#font-face-source>
     fonts: MutNullableDom<FontFaceSet>,
@@ -3635,7 +3641,9 @@ impl Document {
     /// currently relevant to the user, and update the skipped-element set.
     ///
     /// <https://drafts.csswg.org/css-contain/#relevant-to-the-user>
-    fn determine_content_visibility_relevance(&self, no_gc: &NoGC) {
+    fn determine_content_visibility_relevance(&self, cx: &mut js::context::JSContext) {
+        let no_gc_value = cx.no_gc();
+        let no_gc = &no_gc_value;
         use style::values::computed::box_::ContentVisibility;
         use crate::dom::node::NodeDamage;
 
@@ -3776,12 +3784,69 @@ impl Document {
             // current skip set, so a flipped element either gains or loses its constructed
             // children on the next reflow.
             let mut previous = self.content_visibility_skipped.borrow_mut();
+            let mut flips: Vec<(DomRoot<Node>, bool)> = Vec::new();
             for node in self.upcast::<Node>().traverse_preorder(ShadowIncluding::No) {
                 let opaque = node.to_opaque();
                 let was = previous.contains(&opaque);
                 let is = skipped.contains(&opaque);
                 if was != is {
                     node.dirty(no_gc, NodeDamage::ContentOrHeritage);
+                    if heuristic {
+                        flips.push((DomRoot::from_ref(&node), is));
+                    }
+                }
+            }
+            for (node, is) in flips {
+                let opaque = node.to_opaque();
+                if true {
+                    if let Some(element) = node.downcast::<Element>() {
+                        if is {
+                            // Newly skipped: reserve the current height as a spacer so scroll
+                            // geometry does not collapse (the v1 oscillation mechanism).
+                            if let Some(rect) = node.border_box_without_reflow() {
+                                let height_px = rect.size.height.to_f32_px();
+                                if height_px > 1.0 {
+                                    self.heuristic_spacer_heights
+                                        .borrow_mut()
+                                        .insert(opaque, height_px);
+                                    let had_attr = element.has_attribute(&local_name!("style"));
+                                    let original = if had_attr {
+                                        Some(element.get_string_attribute(&local_name!("style")).str().to_string())
+                                    } else {
+                                        None
+                                    };
+                                    self.heuristic_saved_styles
+                                        .borrow_mut()
+                                        .insert(opaque, original.clone());
+                                    let injected = format!(
+                                        "{};height:{}px;box-sizing:border-box",
+                                        original.unwrap_or_default(),
+                                        height_px
+                                    );
+                                    element.set_attribute(
+                                        cx,
+                                        &local_name!("style"),
+                                        AttrValue::String(injected),
+                                    );
+                                }
+                            }
+                        } else {
+                            // Unskipped: restore the original inline style, drop the reservation.
+                            if let Some(original) =
+                                self.heuristic_saved_styles.borrow_mut().remove(&opaque)
+                            {
+                                match original {
+                                    Some(text) => {
+                                        element.set_attribute(cx, &local_name!("style"), AttrValue::String(text))
+                                    },
+                                    None => {
+                                        element.remove_attribute(cx, &ns!(), &local_name!("style"));
+                                    },
+                                }
+                            }
+                            self.heuristic_spacer_heights.borrow_mut().remove(&opaque);
+                        }
+                    }
                 }
             }
             *previous = skipped;
@@ -3830,7 +3895,7 @@ impl Document {
             // Step 16.2.4. If hadInitialVisibleContentVisibilityDetermination is true, then continue.
             // (Note: the spec's initial-visible-determination micro-optimization is not yet
             // implemented; relevance is recomputed for all elements each iteration.)
-            self.determine_content_visibility_relevance(cx.no_gc());
+            self.determine_content_visibility_relevance(cx);
 
             if !has_resize_observers {
                 break;
@@ -4711,6 +4776,8 @@ impl Document {
             declarative_refresh: Default::default(),
             resize_observers: Default::default(),
             content_visibility_skipped: Default::default(),
+            heuristic_spacer_heights: Default::default(),
+            heuristic_saved_styles: Default::default(),
             fonts: Default::default(),
             // TODO: This is intended to workaround the issue where `visibilityState`
             // is always hidden. This should really be hooked with system visibility
