@@ -3735,6 +3735,17 @@ impl Document {
                 );
                 if !risky_tag && !observed_elements.contains(&node.to_opaque()) {
                     if let Some(rect) = node.border_box_without_reflow() {
+                        if std::env::var("FEATHER_CV_DEBUG").is_ok() && rect.size.height > Au::from_f32_px(150.0) {
+                            let dbg_lenient = viewport_rect.outer_rect(
+                                euclid::SideOffsets2D::new(viewport_height_au * 3, Au(0), viewport_height_au * 3, Au(0)),
+                            );
+                            eprintln!("CV-GEO tag={} rect=({},{}) {}x{} lenient=({},{})-({},{})", tag_str,
+                                rect.origin.x.to_f32_px() as i32, rect.origin.y.to_f32_px() as i32,
+                                rect.size.width.to_f32_px() as i32, rect.size.height.to_f32_px() as i32,
+                                dbg_lenient.origin.x.to_f32_px() as i32, dbg_lenient.origin.y.to_f32_px() as i32,
+                                (dbg_lenient.origin.x + dbg_lenient.size.width).to_f32_px() as i32,
+                                (dbg_lenient.origin.y + dbg_lenient.size.height).to_f32_px() as i32);
+                        }
                         let was_skipped = self.content_visibility_skipped.borrow().contains(&node.to_opaque());
                         // Hysteresis: enter skip beyond 3 viewport-heights below or above;
                         // once skipped, stay skipped until within 1.5 heights.

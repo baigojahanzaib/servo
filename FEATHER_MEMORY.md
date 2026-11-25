@@ -1461,3 +1461,11 @@ Symptom: stylo `adjust_for_contain`/`adjust_for_contain_intrinsic_size` ungating
 Negative result: zero content-visibility usage on initial render of reddit, x, cnn, espn, bbc, amazon, youtube (surveyed 2026-11-25) — do not re-survey casually; cv-dependent optimizations have zero real-site coverage today.
 
 Negative result: vacuous first replication (OFF growths +945/+92/+357, ON +444/+758 + one death) measured a DISABLED heuristic — do not cite as evidence about the heuristic itself.
+
+## Heuristic v1 decisive measurement (2026-11-25, geometry-instrumented)
+
+MEASURED on reddit: the document body is only ~700px tall — modern reddit (shreddit) scrolls an INNER container, not the document root. The heuristic's root-scroller assumption does not hold on app-shell sites; virtually no element ever qualifies (CV-GEO shows only html/body exceed the 150px significance filter, both viewport-sized).
+
+MEASURED oscillation: exactly one pass reached skipped=13, then collapsed back to 0 permanently. Mechanism: skipping destroys boxes → scroll geometry collapses → everything re-enters the lenient viewport → unskip → reconstruct → oscillate. Hysteresis cannot fix this because the feedback is structural, not marginal. KEY INSIGHT: the spec's contain-intrinsic-size requirement is LOAD-BEARING, not incidental — size reservation is what makes skipping geometrically stable. Any heuristic version must synthesize size reservation: record the element's last measured height at skip time and construct a fixed-height spacer box instead of nothing (v2 design). Without it the experiment is guaranteed-destructive on exactly the infinite-scroll sites it targets.
+
+Symptom: skip-set oscillates N→0→N or collapses to 0 permanently after engaging → check: whether skipped elements' heights were contributing to scroll geometry (confirmed cause — no size reservation), hysteresis margin tuning (ruled out — structural not marginal), scroll-container geometry (root-scroller assumption — second confirmed cause on inner-scroller sites).
