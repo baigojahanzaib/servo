@@ -1579,3 +1579,13 @@ Code review of HTMLMediaElement::seek after live-probe chaos (non-deterministic 
 ### Symptom index additions
 - Symptom: second and later seeks on MSE do nothing at all (no seeking event even) → check: seekable-empty abort in HTMLMediaElement::seek step 8 interacting with the buffered-clear-on-seek deviation (CONFIRMED structural cause by code reading — seekable mirrors buffered, cleared on prior seek), YouTube eviction amplifying it.
 - Symptom: seek lands at wrong position (clamped far from target) → check: step-8 nearest-seekable-range clamping against a flush-cleared/evicted index (CONFIRMED mechanism), NOT a pipeline seek execution issue.
+
+## §1ze. Position-offset correction + the post-seek resume-stall as the last blocker (2026-11-26)
+
+Mechanism chain now fully mapped with instrumentation evidence: (1) seeks DO execute — eprintln verified player routing + seek_reset running on every probe seek; (2) positions post-seek misreport because matroskademux re-bases at the first post-seek buffer — playbin reports time-since-seek, correct pre-seek only by coincidence (clusters start at 0); (3) user seeks are clamped before reaching the pipeline (probe set 30, pipeline received 22.181 — nearest seekable end against the flush-cleared index).
+
+FIX LANDED: mse_position_offset in player.rs — the MediaSource-branch seek stores the (clamped) target as offset; position-update events report pipeline position + offset. Strictly inside MSE code paths; progressive/seekable untouched. Mechanistically necessary regardless of the remaining stall — without it even a perfectly-resuming pipeline would report wrong positions.
+
+REMAINING BLOCKER (the last one for real-YouTube seek): post-seek playback RESUME is flaky-to-dead. Instrumented facts: seek completes (seeking flag clears), data flows (YouTube re-appends verified), but position pinned at exactly the target and never advances in most runs — the pipeline accepts re-fed bytes without producing advancing playback. Rare runs do advance — race flavor. Seek-to-0 additionally hard-errors the pipeline (error+emptied events — probably the same stall cascading into YouTube's recovery teardown). This is a gst pipeline-state problem inside the flush+recreate design: re-preroll, multiqueue/decodebin3 state after flush, or segment/clock re-derivation on the recreated appsrc. NEXT INSTRUMENTATION PLANNED: GST_DEBUG pad probes on the recreated appsrc output + demux output post-seek — count buffers actually flowing vs dropped, compare working vs stalled runs.
+
+Disk hygiene (user standing rule): pruned 31GB — feather shell debug/incremental (27G) + stock servo target tree (4.4G, binary preserved at /tmp/stock-servoshell). Free space 7.2G→38G.

@@ -159,6 +159,11 @@ struct PlayerInner {
     enough_data: Arc<AtomicBool>,
     /// To allow teardown to free seek_data that is waiting for the script thread.
     seek_lock: Option<SeekLock>,
+    /// MSE position reporting correction: after a seek the flush+recreate
+    /// re-bases the pipeline at the first post-seek buffer, so playbin position
+    /// reports time-since-seek instead of presentation time. The seek target is
+    /// the offset that must be added back. Zero before the first seek.
+    mse_position_offset: Cell<f64>,
 }
 
 impl PlayerInner {
@@ -292,6 +297,7 @@ impl PlayerInner {
             if let Some(PlayerSource::Mse(ref source)) = self.source {
                 source.seek_reset();
             }
+            self.mse_position_offset.set(time);
             return Ok(());
         }
         if let Some(ref metadata) = self.last_metadata &&
@@ -737,6 +743,7 @@ impl GStreamerPlayer {
             cat: gstreamer::DebugCategory::get("servoplayer").unwrap(),
             enough_data: Arc::new(AtomicBool::new(false)),
             seek_lock: None,
+            mse_position_offset: Cell::new(0.0),
         })));
 
         let inner = self.inner.borrow();
@@ -783,10 +790,15 @@ impl GStreamerPlayer {
         });
 
         let observer = self.observer.clone();
+        let weak_inner_pos = Arc::downgrade(inner);
         // Handle `position-update` signal.
         signal_adapter.connect_position_updated(move |_, position| {
             if let Some(seconds) = position.map(|p| p.seconds_f64()) {
-                let _ = notify!(observer, PlayerEvent::PositionChanged(seconds));
+                let offset = weak_inner_pos
+                    .upgrade()
+                    .map(|inner_clone| inner_clone.lock().unwrap().mse_position_offset.get())
+                    .unwrap_or(0.0);
+                let _ = notify!(observer, PlayerEvent::PositionChanged(seconds + offset));
             }
         });
 
