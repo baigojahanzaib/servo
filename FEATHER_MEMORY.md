@@ -1169,3 +1169,15 @@ REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-cra
 
 ## Symptom: claude.ai turnstile still loops with FULL real stack (SAB + Atomics.wait/notify + OffscreenCanvas-2d + WebGL 1/2 all verified present)
 → check: worker-offscreen-WebGL null return (prime suspect if payload runs GL work in a worker unguarded), wasm threads atomics (inconclusive — probe encoding was broken), fingerprint surface beyond JS (TLS/HTTP2 — out of scope per Google decision), behavioral signals. NOTE: four necessary APIs fixed and upstreamable regardless; sufficiency unprovable from outside.
+||||||| parent of 2eb676bd68b (docs: fmp4 indexing + corrected suspect ranking (§1v))
+
+## §1v — fmp4 buffered indexing + timestampOffset empirical correction
+
+- Symptom: mp4 MSE appends never populate buffered → scan_cluster_timecodes
+  is webm-only (CONFIRMED CAUSE, fixed — tfdt fallback added); player append
+  loops that gate on buffered stall even though decode/playback work.
+- Symptom: fmp4 live-edge playback broken by missing timestampOffset →
+  RULED OUT as a playback blocker: huge tfdt timestamps play fine, position
+  just reports container time. timestampOffset remains a timeline-correctness
+  feature, not a playback gate. seekable ranges + duration=Infinity for live
+  are now the prime live-semantics suspects.
