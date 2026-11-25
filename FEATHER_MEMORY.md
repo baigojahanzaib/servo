@@ -1181,3 +1181,18 @@ REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-cra
   just reports container time. timestampOffset remains a timeline-correctness
   feature, not a playback gate. seekable ranges + duration=Infinity for live
   are now the prime live-semantics suspects.
+
+## Symptom index addendum — heap-corruption knockout bisect (Windows, 2026-11-25)
+
+Symptom: silent heap-corruption death (0xC0000374 / pageheap AV) on heavy sites, idle, no input, ~60s on reddit — feather shell only, servoshell control survives everything.
+→ ruled out, verified NOT the cause:
+- favicon decode path (knockout died same) — `feather shell update_favicon_cache`
+- paint ordering / make_current-before-paint (knockout died same) — `shell gui.run paint`
+- ALL chrome collectively — minimal-shell build (only webview.paint + composite blit) still dies at 60s — bug is in CORE INTEGRATION LOOP, not chrome. `App::run` / `ServoBuilder` / webview lifecycle layer.
+- winhit / hit-test injection, media/gstreamer, jemalloc-purge (inert on Windows), webgl/webgpu feature absence, input handling, OOM, tab-switching
+- js-mem prefs (js_mem_max=192 etc.) — servoshell with FULL feather pref set survives 255s+ — prefs exonerated
+- user_content_manager attachment — died at 315s with ucm detached (5x delay but still died; treat as noise until replicated — death-time variance unmeasured)
+- winit ControlFlow busy-loop vs Wait — Wait build dies at 60s identical — event pacing NOT the trigger
+→ prime remaining suspects (core integration loop): ServoBuilder opts/config differences, multi-webview infrastructure, hidpi scale-factor handling, embedder_traits usage differences, the winit ApplicationHandler shell-servo glue itself.
+→ bisect status: STALLED on measurement noise — death-time variance uncharacterized, each knockout test costs 6min. Next step recommended: full debug=2 build for a real capture stack, or replicate baseline 3x to calibrate variance before further knockouts.
+→ harness facts: repro = work/feather-crash.exe + session.json reddit single-tab idle, dies ~60-75s; example.com survives 255s+ (content-driven); capture module crashdump.rs uncommitted in feather shell tree; full pageheap ACTIVE on feather-crash.exe in registry.
