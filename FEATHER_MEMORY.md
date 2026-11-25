@@ -1126,3 +1126,25 @@ isTypeSupported true for avc1/mp4a, fMP4 init+media appends decode and play
 - Symptom: fMP4 MSE append produces no playback → NOT a real symptom class;
   verified working end-to-end. If seen, suspect timestampOffset confusion
   or missing init re-feed post-seek instead.
+
+
+## 1u. Silent heap-corruption crash — deep characterization (2026-11-25, Windows lane)
+
+THE BUG: feather.exe dies silently on heavy real sites with NO input needed — reddit 60s idle, amazon 75s idle, bbc/amazon scroll round 1-2. Exit 0xC0000374 STATUS_HEAP_CORRUPTION. With full pageheap (IFEO GlobalFlag=0x02000000, PageHeapFlags=3): deterministic 0xc0000005 in verifier.dll heap validation, then process exit 0xc0000421. Timing-sensitive: survives under procdump attachment (heisenbug).
+
+VERIFIED NEGATIVES (do not re-walk):
+- NOT input-driven: crashes with zero input injected, pure idle.
+- NOT media: reddit has zero media players, dies at 60s idle.
+- NOT gstreamer/gst-lifecycle: crash unchanged with gst absent from PATH (note: gst dlls sit beside the exe, so PATH removal does NOT disable gst — the dlls load regardless; media ruled out by the reddit result instead).
+- NOT winhit subclass: knockout build crashes identically.
+- NOT jemalloc purge commit: servo-allocator build.rs gates jemalloc_enabled to non-Windows — purge_arenas is an INERT STUB on Windows. All jemalloc theories dead for Windows.
+- NOT OOM (600MB on 34GB box), NOT tab-switch injection, NOT scroll-specific.
+- NOT engine-shared-by-default: servoshell built from same feather-engine tree SURVIVES amazon scroll x5 AND amazon idle 375s+ (controls verified valid: cursor over window, scroll events confirmed in log, gst dlls present in both runtime dirs). feather dies in the same minutes. THE BUG IS FEATHER-SHELL-SPECIFIC.
+
+CAPTURE TECHNIQUE (reuse it): heap-corruption fastfail bypasses SetUnhandledExceptionFilter/WER/procdump. Working pipeline: AddVectoredExceptionHandler(1) + first-fatal-only capture of CONTEXT registers + raw stack qwords; dll bases boot-constant so post-hoc module mapping works. MiniDumpWriteDump cannot run inside the corrupted process (allocates). Module used: shell/src/crashdump.rs (NOT committed — diagnostic only). Symbolization: dbghelp SymFromAddr via python ctypes + feather.pdb beside the exe copy.
+
+SYMPTOM INDEX additions (per standing rule):
+- Symptom: feather process silently vanishes on heavy real sites (idle or scrolling, no panic output, no WER, exit 0xC0000374/0xC0000421) → check: feather-shell's engine-driving loop and GL/texture workload (PRIME SUSPECT area — the only substantive unsafe surface differing from servoshell: per-frame webview.paint() pattern, egui_glow texture uploads, favicon decode cache calling into engine every frame), feature-selection deltas vs servoshell (feather lacks multiprocess/devtools/webgl/webgpu/subtlecrypto/brotli/max_log_level that servoshell enables; feather adds no-wgl — untested as a group), style-traversal parallel churn (crash correlates with 98% style:: recalc storms but shared with servoshell — context not cause), mozjs-internal jemalloc frames appear in fault chain (coarse public-only resolution — UNRELIABLE, do not over-read).
+- Resolution limit hit: release+line-tables PDB resolves only sparse publics; mozjs C++ has no debuginfo in release either. Exact corrupting function requires full debug=2 rebuild (hours) or upstream-quality repro.
+
+REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-crash.exe copy of feather.exe; wait 60-90s; dies with zero input. Scroll injection accelerates but is unnecessary. servoshell.exe same-site control survives 5x longer.
