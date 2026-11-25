@@ -92,7 +92,7 @@ impl MediaSource {
     /// Returns false when nothing is attached (bytes are dropped).
     pub(crate) fn push_appended_data(&self, track: u64, bytes: Vec<u8>) -> bool {
         if let Some(ref element) = *self.media_element.borrow() {
-            return element.push_media_source_data(track, bytes);
+            return element.push_media_source_data(track, self.source_buffers.len() as u64, bytes);
         }
         false
     }

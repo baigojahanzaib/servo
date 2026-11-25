@@ -42,6 +42,10 @@ impl SourceBufferList {
         }
     }
 
+    pub(crate) fn len(&self) -> usize {
+        self.buffers.borrow().len()
+    }
+
     pub(crate) fn add(&self, buffer: &SourceBuffer) {
         self.buffers.borrow_mut().push(Dom::from_ref(buffer));
     }

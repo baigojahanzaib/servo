@@ -31,6 +31,7 @@ mod imp {
     pub struct ServoMse {
         pub cat: gstreamer::DebugCategory,
         pub tracks: Mutex<BTreeMap<u64, MseTrack>>,
+        pub signalled_no_more_pads: std::sync::atomic::AtomicBool,
     }
 
     impl ServoMse {
@@ -75,15 +76,29 @@ mod imp {
         pub fn push_buffer(
             &self,
             track: u64,
+            total_tracks: u64,
             data: Vec<u8>,
         ) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
             self.ensure_track(track);
+            {
+                let tracks = self.tracks.lock().unwrap();
+                // uridecodebin waits for the source's no-more-pads before it
+                // finalizes the stream collection and unblocks stream selection;
+                // without it the pipeline deadlocks pre-preroll with zero errors.
+                // Pads appearing after no-more-pads error out, so it must only
+                // fire once every declared SourceBuffer has its pad — the page
+                // tells us the count on every push.
+                if tracks.len() as u64 >= total_tracks &&
+                    !self.signalled_no_more_pads.swap(true, std::sync::atomic::Ordering::SeqCst)
+                {
+                    drop(tracks);
+                    self.obj().no_more_pads();
+                }
+            }
             let tracks = self.tracks.lock().unwrap();
             let Some(ref t) = tracks.get(&track) else {
                 return Err(gstreamer::FlowError::Error);
             };
-            let len = data.len();
-            eprintln!("MSETRACK push track={} len={}", track, len);
             let buffer = gstreamer::Buffer::from_slice(data);
             t.appsrc.push_buffer(buffer)
         }
@@ -114,6 +129,7 @@ mod imp {
                     Some("Servo MSE source"),
                 ),
                 tracks: Mutex::new(BTreeMap::new()),
+                signalled_no_more_pads: std::sync::atomic::AtomicBool::new(false),
             }
         }
     }
@@ -201,9 +217,10 @@ impl ServoMse {
     pub fn push_buffer(
         &self,
         track: u64,
+        total_tracks: u64,
         data: Vec<u8>,
     ) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
-        self.imp().push_buffer(track, data)
+        self.imp().push_buffer(track, total_tracks, data)
     }
 
     pub fn end_of_stream_all(&self) {

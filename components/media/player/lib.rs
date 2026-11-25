@@ -122,8 +122,8 @@ pub trait Player: Send + MediaInstance + MallocSizeOf {
     /// Push data for a specific MSE track. The default implementation routes
     /// everything to the single-stream push_data for backends that do not
     /// implement multi-track MSE.
-    fn push_data_track(&self, track: u64, data: Vec<u8>) -> Result<(), PlayerError> {
-        let _ = track;
+    fn push_data_track(&self, track: u64, total_tracks: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+        let _ = (track, total_tracks);
         self.push_data(data)
     }
     fn end_of_stream(&self) -> Result<(), PlayerError>;

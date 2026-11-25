@@ -1915,9 +1915,13 @@ impl HTMLMediaElement {
     }
 
     /// Push MSE-appended bytes into the push player.
-    pub(crate) fn push_media_source_data(&self, track: u64, bytes: Vec<u8>) -> bool {
+    pub(crate) fn push_media_source_data(&self, track: u64, total_tracks: u64, bytes: Vec<u8>) -> bool {
         if let Some(ref player) = *self.player.borrow() {
-            return player.lock().unwrap().push_data_track(track, bytes).is_ok();
+            return player
+                .lock()
+                .unwrap()
+                .push_data_track(track, total_tracks, bytes)
+                .is_ok();
         }
         false
     }

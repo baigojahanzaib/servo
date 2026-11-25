@@ -326,10 +326,15 @@ impl PlayerInner {
         Err(PlayerError::BufferPushFailed)
     }
 
-    pub fn push_data_track(&mut self, track: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+    pub fn push_data_track(
+        &mut self,
+        track: u64,
+        total_tracks: u64,
+        data: Vec<u8>,
+    ) -> Result<(), PlayerError> {
         if let Some(PlayerSource::Mse(ref mut source)) = self.source {
             return source
-                .push_buffer(track, data)
+                .push_buffer(track, total_tracks, data)
                 .map(|_| ())
                 .map_err(|_| PlayerError::BufferPushFailed);
         }
@@ -1114,7 +1119,12 @@ impl Player for GStreamerPlayer {
     inner_player_proxy!(set_playback_rate, playback_rate, f64);
     inner_player_proxy_getter!(playback_rate, f64, DEFAULT_PLAYBACK_RATE);
     inner_player_proxy!(push_data, data, Vec<u8>);
-    inner_player_proxy!(push_data_track, track, u64, data, Vec<u8>);
+    fn push_data_track(&self, track: u64, total_tracks: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+        self.setup()?;
+        let inner = self.inner.borrow();
+        let mut inner = inner.as_ref().unwrap().lock().unwrap();
+        inner.push_data_track(track, total_tracks, data)
+    }
     inner_player_proxy!(seek, time, f64);
     inner_player_proxy!(set_volume, volume, f64);
     inner_player_proxy_getter!(volume, f64, DEFAULT_VOLUME);
