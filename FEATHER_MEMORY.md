@@ -815,3 +815,34 @@ the next interface):
 Probe harness: write results into `document.title`, read with
 `xdotool search --name PROBE | xdotool getwindowname` — no webdriver needed
 for pure-JS surface verification.
+
+## 1l. MSE stage 3 architecture + decode validation notes (Nov 25, in progress)
+
+Player instantiation path: `HTMLMediaElement::create_player` (line ~2345) →
+`ServoMedia::get().create_player(...)` → gst backend `GStreamerPlayer::setup`
+builds `playbin3` with uri `servosrc://` handled by ServoSrc (one appsrc in a
+GstBin, script pushes bytes through it). For MSE the plan: new `servomse://`
+element — one appsrc PER SOURCEBUFFER (YouTube uses separate audio+video
+SourceBuffers; each SourceBuffer bytestream is a standalone valid fragmented
+stream), feeding demux inside playbin3. Bytes flow: appendBuffer (script) →
+new servo-media player API push_buffer(track,bytes) → appsrc.
+
+Isolated decode validation (gst-launch, /tmp/msetest/segs): ffmpeg-made
+fragments. qtdemux eats frag.mp4 (frag_keyframe+empty_moov) fine with
+openh264dec; matroskademux eats webm segments with vp9dec. KEY RISK RETIRED:
+concatenated webm segments (cat seg0 seg1 seg2 — simulating sequential MSE
+appends) decode through matroskademux with NO errors. avdec_h264/avdec_vp9
+do NOT exist on stock Linux (gst-libav absent) — decoders are openh264dec +
+vp9dec. gst-libav absence also confirms WebM-first: MP4 decode depends on
+openh264 (Cisco, BSD) being present.
+
+Key integration facts: eos semantics — endOfStream() is the ONLY eos for
+MSE; duration/seekable come from the MediaSource object not the stream;
+seeks within buffered ranges must hit appsrc-cached data or the segment
+index (the plan's per-buffer segment index in script space). SourceBuffer
+append order is arbitrary — script-space reordering by appendWindow/
+timestampOffset before pushing to appsrc.
+
+Probe harness pattern that works without webdriver: results into
+document.title, read via `xdotool search --name PROBE | xdotool
+getwindowname` after sleep 10. Probe pages in /tmp/msetest/probe*.html.
