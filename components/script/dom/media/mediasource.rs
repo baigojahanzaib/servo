@@ -113,7 +113,23 @@ impl MediaSource {
     }
 
     pub(crate) fn duration_value(&self) -> f64 {
-        self.duration.get()
+        let explicit = self.duration.get();
+        if explicit.is_finite() {
+            return explicit;
+        }
+        // Per spec duration tracking: absent an explicit duration, the media
+        // duration follows the greatest buffered end time across buffers.
+        let mut max_end = 0.0f64;
+        let mut any = false;
+        self.source_buffers.for_each_buffer(|sb| {
+            for &(_start, end) in &sb.buffered_ranges() {
+                any = true;
+                if end > max_end {
+                    max_end = end;
+                }
+            }
+        });
+        if any { max_end } else { f64::NAN }
     }
 
     pub(crate) fn is_open(&self) -> bool {
