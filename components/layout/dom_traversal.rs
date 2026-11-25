@@ -317,6 +317,16 @@ impl NonReplacedContents {
         info: &NodeAndStyleInfo<'dom>,
         handler: &mut impl TraversalHandler<'dom>,
     ) {
+        // content-visibility: elements currently skipped by relevance determination do not
+        // construct their subtree at all — no boxes, no fragments, no layout cost. This is
+        // the construction-time half of layout skipping (Stage 2); the paint-only skipping
+        // in the display list traversal becomes redundant for these elements but is kept
+        // as a belt-and-braces fallback.
+        if !context.content_visibility_skipped.is_empty() &&
+            context.content_visibility_skipped.contains(&info.node.opaque())
+        {
+            return;
+        }
         match self {
             NonReplacedContents::OfElement => traverse_children_of(info, context, handler),
             NonReplacedContents::OfPseudoElement(items) => {

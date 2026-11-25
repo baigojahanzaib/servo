@@ -63,6 +63,10 @@ pub(crate) struct LayoutContext<'a> {
 
     /// The device dimensions on which this layout is running, in device pixels.
     pub device_size: Size2D<f32, DevicePixel>,
+
+    /// Elements whose subtrees are currently skipped by content-visibility relevance
+    /// determination. Their children are not constructed into the box tree at all.
+    pub content_visibility_skipped: rustc_hash::FxHashSet<style::dom::OpaqueNode>,
 }
 
 impl LayoutContext<'_> {

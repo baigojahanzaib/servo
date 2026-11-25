@@ -3635,8 +3635,9 @@ impl Document {
     /// currently relevant to the user, and update the skipped-element set.
     ///
     /// <https://drafts.csswg.org/css-contain/#relevant-to-the-user>
-    fn determine_content_visibility_relevance(&self) {
+    fn determine_content_visibility_relevance(&self, no_gc: &NoGC) {
         use style::values::computed::box_::ContentVisibility;
+        use crate::dom::node::NodeDamage;
 
         let window = self.window();
         let viewport_size = window.viewport_details().size;
@@ -3691,7 +3692,20 @@ impl Document {
             if std::env::var("FEATHER_CV_DEBUG").is_ok() {
                 eprintln!("CV-DEBUG skipped={} any_cv={}", skipped.len(), any_cv);
             }
-            *self.content_visibility_skipped.borrow_mut() = skipped;
+            // Layout skipping (Stage 2): elements whose skip state flipped must be dirtied
+            // so box-tree reconstruction runs for their subtree — construction consults the
+            // current skip set, so a flipped element either gains or loses its constructed
+            // children on the next reflow.
+            let mut previous = self.content_visibility_skipped.borrow_mut();
+            for node in self.upcast::<Node>().traverse_preorder(ShadowIncluding::No) {
+                let opaque = node.to_opaque();
+                let was = previous.contains(&opaque);
+                let is = skipped.contains(&opaque);
+                if was != is {
+                    node.dirty(no_gc, NodeDamage::ContentOrHeritage);
+                }
+            }
+            *previous = skipped;
         }
     }
 
@@ -3737,7 +3751,7 @@ impl Document {
             // Step 16.2.4. If hadInitialVisibleContentVisibilityDetermination is true, then continue.
             // (Note: the spec's initial-visible-determination micro-optimization is not yet
             // implemented; relevance is recomputed for all elements each iteration.)
-            self.determine_content_visibility_relevance();
+            self.determine_content_visibility_relevance(cx.no_gc());
 
             if !has_resize_observers {
                 break;

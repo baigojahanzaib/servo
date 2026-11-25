@@ -1388,6 +1388,7 @@ impl LayoutThread {
             parallelism_job_count_minimum: pref!(layout_parallelism_job_count_minimum) as usize,
             parallelism_job_size_minimum: pref!(layout_parallelism_job_size_minimum) as usize,
             device_size: reflow_request.viewport_details.device_size.cast_unit(),
+            content_visibility_skipped: reflow_request.content_visibility_skipped.clone(),
         };
 
         let restyle = reflow_request
