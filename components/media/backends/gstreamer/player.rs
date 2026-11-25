@@ -930,6 +930,7 @@ impl GStreamerPlayer {
                         let observer__ = observer.clone();
                         let observer___ = observer.clone();
                         let weak_servosrc = servosrc.downgrade();
+                        let weak_servosrc_need = servosrc.downgrade();
                         let enough_data_ = inner.enough_data.clone();
                         let enough_data__ = inner.enough_data.clone();
                         let seek_channel = Arc::new(Mutex::new(SeekChannel::new()));
@@ -946,6 +947,9 @@ impl GStreamerPlayer {
                                         let _ = sender_clone.lock().unwrap().send(Ok(()));
                                     });
 
+                                    if let Some(servosrc_) = weak_servosrc_need.upgrade() {
+                                        servosrc_.fire_pending_eos();
+                                    }
                                     enough_data_.store(false, Ordering::Relaxed);
                                     let _ = notify!(observer_, PlayerEvent::NeedData);
                                 })

@@ -49,6 +49,12 @@ mod imp {
         seeking: AtomicBool,
         seekable: AtomicBool,
         size: Mutex<Option<i64>>,
+        // End-of-stream must not reach the wrapped appsrc while it can still be
+        // invalidated by a seek: appsrc permanently rejects buffers pushed after
+        // EOS, so an early EOS silently kills any refetched stream. We therefore
+        // defer the actual EOS until the source truly runs dry (need-data with a
+        // pending EOS), and a seek disarms it.
+        pending_eos: AtomicBool,
     }
 
     impl ServoSrc {
@@ -77,6 +83,7 @@ mod imp {
                 false
             } else {
                 self.seeking.store(true, Ordering::Relaxed);
+                self.pending_eos.store(false, Ordering::Relaxed);
                 pos.requested_offset = offset;
                 gstreamer::debug!(
                     self.cat,
@@ -204,6 +211,43 @@ mod imp {
         inner_appsrc_proxy!(end_of_stream, Result<gstreamer::FlowSuccess, gstreamer::FlowError>);
         inner_appsrc_proxy!(set_callbacks, callbacks, gstreamer_app::AppSrcCallbacks, ());
 
+        // Defer the EOS until the pipeline actually runs dry: fire immediately
+        // only when nothing is queued, otherwise the need-data callback (which
+        // fires when the queue empties) performs it.
+        pub fn request_end_of_stream(&self) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
+            if self.seeking.load(Ordering::Relaxed) {
+                // A seek is in progress; the EOS belongs to the pre-seek stream
+                // and must be discarded.
+                return Ok(gstreamer::FlowSuccess::Ok);
+            }
+            self.pending_eos.store(true, Ordering::Relaxed);
+            if self.appsrc.current_level_bytes() == 0 {
+                if self
+                    .pending_eos
+                    .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+                {
+                    return self.appsrc.end_of_stream();
+                }
+            }
+            Ok(gstreamer::FlowSuccess::Ok)
+        }
+
+        // Called from the need-data callback: the queue is empty, so a pending
+        // EOS can finally be delivered to the pipeline.
+        pub fn fire_pending_eos(&self) {
+            if self.seeking.load(Ordering::Relaxed) {
+                return;
+            }
+            if self
+                .pending_eos
+                .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                let _ = self.appsrc.end_of_stream();
+            }
+        }
+
         fn query(&self, pad: &gstreamer::GhostPad, query: &mut gstreamer::QueryRef) -> bool {
             gstreamer::log!(self.cat, obj = pad, "Handling query {:?}", query);
 
@@ -282,6 +326,7 @@ mod imp {
                 seeking: AtomicBool::new(false),
                 seekable: AtomicBool::new(true),
                 size: Mutex::new(None),
+                pending_eos: AtomicBool::new(false),
             }
         }
     }
@@ -420,7 +465,11 @@ impl ServoSrc {
     }
 
     pub fn push_end_of_stream(&self) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
-        self.imp().end_of_stream()
+        self.imp().request_end_of_stream()
+    }
+
+    pub fn fire_pending_eos(&self) {
+        self.imp().fire_pending_eos()
     }
 
     pub fn set_callbacks(&self, callbacks: gstreamer_app::AppSrcCallbacks) {
