@@ -315,15 +315,11 @@ pub struct SharedRasterImage {
     pub cors_status: CorsStatus,
     #[conditional_malloc_size_of]
     pub bytes: Arc<GenericSharedMemory>,
-    /// Interior-mutable decoded residency — see DecodedBytes. Mirrors `bytes` while
-    /// Resident; the plain `bytes` field is the legacy fast path being migrated away.
-    pub decoded_residency: std::sync::RwLock<DecodedBytes>,
     pub frames: Vec<ImageFrame>,
     /// Whether or not all of the frames of this image are opaque.
     pub is_opaque: bool,
 }
 
-#[derive(Clone, MallocSizeOf)]
 /// Decoded-byte residency for image-memory eviction. Interior-mutable inside the
 /// shared RasterImage so every pin holder observes eviction through the same allocation
 /// (the arc-swap-at-cache-level design cannot work — see FEATHER_MEMORY).
@@ -332,12 +328,17 @@ pub enum DecodedBytes {
     Evicted,
 }
 
+#[derive(Clone, MallocSizeOf)]
 pub struct RasterImage {
     pub metadata: ImageMetadata,
     pub format: PixelFormat,
     pub id: Option<ImageKey>,
     pub cors_status: CorsStatus,
     pub load_time: Option<CrossProcessInstant>,
+    /// Interior-mutable decoded residency — shared across clones so eviction is
+    /// visible to every pin holder through the same logical image.
+    #[ignore_malloc_size_of = "residency mirrors bytes; counting both double-counts"]
+    pub decoded_residency: std::sync::Arc<std::sync::RwLock<DecodedBytes>>,
     #[conditional_malloc_size_of]
     pub bytes: Arc<Vec<u8>>,
     /// Encoded source bytes retained for re-decode after decoded-byte eviction

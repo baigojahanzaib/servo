@@ -765,6 +765,7 @@ impl ImageCacheStore {
         GLOBAL_COMPLETED_LOADS_BYTES.fetch_add(image_bytes, Ordering::Relaxed);
         self.completed_loads_lru.push_back(completed_key);
         self.enforce_completed_load_budget();
+        self.enforce_resident_byte_budget();
 
         for listener in pending_load.listeners {
             listener.respond(image_response.clone());
@@ -798,6 +799,48 @@ impl ImageCacheStore {
             }
             debug!("Evicting {key:?} to keep the image cache under budget");
             self.remove_loaded_image(&key.0, &key.1, &key.2);
+        }
+    }
+
+    /// Image-memory eviction (FEATHER_IMGMEM=1): evict DECODED BYTES inside pinned
+    /// raster images coldest-first until resident bytes fall under budget. Unlike
+    /// structural cache eviction, byte eviction works through interior-mutable
+    /// residency inside the shared Arc — visible to every pin holder — so images
+    /// pinned by DOM/layout (unevictable structurally) still release their memory.
+    /// Painting is unaffected for already-uploaded static images (WebRender copy).
+    fn enforce_resident_byte_budget(&mut self) {
+        static ENABLED: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("FEATHER_IMGMEM").is_ok());
+        if !*ENABLED {
+            return;
+        }
+        const RESIDENT_BYTE_BUDGET: usize = 256 * 1024 * 1024;
+        let mut resident_total: usize = self
+            .completed_loads
+            .values()
+            .map(|load| match &load.image_response {
+                ImageResponse::Loaded(Image::Raster(image), _) => image.resident_decoded_len(),
+                _ => 0,
+            })
+            .sum();
+        if resident_total <= RESIDENT_BYTE_BUDGET {
+            return;
+        }
+        // Coldest-first: iterate the LRU from the front.
+        let keys: Vec<ImageKey> = self.completed_loads_lru.iter().cloned().collect();
+        for key in keys {
+            if resident_total <= RESIDENT_BYTE_BUDGET {
+                break;
+            }
+            if let Some(load) = self.completed_loads.get(&key) {
+                if let ImageResponse::Loaded(Image::Raster(image), _) = &load.image_response {
+                    let freed = image.evict_decoded();
+                    if freed > 0 {
+                        debug!("IMGMEM evicted {freed} decoded bytes for {key:?}");
+                        resident_total = resident_total.saturating_sub(freed);
+                    }
+                }
+            }
         }
     }
 
@@ -1265,6 +1308,7 @@ impl ImageCache for ImageCacheImpl {
                     height: tinyskia_requested_size.height(),
                 };
 
+                let bytes = Arc::new(bytes);
                 RasterImage {
                     metadata: ImageMetadata {
                         width: tinyskia_requested_size.width(),
@@ -1272,7 +1316,11 @@ impl ImageCache for ImageCacheImpl {
                     },
                     format: PixelFormat::RGBA8,
                     frames: vec![frame],
-                    bytes: Arc::new(bytes),
+                    decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(
+                        pixels::DecodedBytes::Resident(bytes.clone()),
+                    )),
+                    encoded_bytes: None,
+                    bytes,
                     id: None,
                     cors_status: vector_image.cors_status,
                     load_time: None,
