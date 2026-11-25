@@ -61,7 +61,10 @@ impl SeekLock {
         let (ack_sender, ack_recv) =
             generic_channel::channel::<()>().expect("Could not create IPC channel");
         self.lock_channel.send((result, ack_sender)).unwrap();
-        ack_recv.recv().unwrap()
+        // Bounded: the streaming thread may have timed out its own wait and
+        // moved on, in which case the ack never comes — a stuck script thread
+        // is worse than a dropped ack.
+        let _ = ack_recv.try_recv_timeout(std::time::Duration::from_secs(5));
     }
 }
 

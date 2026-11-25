@@ -472,8 +472,12 @@ impl SeekChannel {
         self.sender.clone()
     }
 
-    fn _await(&self) -> SeekLockMsg {
-        self.recv.recv().unwrap()
+    fn _await(&self) -> Option<SeekLockMsg> {
+        // Bounded wait: the streaming thread must never wedge forever waiting
+        // for the script side to service the seek (unbounded-IPC wedge class).
+        // On timeout the seek is reported as failed and playback continues
+        // with whatever data the pipeline already holds.
+        self.recv.try_recv_timeout(std::time::Duration::from_secs(5)).ok()
     }
 }
 
@@ -1009,9 +1013,10 @@ impl GStreamerPlayer {
                                                 seek_channel.lock().unwrap().sender()
                                             )
                                         );
-                                        let (ret, ack_channel) =
-                                            seek_channel.lock().unwrap()._await();
-                                        (ret, Some(ack_channel))
+                                        match seek_channel.lock().unwrap()._await() {
+                                            Some((ret, ack_channel)) => (ret, Some(ack_channel)),
+                                            None => (false, None),
+                                        }
                                     } else {
                                         (true, None)
                                     };
