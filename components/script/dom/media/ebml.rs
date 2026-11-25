@@ -129,3 +129,36 @@ fn mdhd_timescale(init: &[u8]) -> Option<u32> {
     }
     None
 }
+
+
+/// Apply a timestampOffset to an fmp4 byte stream in place: shift every tfdt
+/// baseMediaDecodeTime by `delta_units` (in track timescale units). This is the
+/// mechanism hls.js-style transmuxing depends on — segments carry their source
+/// PTS and the page repositions them on the media timeline through the offset.
+/// Values saturate at zero (tfdt is unsigned); negative timestamps are not
+/// representable in the container and players never intend them.
+pub(crate) fn rewrite_tfdt_offsets(data: &mut [u8], delta_units: i64) {
+    let mut pos = 0usize;
+    while pos + 8 <= data.len() {
+        if &data[pos + 4..pos + 8] == b"tfdt" {
+            let ver = data[pos + 8];
+            if ver == 1 {
+                if pos + 20 > data.len() { break; }
+                let cur = u64::from_be_bytes(data[pos + 12..pos + 20].try_into().unwrap()) as i64;
+                let newv = (cur + delta_units).max(0) as u64;
+                data[pos + 12..pos + 20].copy_from_slice(&newv.to_be_bytes());
+            } else {
+                if pos + 16 > data.len() { break; }
+                let cur = u32::from_be_bytes(data[pos + 12..pos + 16].try_into().unwrap()) as i64;
+                let newv = (cur + delta_units).max(0) as u32;
+                data[pos + 12..pos + 16].copy_from_slice(&newv.to_be_bytes());
+            }
+        }
+        pos += 1;
+    }
+}
+
+/// Timescale lookup shared with scanning — exposed for offset conversion.
+pub(crate) fn fmp4_timescale(init: &[u8]) -> u32 {
+    mdhd_timescale(init).unwrap_or(90000)
+}

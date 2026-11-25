@@ -124,7 +124,9 @@ impl MediaSource {
 
     pub(crate) fn duration_value(&self) -> f64 {
         let explicit = self.duration.get();
-        if explicit.is_finite() {
+        // NaN means unset; Infinity is a valid explicit duration (live streams
+        // per spec) and must propagate rather than fall through to derivation.
+        if !explicit.is_nan() {
             return explicit;
         }
         // Per spec duration tracking: absent an explicit duration, the media

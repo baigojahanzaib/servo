@@ -191,6 +191,20 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
                 bytes = joined;
             }
         }
+        // timestampOffset: reposition fmp4 media on the timeline by rewriting
+        // tfdt decode times in place. WebM offset application is unimplemented
+        // (cluster timecode vint resizing) — the sites that need offsets are
+        // hls.js-class fmp4 transmuxing. No-op when the offset is zero.
+        let offset = self.timestamp_offset.get();
+        // Rewrite whenever moof boxes are present — tfdt only exists inside
+        // media segments, so concatenated init+media appends are safe too.
+        if offset != 0.0 && bytes.len() >= 8 &&
+            bytes.windows(4).any(|w| w == b"moof")
+        {
+            let timescale = crate::dom::media::ebml::fmp4_timescale(&self.init_cache.borrow()) as f64;
+            let delta = (offset * timescale).round() as i64;
+            crate::dom::media::ebml::rewrite_tfdt_offsets(&mut bytes, delta);
+        }
         // <https://w3c.github.io/media-source/#dom-sourcebuffer-appendbuffer>
         // updating flips synchronously, the append completes in a queued task
         // with updatestart/update/updateend — real player JS loops on these.
