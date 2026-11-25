@@ -1295,3 +1295,35 @@ IMPLEMENTATION DESIGN for Stage-1 (relevance + paint-skip), for whoever continue
 - KEY UNEXPLORED RISK: servo's display-list construction may not have a clean per-subtree elision point if items are emitted during a single pass tied to fragment tree walk — evaluate paint_traversal.rs first.
 - contain-intrinsic-size + size containment needed only for Stage-2 (eviction); Stage-1 correct without them because layout still runs.
 - threading: determination runs on script thread; layout reads element state during reflow on the same thread — no cross-thread concern (layout is same-thread in servo).
+
+
+## content-visibility Stage 1 — landed on cv-wip branch (2026-11-25)
+
+Verified mechanisms (function-indexed, for future lanes):
+
+- **cargo `[patch]` only applies at the workspace ROOT of the build being run.** Shell builds
+  use feather/shell/Cargo.toml as root — the patch section in servo/Cargo.toml is INERT there.
+  Both need the section while the local-path infrastructure exists.
+- **Partial patching of the stylo workspace splits resolution into crates.io duplicates**
+  (servo_arc 0.6.0 crates.io vs git both in tree, selectors losing its git source) which breaks
+  feature unification (servo_arc/serde lost) — symptom: `Arc<Url>: serde::Deserialize not satisfied`
+  in servo-url. ALL NINE stylo crates must be patched together: style, stylo_atoms, stylo_dom,
+  stylo_malloc_size_of, stylo_static_prefs, stylo_traits, selectors, servo_arc, to_shmem.
+- **`cargo check -p servo-script` standalone does not work on Windows** — builds mozjs with jit
+  disabled which needs python3 in the configure shell; only full shell builds use the correct
+  feature set. Validate engine changes via the shell build, never standalone cargo check.
+- **Paint elision for a subtree requires four sites in `paint_traversal.rs`** because fragments
+  are reached through multiple paths: stacking-context entry, `traverse_stacking_container`,
+  the Box arm of `traverse_block_level_descendants_decorations`, and `traverse_box_in_a_line_box`.
+  Eliding fewer leaves reachable paths that still paint.
+- **A change in the skip set must force `need_new_display_list`** in `LayoutImpl::handle_reflow`
+  before the skip check — scrolling alone dirties nothing, so without this the display list never
+  rebuilds when relevance changes.
+- **Hit-test traversal deliberately does NOT skip** (`PaintTraversal::traverse` without the set) —
+  spec: skipped content remains hit-testable/findable since layout still runs.
+- Relevance determination runs in `run_the_resize_observer_steps` — the early-return for empty
+  resize observers had to be restructured so determination runs regardless.
+
+Stage-1 known gaps (deliberate, per scoping doc): no focus/selection relevance term, no
+contain-intrinsic-size consumption (skipped elements lay out at natural size), no memory win
+yet (layout runs — Stage 2 is eviction), dynamic cv toggling and print path untested.
