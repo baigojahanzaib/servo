@@ -1352,3 +1352,16 @@ KNOWN INTEROP GAPS (v1 accepted, documented):
 VERIFICATION: (1) repaint-cost suite re-run — anim.html CPU must drop from ~77% toward single digits; (2) pixel-diff vs GL-rendered reference pages (screenshot comparison on a few stable test pages); (3) video playback still works; (4) crash-gate: reddit idle repro (same standard as always).
 
 ESTIMATE: core context + painter glue 1-2d, shell present adaptation half day, verification half day. THEN SAB-clone implementation.
+||||||| parent of ee1e33c06c8 (docs: timeout-regression bisect verdict — no regression, wedge artifacts (§1x))
+
+## 1x. Timeout-"regression" bisect verdict: NO regression — crawl artifacts of the pre-wedge-fix binary (2026-11-25)
+
+**Question**: the tranco500 crawl showed consistent timeouts (nvidia, baidu, adobe.io, ubuntu.com, theguardian.com, googleadservices, adtrafficquality) that stock servo supposedly handled — suspected regression from arena purge (7d02b70553b), download spool (92080fd7), or hidden-doc GC (826f3a5).
+
+**Method**: fresh servoshell per site, retest of all 9 crawl-timeouts + 3 load_errors + slack.com, stock (`/tmp/servo-main` release) vs feather-engine HEAD post-wedge-fix.
+
+**Verdict — bisect moot, culprit already fixed**: feather-head == stock or faster on ALL 13 sites (ubuntu.com 2135ms vs stock 18232ms). The crawl timeouts were 100% artifacts of running the crawl on a binary built BEFORE the wedge fix (bb5c9bc9b94): rows recorded in a chunk after an unfinished navigation had wedged the webview. `--stop-on-timeout` restarts mitigated but the wedge can also pin without producing a timeout row first. ALL THREE bisect suspects (arena purge, download spool, hidden-doc GC) are **ruled out without a single bisect build** — post-fix feather matches stock everywhere.
+
+Residual genuine fails, identical in stock → upstream class, not feather bugs: elasticbeanstalk.com, gcdn.co, mybluehost.me, nflxvideo.net (all `load_error` in both). aol.com fails in both — stock hangs to 30s timeout, feather fails fast with nav_error at ~9s (feather behavior arguably better, still a fail). slack.com loads fine in both post-fix (was "consistent timeout" pre-fix — also wedge artifact).
+
+**Symptom index — Symptom: consistent page-load timeouts on sites stock handles → check**: unfinished-navigation wedge in `constellation::load_url`/`webdriver_server` (confirmed cause historically — fixed bb5c9bc9b94; verify the crawling binary POSTDATES the fix before bisecting anything), arena purge at pipeline teardown (status: ruled out — post-fix parity with stock on all repro sites), download-spool servoparser changes (status: ruled out — same evidence), hidden-doc GC (status: ruled out — same evidence; also crawl documents never go hidden). Lesson for the index: **crawl data is only as good as the binary date** — wedge-family bugs poison every row after the triggering navigation in the same engine process.
