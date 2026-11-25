@@ -3712,14 +3712,14 @@ impl Document {
     /// Step 16 from
     /// <https://html.spec.whatwg.org/multipage/#update-the-rendering>
     pub(crate) fn run_the_resize_observer_steps(&self, cx: &mut JSContext) {
-        // Content-visibility relevance determination runs every rendering update,
-        // regardless of whether any ResizeObservers exist.
-        self.determine_content_visibility_relevance();
-
-        // Not specified, but allows us to skip work when it isn't necessary.
-        if self.resize_observers.borrow().is_empty() {
-            return;
-        }
+        // Content-visibility relevance determination must run AFTER styles are
+        // recalculated: reading pre-restyle styles produces one-frame-stale relevance,
+        // and when nothing further schedules rendering updates the correction never
+        // applies (found via dynamic content-visibility toggling test). This is why the
+        // spec places determination inside the loop after the recalculate-styles step,
+        // and why the loop must run even when no ResizeObservers exist — when nothing
+        // is dirty the reflow below is skipped cheaply by the usual damage checks.
+        let has_resize_observers = !self.resize_observers.borrow().is_empty();
 
         // Step 16.1. Let resizeObserverDepth be 0.
         let mut resize_observer_depth = Default::default();
@@ -3732,7 +3732,13 @@ impl Document {
             // Step 16.2.2. Let hadInitialVisibleContentVisibilityDetermination be false.
             // Step 16.2.3. For each element element with 'auto' used value of 'content-visibility':
             // Step 16.2.4. If hadInitialVisibleContentVisibilityDetermination is true, then continue.
-            // TODO: Implement content-visibility
+            // (Note: the spec's initial-visible-determination micro-optimization is not yet
+            // implemented; relevance is recomputed for all elements each iteration.)
+            self.determine_content_visibility_relevance();
+
+            if !has_resize_observers {
+                break;
+            }
 
             // Step 16.2.5. Gather active resize observations at depth resizeObserverDepth for doc.
             let has_active_resize_observers =
