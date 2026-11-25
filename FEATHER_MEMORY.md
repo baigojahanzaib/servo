@@ -744,3 +744,38 @@ script timeout + `IPC_RESPONSE_MARGIN` (30s), expiry → classified
 `timeout` error. Verified on all 7 sites: clean fail-fast + /status
 responsive; 5 sites flipped to ok in the macOS baseline.
 Layer 2 (runaway JS = "slow script" class) is a product decision, deferred.
+
+## 1j. Progressive media playback diagnosis (Nov 25, stage-0 MSE)
+
+Enabling `media-gstreamer` in the feather shell surfaced a truncation
+scare: test-videos.co.uk Big Buck Bunny ended at 1.3s of a 10s clip in
+every configuration. The investigation ladder, in order of what was
+eliminated:
+
+1. **servo's byte delivery is correct.** Instrumented htmlmediaelement:
+   all bytes of every fetch (initial + seek refetches) reach
+   `push_data` with correct bookkeeping. The loss was never in script.
+2. **qtdemux demuxes all 300 samples correctly** — "no next entry, EOS"
+   is *correct* end-of-stream for a fully-buffered file, not a defect.
+3. **The burn is real but file-specific**: the whole video consumed in
+   1.3s wall-clock because nothing throttles to presentation time —
+   reproducible in pure `gst-launch-1.0` (no servo!) with fakesink
+   sync=true, glimagesink, even the clocksync element, on gst 1.20.
+   ffmpeg-generated mp4s (with or without audio) and VP9+Opus webm all
+   sync perfectly at exact realtime duration in the same harness.
+   Verdict: gst-1.20-vs-that-file quirk, NOT a servo bug. Don't use
+   test-videos.co.uk BBB for media verification; generate assets with
+   ffmpeg instead.
+4. **Real servo bug found and fixed (`74d9743`)**: eager appsrc EOS
+   permanently poisons the source for post-seek refetches (pushes after
+   EOS are dropped as FlowError::Eos→Ok). EOS is now deferred to
+   need-data-drain and disarmed by seeks.
+5. **Remaining known hole: replay-after-end.** appsrc EOS is final and
+   push-mode byte seeks don't flush upstream, so reseeking after EOS
+   never revives the stream. Fix direction: inject a flush into the
+   wrapped appsrc or recreate it when a seek arrives post-EOS.
+
+Verified working end-to-end on Linux: MP4 h264(+aac), mp4 video-only,
+webm vp9+opus — realtime playback, exact forward/backward seeks, stable
+pause, resume. WebM/VP9+Opus (the MSE target family) works — the
+WebM-first plan in docs/mse-plan.md holds.
