@@ -1497,3 +1497,110 @@ The experiment "can heuristic layout-skipping ever work" is answered: NOT at day
 FUNDAMENTAL FINDING: the spec's contain-intrinsic-size + containment bundle is not an optimization hint, it is the load-bearing correctness mechanism. Skipping without geometry-exact substitution is inherently self-destabilizing because relevance determination depends on the very geometry that skipping mutates. Heuristic skipping done right amounts to implementing layout containment + margin-exact spacers + per-scroll-container relevance — i.e. reimplementing most of the spec machinery AND THEN guessing sizes the spec requires authors to provide. Verdict: pivot away; the conformant cv path (2b containment cascade) is cheaper than the heuristic path and actually correct. Experiment artifacts preserved on cv-wip, runtime-gated off.
 
 Symptom: skip oscillation surviving spacer injection → check: margin-collapse geometry of pruned subtrees (prime suspect, unchecked), measurement staleness vs reconstruction ordering (suspect), box-sizing edge semantics (suspect), spacer injection failure (ruled out partially — spikes of 18 prove engagement+scroll-tracking work).
+
+---
+
+# DESIGN: byte-swappable decoded images — handoff for a fresh lane (2026-11-25)
+
+## Mission context
+Reddit idle = 1.6GB, deep-scroll growth unbounded; attribution established images dominate
+(~5:1 over DOM). The pin-release eviction experiment (reverted, do-not-reattempt) proved:
+evicting cache entries while layout pins remain does nothing — the three pins share ONE Arc.
+This design attacks the bytes themselves rather than the references.
+
+## CRITICAL ARCHITECTURAL ADVANTAGE over heuristic layout-skipping (read first)
+Image eviction has NO oscillation feedback loop: the layout box, its size, and the scroll
+geometry are all computed from image METADATA (width/height), not decoded bytes. Evicting
+decoded bytes changes zero layout geometry — relevance determination is stable by construction.
+This is exactly the property the heuristic layout experiment proved fatal when absent. The
+cv-spec machinery is not needed here. THIS is why this attack is viable where the other wasn't.
+
+## The pin architecture (established facts, do not re-derive)
+1. `RasterImage` = metadata + `frames: Vec<Frame>`; each Frame owns the decoded RGBA byte buffer.
+   Bytes live EXCLUSIVELY inside frames. One allocation dominates: width×height×4 per frame.
+2. Shared single copy: `Arc<RasterImage>` is held simultaneously by (a) net ImageCache
+   completed_loads, (b) DOM ImageRequest.image per element, (c) layout ReplacedContents in
+   fragment tree, (d) animating_images state map for GIFs. All four are the SAME allocation —
+   no copying. This is good news: a byte-swap inside the RasterImage is visible to every pin
+   holder at once, no coordination needed.
+3. WebRender receives pixel data at AddImage/UpdateImage time (display-list build). KEY UNKNOWN #1:
+   does WR retain its own copy of the bytes CPU-side after upload, or only GPU-side? If WR keeps
+   a CPU copy, evicting RasterImage bytes frees only half the memory. MUST be answered first —
+   read components/paint + webrender_api image types (ImageData::Raw shares or copies?).
+
+## Core design: byte-swappable RasterImage
+RasterImage.frames becomes swap-aware: `enum FrameBytes { Resident(Bytes), Evicted }`.
+All metadata (width/height/format/delay/frame count) stays resident — small. API contract:
+- `bytes_for_frame(i) -> Option<impl AsRef<[u8]>>` becomes the ONLY accessor; internally it
+  re-materializes evicted frames from the encoded source (see re-decode path) or returns None
+  while re-decode is pending.
+- Eviction is initiated by the image cache (the natural owner) or a new central ImageMemoryManager:
+  iterate resident frames, swap bytes out, retain encoded bytes.
+
+## Eviction trigger design (recommend LRU+budget first, viewport second)
+Option A — global memory-pressure LRU (RECOMMENDED v1): a cross-pipeline byte budget on DECODED-
+RESIDENT bytes (separate from the existing completed-loads structural cap). Evict coldest frames
+when over budget. No geometry involved, no per-element relevance needed, no oscillation possible.
+A painted image is by definition recently-used if display-list-build touches bytes (it does —
+WR upload). Frequency-of-paint becomes the automatic hotness signal.
+Option B — viewport-aware eviction: needs relevance geometry per image element. Do NOT couple
+v1 to this: the determination pass exists but inner-scroller geometry is unsolved (heuristic
+experiment). LRU is geometry-free and captures most of the value because offscreen images are
+simply never repainted.
+REFINEMENT (either): never evict images painted within the last N seconds (hysteresis against
+fast scroll-back); the hysteresis here is TIME-based not geometry-based, immune to feedback.
+
+## Re-decode path
+- Encoded bytes must be retained post-decode (check: does servo currently DROP encoded bytes
+  after decode? KEY UNKNOWN #2 — if dropped, must add retention; encoded is ~10-20x smaller
+  than decoded so retention is cheap). If encoded retention is unacceptable, re-fetch from
+  network cache is the fallback — adds latency+failure modes, avoid if possible.
+- Trigger point: display-list build / paint traversal, at the moment a ReplacedContents image
+  is emitted. If bytes are Evicted: emit a placeholder fill (or last-known-average-color, cheap
+  polish) and queue an async re-decode; when decode completes, invalidate the image for repaint
+  (standard image-invalidation path already exists for progressive load).
+- Re-decode cost: JPEG ~1-5ms/MB-decoded on one core. A viewportful of 10-30 images ≈ 20-100ms
+  total decode latency, parallelizable across the existing decode thread pool. First scrollback
+  will flash placeholders for ~50-150ms. MEASURE whether users perceive it; if yes, add
+  predictive re-decode (re-decode images just outside viewport before they're painted —
+  cheap because paint-adjacent, no geometry determination needed: use the existing
+  display-list margin mechanism).
+
+## What breaks (honest matrix)
+- Scroll-back flash: placeholder visible briefly. Mitigated by predictive re-decode + time hysteresis.
+- Re-decode CPU during fast scroll: eviction+re-decode churn on rapid flinging. Mitigate with
+  time-based hysteresis (don't re-evict anything decoded in last N seconds).
+- Animated images (GIF/WebP): frames share decode dependency chains — evicting arbitrary frames
+  breaks decode ordering. v1: never evict animated images (check frame_count>1). Refinement later.
+- canvas drawImage / createImageBitmap of evicted images: script-visible reads must trigger
+  synchronous re-decode — same bytes_for_frame path handles it, but latency is on the JS thread.
+  Rare enough to accept.
+- Printing/screenshot paths: same re-decode path, fine.
+- Memory accounting: budget must count bytes correctly per format (RGB/RGBA/premultiplied).
+
+## Interaction with the known re-pin loop (MANDATORY design constraint)
+The pin-release experiment failed because eviction→invalidation→re-request→instant re-pin.
+Byte-swapping does NOT invalidate layout and does NOT drop any Arc — the re-pin loop does not
+exist in this design. The image cache completed-loads structural cap (shipped, 128MB/pipeline)
+is orthogonal and stays. Hidden-tab discard (shipped) stays and becomes cheaper (bytes already
+swappable). The 384MB global budget (shipped, dormant) should be REPLACED by this mechanism's
+resident-byte budget — reconcile, don't stack.
+
+## Sized honestly
+- KEY UNKNOWN resolution + instrumentation: 0.5 day (measure byte distribution first!)
+- FrameBytes swap machinery + bytes_for_frame API migration (touch all byte consumers:
+  paint emission, canvas, encode paths — grep-driven, mechanical but wide): 1-2 days
+- LRU budget + eviction loop: 0.5-1 day
+- Encoded retention (if needed): 0.5 day
+- Async re-decode + placeholder + invalidation: 1-2 days (the tricky bit: repaint correctness)
+- Verification on reddit/x/cnn + churn tuning: 1 day
+TOTAL: 4-6 days with one verification cycle. Success metric: deep-scroll reddit growth
+<+300MB over baseline, re-decode flash acceptable on scrollback.
+
+## First moves for the fresh lane (ordered)
+1. Answer KEY UNKNOWN #1 (WR CPU-copy) and #2 (encoded retention) by reading paint/webrender
+   image upload + net decode completion paths — half a day, determines the whole shape.
+2. Write a byte-distribution memreport probe: how much RSS is actually in RasterImage frames
+   vs WR copies vs encoded — measure before cutting anything. If WR dominates, the design
+   changes fundamentally (eviction must happen at the WR key level instead).
+3. Then implement FrameBytes as above.
