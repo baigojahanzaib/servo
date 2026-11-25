@@ -530,6 +530,10 @@ impl IntersectionObserver {
     /// > the rectangle we’ll use to check against the targets.
     ///
     /// <https://w3c.github.io/IntersectionObserver/#intersectionobserver-root-intersection-rectangle>
+    pub(crate) fn observation_targets(&self) -> std::cell::Ref<'_, Vec<Dom<Element>>> {
+        self.observation_targets.borrow()
+    }
+
     pub(crate) fn root_intersection_rectangle(&self) -> Option<Rect<Au, CSSPixel>> {
         let intersection_rectangle = match self.concrete_root() {
             // Handle if root is an element.

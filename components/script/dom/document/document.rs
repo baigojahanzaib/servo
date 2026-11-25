@@ -3657,12 +3657,41 @@ impl Document {
         )
         .outer_rect(margin);
 
+        // Heuristic layout-skipping experiment (FEATHER_HEURISTIC_SKIP=1): off-spec
+        // determination for sites that never use content-visibility. Elements deep
+        // outside the viewport are construction-skipped with hysteresis — entering the
+        // skipped state requires being beyond 3 viewport-heights of margin, leaving it
+        // requires coming within 1.5 — dampening the geometry-shift oscillation that
+        // naive distance-based skipping produces. See FEATHER_MEMORY design notes.
+        static HEURISTIC_ENABLED: std::sync::LazyLock<bool> =
+            std::sync::LazyLock::new(|| std::env::var("FEATHER_HEURISTIC_SKIP").is_ok());
+        let heuristic = *HEURISTIC_ENABLED;
+        let viewport_height_au = Au::from_f32_px(viewport_size.height);
+        // Elements already inside a skipped subtree need no individual entry: construction
+        // pruning happens at the topmost skipped ancestor.
+        let mut inside_skipped_ancestor: rustc_hash::FxHashSet<OpaqueNode> = Default::default();
+
+        // IntersectionObserver targets are never heuristically skipped: observation makes
+        // them relevant-by-use, and skipping them breaks the lazy-loading machinery that
+        // infinite-scroll sites actually depend on.
+        let mut observed_elements: FxHashSet<OpaqueNode> = Default::default();
+        if heuristic {
+            for observer in self.intersection_observers.borrow().iter() {
+                for target in observer.observation_targets().iter() {
+                    observed_elements.insert(target.upcast::<Node>().to_opaque());
+                }
+            }
+        }
+
         let mut skipped = FxHashSet::default();
         let mut any_cv = false;
         for node in self.upcast::<Node>().traverse_preorder(ShadowIncluding::No) {
             let Some(element) = node.downcast::<Element>() else {
                 continue;
             };
+            if inside_skipped_ancestor.contains(&node.to_opaque()) {
+                continue;
+            }
             let Some(style) = element.style_without_reflow() else {
                 continue;
             };
@@ -3670,6 +3699,9 @@ impl Document {
                 ContentVisibility::Hidden => {
                     any_cv = true;
                     skipped.insert(node.to_opaque());
+                    for descendant in node.traverse_preorder(ShadowIncluding::No) {
+                        inside_skipped_ancestor.insert(descendant.to_opaque());
+                    }
                 },
                 ContentVisibility::Auto => {
                     any_cv = true;
@@ -3682,9 +3714,45 @@ impl Document {
                         .unwrap_or(false);
                     if !intersects {
                         skipped.insert(node.to_opaque());
+                        for descendant in node.traverse_preorder(ShadowIncluding::No) {
+                            inside_skipped_ancestor.insert(descendant.to_opaque());
+                        }
                     }
                 },
                 ContentVisibility::Visible => {},
+            }
+
+            if heuristic && !skipped.contains(&node.to_opaque()) {
+                use crate::dom::element::Element as _;
+                let tag = element.local_name().to_ascii_lowercase();
+                let tag_str: &str = &tag;
+                // Never skip elements with intrinsic side effects or measurement-sensitive
+                // semantics. Containers inside skipped subtrees are covered by their ancestor.
+                let risky_tag = matches!(
+                    tag_str,
+                    "video" | "audio" | "canvas" | "iframe" | "img" | "input" | "textarea" |
+                    "select" | "svg" | "object" | "embed"
+                );
+                if !risky_tag && !observed_elements.contains(&node.to_opaque()) {
+                    if let Some(rect) = node.border_box_without_reflow() {
+                        let was_skipped = self.content_visibility_skipped.borrow().contains(&node.to_opaque());
+                        // Hysteresis: enter skip beyond 3 viewport-heights below or above;
+                        // once skipped, stay skipped until within 1.5 heights.
+                        let enter_margin = viewport_height_au * 3;
+                        let exit_margin = viewport_height_au * 3 / 2;
+                        let margin = if was_skipped { exit_margin } else { enter_margin };
+                        let viewport_lenient = viewport_rect.outer_rect(
+                            euclid::SideOffsets2D::new(margin, Au(0), margin, Au(0)),
+                        );
+                        let significant = rect.size.height > Au::from_f32_px(150.0);
+                        if significant && !rect.intersects(&viewport_lenient) {
+                            skipped.insert(node.to_opaque());
+                            for descendant in node.traverse_preorder(ShadowIncluding::No) {
+                                inside_skipped_ancestor.insert(descendant.to_opaque());
+                            }
+                        }
+                    }
+                }
             }
         }
 
