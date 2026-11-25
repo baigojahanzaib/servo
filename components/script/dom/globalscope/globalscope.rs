@@ -186,6 +186,9 @@ pub(crate) struct GlobalScope {
     /// The blobs managed by this global, if any.
     blob_state: DomRefCell<HashMapTracedValues<BlobId, BlobInfo, FxBuildHasher>>,
 
+    /// MediaSource objects registered for blob-object-URL resolution.
+    mediasource_state: DomRefCell<HashMapTracedValues<uuid::Uuid, Dom<crate::dom::media::mediasource::MediaSource>, FxBuildHasher>>,
+
     /// <https://w3c.github.io/ServiceWorker/#environment-settings-object-service-worker-registration-object-map>
     registration_map: DomRefCell<
         HashMapTracedValues<
@@ -435,6 +438,7 @@ impl GlobalScope {
             broadcast_channel_state: DomRefCell::new(BroadcastChannelState::UnManaged),
             constellation_interest_counts: Default::default(),
             blob_state: Default::default(),
+            mediasource_state: Default::default(),
             eventtarget: EventTarget::new_inherited(),
             registration_map: DomRefCell::new(HashMapTracedValues::new_fx()),
             indexeddb: Default::default(),
@@ -1550,6 +1554,31 @@ impl GlobalScope {
     /// <https://html.spec.whatwg.org/multipage/#serialization-steps>
     /// defined at <https://w3c.github.io/FileAPI/#blob-section>.
     /// Get the snapshot state and underlying bytes of the blob.
+    pub(crate) fn register_media_source(
+        &self,
+        id: uuid::Uuid,
+        media_source: &crate::dom::media::mediasource::MediaSource,
+    ) {
+        self.mediasource_state
+            .borrow_mut()
+            .insert(id, Dom::from_ref(media_source));
+    }
+
+    pub(crate) fn get_media_source(
+        &self,
+        id: &uuid::Uuid,
+    ) -> Option<DomRoot<crate::dom::media::mediasource::MediaSource>> {
+        self.mediasource_state
+            .borrow()
+            .0
+            .get(id)
+            .map(|ms| DomRoot::from_ref(&**ms))
+    }
+
+    pub(crate) fn unregister_media_source(&self, id: &uuid::Uuid) {
+        self.mediasource_state.borrow_mut().0.remove(id);
+    }
+
     pub(crate) fn serialize_blob(&self, blob_id: &BlobId) -> BlobImpl {
         // Note: we combine the snapshot state and underlying bytes into one call,
         // which seems spec compliant.

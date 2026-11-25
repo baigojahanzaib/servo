@@ -208,7 +208,11 @@ impl URLMethods<crate::DomTypeHolder> for URL {
             // backing object is the MediaSource. Resolving it back to the
             // MediaSource is part of the stage-2 attach plumbing; for now the
             // URL is minted with a fresh id so the DOM surface is complete.
-            BlobOrMediaSource::MediaSource(media_source) => media_source.url_id(),
+            BlobOrMediaSource::MediaSource(media_source) => {
+                let id = media_source.url_id();
+                global.register_media_source(id, &media_source);
+                id
+            },
         };
 
         DOMString::from(URL::unicode_serialization_blob_url(origin.immutable(), &id))
@@ -225,6 +229,7 @@ impl URLMethods<crate::DomTypeHolder> for URL {
             url.fragment().is_none() &&
             let Ok(id) = parse_blob_url(&url)
         {
+            global.unregister_media_source(&id);
             let resource_threads = global.resource_threads();
             let (tx, rx) = generic_channel::channel(global.time_profiler_chan().clone()).unwrap();
             let msg = FileManagerThreadMsg::RevokeBlobURL(id, origin, tx);

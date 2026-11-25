@@ -10,6 +10,7 @@ use js::rust::HandleObject;
 use script_bindings::num::Finite;
 use script_bindings::reflector::reflect_dom_object_with_proto;
 use servo_media::{ServoMedia, SupportsMediaType};
+use stylo_atoms::Atom;
 use uuid::Uuid;
 
 use crate::dom::bindings::codegen::Bindings::MediaSourceBinding::{
@@ -20,6 +21,8 @@ use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::DOMString;
+use crate::dom::bindings::refcounted::Trusted;
+use crate::dom::event::{Event, EventBubbles, EventCancelable};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::media::sourcebuffer::SourceBuffer;
 use crate::dom::media::sourcebufferlist::SourceBufferList;
@@ -71,6 +74,51 @@ impl MediaSource {
 impl MediaSource {
     pub(crate) fn url_id(&self) -> Uuid {
         self.id
+    }
+
+    pub(crate) fn duration_value(&self) -> f64 {
+        self.duration.get()
+    }
+
+    pub(crate) fn is_open(&self) -> bool {
+        self.ready_state.get() != MediaSourceReadyState::Closed
+    }
+
+    /// Attachment steps, per <https://w3c.github.io/media-source/#mediasource-attach>:
+    /// the readyState transitions to open and a sourceopen event is queued.
+    pub(crate) fn attach_to_media_element(&self) {
+        if self.ready_state.get() == MediaSourceReadyState::Open {
+            return;
+        }
+        self.ready_state.set(MediaSourceReadyState::Open);
+        self.queue_simple_event(Atom::from("sourceopen"));
+    }
+
+    /// Detachment steps: readyState transitions to closed, sourceclose is queued.
+    pub(crate) fn detach_from_media_element(&self) {
+        if self.ready_state.get() == MediaSourceReadyState::Closed {
+            return;
+        }
+        self.ready_state.set(MediaSourceReadyState::Closed);
+        self.queue_simple_event(Atom::from("sourceclose"));
+    }
+
+    fn queue_simple_event(&self, name: Atom) {
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .media_element_task_source()
+            .queue(task!(mse_simple_event: move |cx| {
+                let this = this.root();
+                let event = Event::new(
+                    cx,
+                    &this.global(),
+                    name.clone(),
+                    EventBubbles::DoesNotBubble,
+                    EventCancelable::NotCancelable,
+                );
+                event.upcast::<Event>().fire(cx, this.upcast());
+            }));
     }
 }
 

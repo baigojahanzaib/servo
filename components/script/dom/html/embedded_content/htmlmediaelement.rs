@@ -263,6 +263,8 @@ pub(crate) struct HTMLMediaElement {
     /// is a blob.
     #[no_trace]
     blob_url: DomRefCell<Option<ServoUrl>>,
+    /// Attached MediaSource, when this element's source is a MediaSource object URL.
+    media_source: DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-played>
     played: DomRefCell<TimeRangesContainer>,
     // https://html.spec.whatwg.org/multipage/#dom-media-audiotracks
@@ -449,6 +451,7 @@ impl HTMLMediaElement {
             seeking: Cell::new(false),
             current_seek_position: Cell::new(f64::NAN),
             resource_url: DomRefCell::new(None),
+            media_source: DomRefCell::new(None),
             blob_url: DomRefCell::new(None),
             played: DomRefCell::new(TimeRangesContainer::default()),
             audio_tracks_list: Default::default(),
@@ -1685,6 +1688,15 @@ impl HTMLMediaElement {
                     return;
                 }
 
+                // MSE: a blob object URL minted for a MediaSource attaches the
+                // source instead of being fetched over the network.
+                if let Ok(id) = net_traits::blob_url_store::parse_blob_url(&url) &&
+                    let Some(media_source) = self.owner_global().get_media_source(&id)
+                {
+                    self.attach_media_source(&media_source);
+                    return;
+                }
+
                 *self.resource_url.borrow_mut() = Some(url);
 
                 // Steps 5.remote.2-5.remote.8
@@ -1823,7 +1835,25 @@ impl HTMLMediaElement {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#media-element-load-algorithm>
+    /// MSE attach: bind this element to a MediaSource instead of fetching.
+    /// <https://w3c.github.io/media-source/#mediasource-attach>
+    fn attach_media_source(&self, media_source: &crate::dom::media::mediasource::MediaSource) {
+        *self.media_source.borrow_mut() = Some(Dom::from_ref(media_source));
+        media_source.attach_to_media_element();
+        // Per spec the element goes to NETWORK_IDLE once attached; data
+        // arrives via appendBuffer rather than the network.
+        self.network_state.set(NetworkState::Idle);
+        self.ready_state.set(ReadyState::HaveNothing);
+    }
+
+    fn detach_media_source(&self) {
+        if let Some(ms) = self.media_source.borrow_mut().take() {
+            ms.detach_from_media_element();
+        }
+    }
+
     fn media_element_load_algorithm(&self, cx: &mut JSContext) {
+        self.detach_media_source();
         // Reset the flag that signals whether loadeddata was ever fired for
         // this invokation of the load algorithm.
         self.fired_loadeddata_event.set(false);
@@ -3564,6 +3594,10 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-duration>
     fn Duration(&self) -> f64 {
+        if let Some(ref ms) = *self.media_source.borrow() {
+            // MSE: the duration is whatever the page set on the MediaSource.
+            return ms.duration_value();
+        }
         self.duration.get()
     }
 
