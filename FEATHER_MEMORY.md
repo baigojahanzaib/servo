@@ -1496,3 +1496,7 @@ Symptom: getContext('webgl'/'webgl2') returns null everywhere under FEATHER_META
 Measurement rule: input latency in a vsync-paced pipeline is NOT measurable as present-path wall time — both GL and Metal block CPU-free on vsync. The honest metric is event-loop saturation: achieved rAF rate. GL achieves 23.1/30fps (frame wall ~29ms ≈ 2 vsyncs, misses deadlines); Metal achieves full 30.0/30 (frame wall exactly 1 vsync). get_current_texture blocking does NOT add input latency vs GL — it halves worst-case latency.
 
 Bridge options indexed for the future implementer: (1) independent surfman connection + readback-composite for webgl textures, 3-5d; (2) swgl-backed webgl contexts — swgl IS a full GL implementation, potentially cheaper, CPU-bound. Evaluate (2) first.
+
+## Unresolved observations
+
+Observation: 2026-11-25, one GL-mode (default, non-metal) feather launch died silently mid-run on fpsprobe.html — no panic in log (18 lines, ends at favicon 404), process simply gone. Not reproducible on immediate retry with identical input. Suspect class: segfault in GL path (rust panics would print). If this recurs anywhere it becomes a priority — watch for it.
