@@ -1377,3 +1377,26 @@ Residual genuine fails, identical in stock → upstream class, not feather bugs:
 - Symptom: servoshell process vanishes mid-crawl (webdriver port goes connection-refused, rows flip to instant-error at 0ms) → check: structuredclone.rs SameProcess scope (confirmed cause historically — reverted; the UAF mechanism is documented in §1u/line 1276), any future re-implementation of shared-memory cloning that copies serialized bytes out of SM ownership.
 - crawl.py now exits for restart on nav_error/driver_error too, not just timeout (`--stop-on-timeout` semantics widened); xrun.sh implements the 3-strikes consistent-failure attribution loop.
 - Timeout-bisect verdict from §1x stands: arena purge (7d02b70553b), download spool (92080fd7), hidden-doc GC (826f3a5) all ruled out — post-fix parity with stock on every repro site.
+
+## IMGMEM phase 1 — KEY UNKNOWNS RESOLVED (2026-11-25)
+
+KEY UNKNOWN #1 — WebRender CPU copies: YES, WR owns a copy. SerializableImageData::Raw is
+documented "provided by the embedding and OWNED by WebRender" — bytes are serialized into
+shared memory at AddImage/UpdateImage time (components/paint/painter.rs ~1150). CONSEQUENCE:
+painted-image memory is DUPLICATED — RasterImage.frames (script/net side) plus WR resource
+copy. Byte-swap eviction in RasterImage alone caps savings at the script-side half; the WR
+copy persists until DeleteImage. Refined design: treat (RasterImage bytes, WR key) as one
+eviction unit — evicting must also drop/rebuild the WR key, or accept half-savings v1 and
+measure. DECISION for v1: implement RasterImage byte-swap first (halves memory for images
+painted-then-scrolled-off, full savings for decoded-but-never-painted), measure, then evaluate
+WR-key eviction as phase 2 — WR re-upload requires display-list rebuild correctness, riskier.
+
+KEY UNKNOWN #2 — encoded bytes: ALREADY RETAINED. RasterImage.bytes: Arc<Vec<u8>> holds the
+encoded source for the image's lifetime (components/pixels/lib.rs line ~331). Re-decode source
+costs nothing extra — the design's biggest implementation risk evaporates. bytes_for_frame()
+re-materializes from self.bytes via the same decode path used at load.
+
+Implementation notes for lane continuity: branch imgmem-wip off feather-engine.
+RasterImage in components/pixels/lib.rs (~line 324). ImageFrame struct nearby. Byte consumers
+to migrate: grep '.frames' and frame byte access across components/paint, components/script
+(canvas drawImage, createImageBitmap), components/net. Animated = frames.len()>1 — skip in v1.
