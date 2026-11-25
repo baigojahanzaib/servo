@@ -1469,3 +1469,19 @@ MEASURED on reddit: the document body is only ~700px tall — modern reddit (shr
 MEASURED oscillation: exactly one pass reached skipped=13, then collapsed back to 0 permanently. Mechanism: skipping destroys boxes → scroll geometry collapses → everything re-enters the lenient viewport → unskip → reconstruct → oscillate. Hysteresis cannot fix this because the feedback is structural, not marginal. KEY INSIGHT: the spec's contain-intrinsic-size requirement is LOAD-BEARING, not incidental — size reservation is what makes skipping geometrically stable. Any heuristic version must synthesize size reservation: record the element's last measured height at skip time and construct a fixed-height spacer box instead of nothing (v2 design). Without it the experiment is guaranteed-destructive on exactly the infinite-scroll sites it targets.
 
 Symptom: skip-set oscillates N→0→N or collapses to 0 permanently after engaging → check: whether skipped elements' heights were contributing to scroll geometry (confirmed cause — no size reservation), hysteresis margin tuning (ruled out — structural not marginal), scroll-container geometry (root-scroller assumption — second confirmed cause on inner-scroller sites).
+
+## Heuristic v2 design — size-reservation skipping (2026-11-25, pre-implementation)
+
+MECHANISM: when an element is newly heuristic-skipped, record its last measured border-box height in a per-document map (OpaqueNode → Au). At construction time, a skipped element produces NOT nothing but a zero-content fixed-height box (the spacer): the element's own frame is constructed with its reserved height forced, and its CHILDREN are pruned as in v1. Scroll geometry stays stable because the spacer preserves exactly the height the content occupied — oscillation has no feedback path.
+
+RELEVANCE GEOMETRY (v2): per-scroll-container. For each element, the relevant viewport is the clipping rect of its nearest scrollable ancestor (walk the layout box chain via the scroll-container's scroll offset + client size), falling back to the root viewport for document-scrolled content. Elements inside inner scrollers (reddit shreddit feed) are measured against THAT scroller's visible region. v1 root-only geometry is retained as fallback.
+
+INVALIDATION TRIGGERS (spacer height must be discarded when):
+1. The element or its subtree receives a DOM mutation (character data, child insert/remove) — the real content height may have changed; the next unskip measures fresh. Implementation: the existing dirty() path already propagates mutations into restyle — the reservation map entry is dropped when the element is dirtied with ContentOrHeritage damage.
+2. Viewport resize — heights are width-dependent (text reflow); drop ALL reservations on window resize.
+3. Element leaves the document — map entries for detached nodes are dropped (they can never be unskipped anyway; the map is keyed by OpaqueNode which is recycled).
+4. Explicit: reservations are NEVER trusted for relevance itself — an element with a reservation is measured by its spacer height for skip-determination (stable), but on unskip the real content reconstructs and re-measures.
+
+TOGGLE: unchanged — FEATHER_HEURISTIC_SKIP=1, off by default. Hysteresis unchanged (3h enter / 1.5h exit) since hysteresis was never the failure.
+
+KNOWN RESIDUAL RISKS: heights that legitimately change while skipped but WITHOUT mutation events hitting the dirty path (async layout-affecting style changes); scroll anchoring behavior when spacers compress/expand on unskip. Both visible-in-test, not fatal by design.
