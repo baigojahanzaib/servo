@@ -147,7 +147,10 @@ pub(crate) unsafe fn create_global_object<D: DomTypes>(
 
     let mut options = RealmOptions::default();
     options.creationOptions_.traceGlobal_ = Some(trace);
-    options.creationOptions_.sharedMemoryAndAtomics_ = false;
+    // Enabled unconditionally as a deliberate temporary spec deviation: proper
+    // cross-origin-isolation gating (COOP/COEP) is a separate unimplemented
+    // project, and anti-bot systems probe these built-ins on ordinary sites.
+    options.creationOptions_.sharedMemoryAndAtomics_ = true;
     if use_system_compartment {
         options.creationOptions_.compSpec_ = CompartmentSpecifier::NewCompartmentAndZone;
         options.creationOptions_.__bindgen_anon_1.comp_ = std::ptr::null_mut();
