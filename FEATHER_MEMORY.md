@@ -900,3 +900,13 @@ WPT CSP-subset regression run not yet done — no servoshell build fits the macO
 box's disk (needs ~10GB, had ~2GB); behaviorally no test can regress since the
 only changed path previously crashed. Lane with disk should run
 `tests/wpt/tests/content-security-policy` stock-vs-patched when convenient.
+
+## Clipboard multi-format write fix (9edd19e2e, feather-engine)
+`write_content_to_the_clipboard` iterated all drag-store items issuing one
+`SetClipboardText` per text item — last-write-wins regardless of MIME type, so
+Sheets-style copies (text/plain + application-internal payloads written after)
+put internal GUID tokens on the clipboard instead of cell text. Fix: write only
+the `text/plain` item (first match), falling back to the first text item when
+no explicit plain type exists. Verified live on macOS: multi-format copy page
+with plain-first/internal-second ordering now yields the plain text; plain
+static, multi-script (CJK+accented), and editable-input copies unaffected.
