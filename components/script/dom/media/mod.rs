@@ -11,6 +11,7 @@ pub(crate) mod mediametadata;
 pub(crate) mod mediaquerylist;
 pub(crate) mod mediaquerylistevent;
 pub(crate) mod mediasession;
+pub(crate) mod ebml;
 pub(crate) mod mediasource;
 pub(crate) mod sourcebuffer;
 pub(crate) mod sourcebufferlist;

@@ -36,6 +36,12 @@ impl SourceBufferList {
         )
     }
 
+    pub(crate) fn for_each_buffer(&self, mut f: impl FnMut(&SourceBuffer)) {
+        for b in self.buffers.borrow().iter() {
+            f(b);
+        }
+    }
+
     pub(crate) fn add(&self, buffer: &SourceBuffer) {
         self.buffers.borrow_mut().push(Dom::from_ref(buffer));
     }

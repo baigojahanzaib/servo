@@ -32,19 +32,19 @@ pub(crate) struct SourceBuffer {
     updating: Cell<bool>,
     mode: Cell<AppendMode>,
     timestamp_offset: Cell<f64>,
-    buffered: Dom<TimeRanges>,
+    buffered: script_bindings::cell::DomRefCell<TimeRangesContainer>,
     media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
 }
 
 impl SourceBuffer {
-    fn new_inherited(mime_type: DOMString, buffered: &TimeRanges) -> SourceBuffer {
+    fn new_inherited(mime_type: DOMString, _buffered: &TimeRanges) -> SourceBuffer {
         SourceBuffer {
             eventtarget: EventTarget::new_inherited(),
             mime_type,
             updating: Cell::new(false),
             mode: Cell::new(AppendMode::Segments),
             timestamp_offset: Cell::new(0.0),
-            buffered: Dom::from_ref(buffered),
+            buffered: script_bindings::cell::DomRefCell::new(TimeRangesContainer::default()),
             media_source: script_bindings::cell::DomRefCell::new(None),
         }
     }
@@ -61,6 +61,17 @@ impl SourceBuffer {
             global,
             None,
         )
+    }
+
+    pub(crate) fn buffered_ranges(&self) -> Vec<(f64, f64)> {
+        let mut out = Vec::new();
+        let ranges = self.buffered.borrow();
+        for i in 0..ranges.len() {
+            if let (Ok(start), Ok(end)) = (ranges.start(i), ranges.end(i)) {
+                out.push((start, end));
+            }
+        }
+        out
     }
 
     pub(crate) fn fire_simple_event_cx(&self, cx: &mut JSContext, name: Atom) {
@@ -102,7 +113,7 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
 
     /// <https://w3c.github.io/media-source/#dom-sourcebuffer-buffered>
     fn Buffered(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
-        DomRoot::from_ref(&*self.buffered)
+        TimeRanges::new(cx, self.global().as_window(), self.buffered.borrow().clone())
     }
 
     /// <https://w3c.github.io/media-source/#dom-sourcebuffer-timestampoffset>
@@ -142,6 +153,19 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // updating flips synchronously, the append completes in a queued task
         // with updatestart/update/updateend — real player JS loops on these.
         self.updating.set(true);
+        let timecodes = crate::dom::media::ebml::scan_cluster_timecodes(&bytes);
+        if let (Some(first), Some(last)) = (timecodes.first(), timecodes.last()) {
+            // Segments are appended in presentation order by real players;
+            // extend the trailing range or start a new one. Estimating the
+            // tail duration from cluster spacing is refined in later stages.
+            let mut ranges = self.buffered.borrow_mut();
+            let span = if timecodes.len() > 1 {
+                (last - first) / (timecodes.len() - 1) as f64
+            } else {
+                1.0
+            };
+            let _ = ranges.add(*first, last + span);
+        }
         if let Some(ref ms) = *self.media_source.borrow() {
             ms.push_appended_data(bytes);
         }

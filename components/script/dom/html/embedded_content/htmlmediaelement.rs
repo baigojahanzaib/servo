@@ -3681,6 +3681,10 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-buffered>
     fn Buffered(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
+        // MSE: buffered is the union of the active source buffers' ranges.
+        if let Some(ref ms) = *self.media_source.borrow() {
+            return TimeRanges::new(cx, self.global().as_window(), ms.buffered_value());
+        }
         let mut buffered = TimeRangesContainer::default();
         if let Some(ref player) = *self.player.borrow() {
             let ranges = player.lock().unwrap().buffered();

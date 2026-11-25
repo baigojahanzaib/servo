@@ -101,6 +101,17 @@ impl MediaSource {
         }
     }
 
+    /// Merged buffered ranges across all source buffers (union).
+    pub(crate) fn buffered_value(&self) -> crate::dom::timeranges::TimeRangesContainer {
+        let mut merged = crate::dom::timeranges::TimeRangesContainer::default();
+        self.source_buffers.for_each_buffer(|sb| {
+            for &(start, end) in &sb.buffered_ranges() {
+                let _ = merged.add(start, end);
+            }
+        });
+        merged
+    }
+
     pub(crate) fn duration_value(&self) -> f64 {
         self.duration.get()
     }
