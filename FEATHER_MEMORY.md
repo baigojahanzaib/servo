@@ -1059,3 +1059,47 @@ Evidence negatives: zero ERROR/panic lines in stderr (log ends mid-normal-networ
 ### Symptom index additions (per standing rule)
 - Symptom: feather process silently disappears while scrolling a heavy real site (amazon verified; no panic output, no WER event, no exception capture) → check: multiprocess/threading races in script/layout/compositor (PRIME SUSPECT — timing-sensitive heisenbug confirmed by procdump-attachment survival; access violation in native code or silent abort suspected but unproven), OOM (ruled out — dies at <1GB RSS), gstreamer media lifecycle including offscreen-eviction teardown/resume churn (ruled out — reproduces with gstreamer entirely absent from PATH), tab-switch Ctrl+Tab injection (ruled out — reproduces with pure scrolling in a single tab), panic=abort with output loss (ruled out-ish — stderr file capture shows nothing, but a panic inside a thread whose abort precedes flush cannot be fully excluded; the heuristic evidence argues native), Windows Error Reporting pipeline (ruled out as EXPLANATION — LocalDumps configured correctly yet nothing captured, consistent with deliberate abort/ExitProcess paths).
 - Open follow-up: stock servoshell control test (does upstream servo crash identically? — discriminates feather-shell vs engine), then instrumented/debug-engine build for the exception identity. Until characterized, treat ALL heavy-site long-scroll measurement processes as crash-prone: capture stderr always, verify process aliveness before trusting a measurement tail.
+||||||| parent of 551002bcb5e (docs: MSE seek design + symptom index (§1t))
+
+## §1t — MSE seek implementation (Linux lane, 2026-11-25)
+
+**Design (harness-validated before engine implementation):** push-mode MSE
+pipelines cannot execute gst seeks. Seek = (1) push flush_start/flush_stop
+on the servomse ghost src pads — safe from the application thread, resets
+demuxers/decoders; (2) recreate every track's appsrc inside servomse,
+re-targeting the SAME ghost pad (pad identity stable for decodebin3) —
+a fresh appsrc naturally re-emits stream-start/caps/segment in-stream on
+the first post-seek push, avoiding the manual serialized-event injection
+that wedges the pipeline (§1q finding 4); (3) the page re-appends media
+naturally on its 'seeking' handler. Validated in /tmp/mseharness
+(seektest2): position advancing continuously post-seek, first try.
+
+**Engine pieces:** servomse seek_reset/reset_track (mse_source.rs);
+player.rs MSE seek branch routes to seek_reset (small, inside the
+MediaSource match arm only — no overlap with progressive flushing-seek);
+HTMLMediaElement spec seek restored, completion queued directly because
+data arrival is app-driven; SourceBuffer init caching + buffered clearing
++ init re-feed on first post-seek append; MediaSource.notify_seek fan-out.
+
+**Spec deviations (deliberate):** buffered ranges are CLEARED on seek —
+the flush genuinely drops pipelined media and reporting it buffered would
+stop players re-feeding; seek completion fires without waiting for data
+decode (impossible when data is app-driven).
+
+**Symptom index additions:**
+- Symptom: playback does not resume after MSE seek → check: servomse
+  seek_reset (owns flush+recreate), SourceBuffer init_cache/needs_init_refeed
+  (media-only post-seek appends are UNDECODABLE without re-fed init —
+  prime suspect if data flows but no frames), HTMLMediaElement seek wedge
+  (ruled out — completion now queued directly, verified seeking flag clears),
+  manual in-stream event injection (ruled out — wedges pipeline, §1q).
+- Symptom: seeking/seeked events fire twice per seek → cosmetic, observed
+  in probe6; suspect: position-driven completion path + explicit queued
+  completion both firing. Not user-visible harmful.
+- Symptom: post-seek position wrong/stale → check: matroskademux timestamp
+  passthrough after flush (verified correct — position lands on target),
+  init re-feed prepending (corrupts timestamps if double-init appended;
+  the already_has_init check guards this).
+
+**Verification (probe6, live engine):** seek to 5.0 → position 5.35 then
+7.88 advancing, seeking+seeked fired, seeking flag false, rs 4, playing.
