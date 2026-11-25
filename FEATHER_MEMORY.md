@@ -1539,3 +1539,11 @@ Metal is the default present path on macOS; FEATHER_METAL=0 is the escape hatch.
 Symptom: instant abort loading youtube.com in swgl/metal mode, "unknown shader ps_quad_gradient DITHERING" → FIXED (enable_dithering:!is_software_webrender): swgl lacks runtime shader compile; webrender build strips DITHERING variant. Rule: any webrender feature that mints new shader variants must be checked against swgl's build-time shader set before enabling in software mode.
 
 Symptom: youtube watch page aborts with GLib pthread_mutex_lock invalid-argument (vp9/gst media threads) → PRE-EXISTING, reproduces identically in GL mode — NOT metal-related. Prime suspect: servo-media gst threading on macOS with youtube's streaming format (vp9+adaptive). Local progressive mp4 plays fine. Owner: media lane territory; indexed here so nobody attributes it to Metal.
+
+## Real-world validation of Metal default-on (2026-11-26, feather PR #127)
+
+Real-world CPU paired measurements (windowed top sampling, same binary): metal vs GL — bbc scroll 9.5/29.8%, reddit scroll 1.4/6.2%, maps scroll 0.9/6.0%. Rendering pixel-correct on real sites; webgl organic validation via google maps passes through the readback bridge.
+
+Symptom: macOS "Developer Tools Access" password dialog appears during automation-driven input injection (osascript System Events keystrokes) and steals focus, silently degrading scroll-injection benches → password is the machine account password (devin); dismiss once and the grant persists. Also: cmd+a does NOT select-all in the secure password field; click field first, then type. Computer-tool coordinates are 1024x768 scaled — divide screenshot-pixel coords by (1120/1024, 840/768) before clicking.
+
+Symptom: bench harness `wait` with no arguments in a script that launched feather with `&` hangs forever (waits on feather itself) → check: harness backgrounding structure. Never bare `wait` in bench scripts.
