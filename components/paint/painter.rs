@@ -252,7 +252,12 @@ impl Painter {
                 enable_aa: pref!(gfx_text_antialiasing_enabled),
                 enable_subpixel_aa: pref!(gfx_subpixel_text_antialiasing_enabled),
                 allow_texture_swizzling: pref!(gfx_texture_swizzling_enabled),
-                enable_dithering: true,
+                // swgl has no runtime shader compilation: only the variants
+                // transpiled at build time exist, and webrender's build strips
+                // DITHERING everywhere — requesting it aborts inside swgl
+                // (unknown shader ps_quad_gradient DITHERING, real-world hit:
+                // youtube.com gradients).
+                enable_dithering: !is_software_webrender,
                 clear_color,
                 // swgl does not implement the depth function this path requires
                 // (verified: assertion in DepthFunc for GL_ALWAYS).
