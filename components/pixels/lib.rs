@@ -438,7 +438,7 @@ impl RasterImage {
             size.cast(),
             format,
             alpha_mode,
-            self.bytes.clone(),
+            self.materialize_decoded(),
             self.frames[0].byte_range.clone(),
         )
     }
@@ -511,16 +511,17 @@ impl RasterImage {
         let (format, data, should_animate) = match self.format {
             PixelFormat::BGRA8 => (
                 WebRenderImageFormat::BGRA8,
-                GenericSharedMemory::from_arc_vec(self.bytes.clone()),
+                GenericSharedMemory::from_arc_vec(self.materialize_decoded()),
                 self.should_animate(),
             ),
             PixelFormat::RGBA8 => (
                 WebRenderImageFormat::RGBA8,
-                GenericSharedMemory::from_arc_vec(self.bytes.clone()),
+                GenericSharedMemory::from_arc_vec(self.materialize_decoded()),
                 self.should_animate(),
             ),
             PixelFormat::RGB8 => {
-                let frame_bytes = &self.bytes[frame.byte_range.clone()];
+                let decoded = self.materialize_decoded();
+            let frame_bytes = &decoded[frame.byte_range.clone()];
                 let mut bytes = Vec::with_capacity(frame_bytes.len() / 3 * 4);
                 for rgb in frame_bytes.chunks(3) {
                     bytes.extend_from_slice(&[rgb[2], rgb[1], rgb[0], 0xff]);
@@ -590,7 +591,7 @@ impl RasterImage {
             format: self.format,
             id: self.id,
             cors_status: self.cors_status,
-            bytes: Arc::new(GenericSharedMemory::from_arc_vec(self.bytes.clone())),
+            bytes: Arc::new(GenericSharedMemory::from_arc_vec(self.materialize_decoded())),
             frames: self.frames.clone(),
             is_opaque: self.is_opaque,
         })
