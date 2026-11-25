@@ -1487,3 +1487,12 @@ Final verdict on the timeout-regression bisect order (3x repeated): the wedge do
 
 Symptom index additions:
 - Symptom: "one timed-out page load permanently kills the session" reported by any harness → check IN ORDER: (1) was the harness binary built before 7d150c23be2 (bounded IPC waits, the REAL wedge fix — pre-fix binaries genuinely wedge, dispatcher thread parks forever)? (2) does the harness POST explicit /timeouts — if not, the nav command sits for the full 300s spec default looking dead? (3) is the "wedge" actually process death — roblox-class crash (pre-SameProcess-revert binary)? (4) ONLY THEN suspect engine regressions. On Linux HEAD all four checked: negative, negative, negative, negative.
+||||||| parent of bbe91d60b (memory: metal stage-2 verdict evidence + webgl-null mechanism)
+
+## Metal stage-2 evaluation (verdict doc feather PR #122)
+
+Symptom: getContext('webgl'/'webgl2') returns null everywhere under FEATHER_METAL or FEATHER_SWWR → check: WebGLThread::create_webgl_context painter_surfman_details_map (CONFIRMED cause — webgl piggybacks on the painter's surfman connection; swgl mode has no surfman connection, nothing to piggyback on; NOT caused by Metal itself — identical failure under FEATHER_SWWR alone), wgpu/Metal surface interference (ruled out — swgl-only repro).
+
+Measurement rule: input latency in a vsync-paced pipeline is NOT measurable as present-path wall time — both GL and Metal block CPU-free on vsync. The honest metric is event-loop saturation: achieved rAF rate. GL achieves 23.1/30fps (frame wall ~29ms ≈ 2 vsyncs, misses deadlines); Metal achieves full 30.0/30 (frame wall exactly 1 vsync). get_current_texture blocking does NOT add input latency vs GL — it halves worst-case latency.
+
+Bridge options indexed for the future implementer: (1) independent surfman connection + readback-composite for webgl textures, 3-5d; (2) swgl-backed webgl contexts — swgl IS a full GL implementation, potentially cheaper, CPU-bound. Evaluate (2) first.
