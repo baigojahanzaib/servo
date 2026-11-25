@@ -1504,3 +1504,18 @@ machinery on imgmem-wip is correct-but-useless here; retain only for possible mu
 embedders. Retention driver candidates requiring measurement: JS heap growth in long-lived
 iframes/pages, layout/box-tree accumulation, texture/GPU allocations in-process, media
 framework buffering.
+
+## Behavioral attribution measurement (2026-11-25) — retention picture revised
+
+hackernews scroll: +1MB (but finite page — no content accumulation, weak control).
+reddit single tab: base 2824MB RSS at load (single process!), post-scroll LOWER (-188MB).
+bbc scroll: +152MB growth. INTERPRETATION: (1) the dominant memory cost is in the BASELINE,
+not scroll accumulation — one reddit tab costs 1.6-2.8GB at rest with huge run-to-run
+variance (ads/AB-tests/content randomization); (2) deep-scroll growth is inconsistent in the
+current build — the historical +1000MB figure predates the crash-revert + paint-gating and may
+have been partly artifact; (3) images conclusively eliminated (28MB plateau). REAL QUESTION is
+now: what makes a single heavy-site baseline cost 2+GB in ONE process. Candidates in need of
+heap-level measurement: SpiderMonkey JS heap across iframe workers (reddit loads dozens of ad
+ifames each with own JS realm), layout trees, webrender texture cache. Next measurement must be
+heap-level: servo memory reporting (about:memory/memreport path — Windows status unverified)
+or differential binary instrumentation. RSS-only behavioral attribution is exhausted as a method.
