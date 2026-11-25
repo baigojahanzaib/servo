@@ -329,6 +329,11 @@ pub struct RasterImage {
     pub load_time: Option<CrossProcessInstant>,
     #[conditional_malloc_size_of]
     pub bytes: Arc<Vec<u8>>,
+    /// Encoded source bytes retained for re-decode after decoded-byte eviction
+    /// (image memory eviction: decoded bytes are ~10-20x larger, so retaining
+    /// the source is cheap insurance for re-materialization).
+    #[conditional_malloc_size_of]
+    pub encoded_bytes: Option<Arc<Vec<u8>>>,
     pub frames: Vec<ImageFrame>,
     /// Whether or not all of the frames of this image are opaque.
     pub is_opaque: bool,
@@ -569,11 +574,15 @@ pub fn load_from_memory(buffer: &[u8], cors_status: CorsStatus) -> Option<Raster
                 return None;
             };
 
-            if image_decoder.is_animated() {
+            let mut image = if image_decoder.is_animated() {
                 decoding::decode_animated_image(cors_status, image_decoder.animated_decoder())
             } else {
                 decoding::decode_static_image(cors_status, image_decoder.decoder())
+            };
+            if let Some(ref mut image) = image {
+                image.encoded_bytes = Some(Arc::new(buffer.to_vec()));
             }
+            image
         },
     }
 }

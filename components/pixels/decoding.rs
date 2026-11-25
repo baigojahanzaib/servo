@@ -291,6 +291,7 @@ pub(crate) fn decode_static_image(
         format: PixelFormat::RGBA8,
         frames: vec![frame],
         bytes: Arc::new(rgba.into_vec()),
+        encoded_bytes: None,
         id: None,
         cors_status,
         load_time: None,
@@ -376,6 +377,7 @@ where
         id: None,
         format: PixelFormat::RGBA8,
         bytes: Arc::new(bytes),
+        encoded_bytes: None,
         is_opaque,
         loop_count: Some(loop_count),
     })
