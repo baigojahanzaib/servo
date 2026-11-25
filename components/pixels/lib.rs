@@ -443,6 +443,54 @@ impl RasterImage {
         )
     }
 
+    /// Materialize the decoded byte buffer, re-decoding from the retained encoded
+    /// source if it was evicted. This is the ONLY correct way to read decoded bytes
+    /// once image-memory eviction is active. Synchronous v1: re-decode happens on
+    /// the calling thread (async predictive re-decode is a later refinement).
+    pub fn materialize_decoded(&self) -> Arc<Vec<u8>> {
+        {
+            let guard = self.decoded_residency.read().unwrap();
+            if let DecodedBytes::Resident(ref bytes) = *guard {
+                return bytes.clone();
+            }
+        }
+        let mut guard = self.decoded_residency.write().unwrap();
+        // Re-check after upgrading: another thread may have materialized first.
+        if let DecodedBytes::Resident(ref bytes) = *guard {
+            return bytes.clone();
+        }
+        let encoded = self
+            .encoded_bytes
+            .as_ref()
+            .expect("Evicted image without retained encoded bytes");
+        let redecoded = load_from_memory(encoded, self.cors_status)
+            .expect("Re-decode of previously-decoded image failed");
+        let bytes = redecoded.bytes.clone();
+        *guard = DecodedBytes::Resident(bytes.clone());
+        bytes
+    }
+
+    /// Evict decoded bytes if this is a static image with retained encoded bytes.
+    /// Returns the number of bytes freed. Animated images are never evicted (v1).
+    pub fn evict_decoded(&self) -> usize {
+        if self.frames.len() != 1 || self.encoded_bytes.is_none() {
+            return 0;
+        }
+        let mut guard = self.decoded_residency.write().unwrap();
+        match std::mem::replace(&mut *guard, DecodedBytes::Evicted) {
+            DecodedBytes::Resident(bytes) => bytes.len(),
+            DecodedBytes::Evicted => 0,
+        }
+    }
+
+    /// Resident decoded byte count, 0 if evicted — used by the eviction budget.
+    pub fn resident_decoded_len(&self) -> usize {
+        match &*self.decoded_residency.read().unwrap() {
+            DecodedBytes::Resident(bytes) => bytes.len(),
+            DecodedBytes::Evicted => 0,
+        }
+    }
+
     pub fn frame_data(&self, index: usize) -> Option<&ImageFrame> {
         self.frames.get(index)
     }
