@@ -910,3 +910,13 @@ the `text/plain` item (first match), falling back to the first text item when
 no explicit plain type exists. Verified live on macOS: multi-format copy page
 with plain-first/internal-second ordering now yields the plain text; plain
 static, multi-script (CJK+accented), and editable-input copies unaffected.
+
+## Symptom index (clipboard investigations)
+
+Symptom: copy of static page text writes nothing to the system clipboard → check: `run_default_keydown_handler` in document_event_handler (owns key→editing-action routing; status: ruled out — copy chain verified end-to-end live, exact drag-selected text lands in the pasteboard), `DocumentSelectionDragHandler`/`document.selection` population (prime suspect when it reproduces — the original observation most likely was a drag that never formed a DOM selection; not reproducible since), arboard fallback (status: ruled out on macOS — pasteboard writes verified).
+
+Symptom: copy puts an internal GUID/token on the clipboard instead of visible text (Sheets-class apps) → check: `write_content_to_the_clipboard` in editing (owns copy-event data-store→clipboard writes; CONFIRMED cause — it flattened every text item with one SetClipboardText each, last-write-wins regardless of MIME type; FIXED in 9edd19e2e: only text/plain written), `DataTransferItemList::set_data` ordering (status: ruled out — insertion order is faithful to the page's calls).
+
+Symptom: copy works in-page but never reaches the system clipboard → check: `clipboard` module in servo/clipboard_delegate (owns arboard access; CONFIRMED trap — silent in-memory fallback on any arboard error; loud warn-once added in a922f7fa4), `DefaultClipboardDelegate` wiring (status: ruled out — delegate chain is sound).
+
+Symptom: script thread wedges during paste (page unresponsive, no crash) → check: paste-path `GetClipboardText` blocking reads in editing paste handling and `EmbedderClipboardProvider::get_text` in text_input (CONFIRMED unbounded IPC — bounded to 5s in a922f7fa4), script-event-loop starvation by runaway JS (status: ruled out for this symptom — separate slow-script class, see PR #58 docs).
