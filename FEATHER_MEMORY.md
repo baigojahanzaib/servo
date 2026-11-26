@@ -2755,6 +2755,17 @@ match confirmed on github.com, live length 2782). Spec surface complete except l
 ## TESTING GOTCHA (solved mystery): schemeless omnibox input (e.g. `127.0.0.1:8931/x`) is HTTPS-upgraded — net log shows `GET https://127.0.0.1:8931/...` and the server log shows TLS ClientHello bytes hitting the plain-HTTP server ("Bad request syntax" 400). This is correct modern browser behavior (https-first), NOT a regression. Local test pages MUST be typed with explicit `http://` scheme. Symptom-index: "local test server connect error, curl works" → check scheme in net log first.
 
 ## STRATEGIC PRIORITY NOTE: the shared-FBO/static-page compositing staleness is now the critical-path item for the macOS lane — it blocks even verification of other work (aux tabs can't be visually verified; clicked pixels are stale composites; every test requires guessing whether paint is current). Recommend the next engine/shell hunt: repaint-on-tab-switch + repaint-on-navigation-completion in shell-new composite() — the invalidation layer, not per-feature hacks. Everything else this session is committed: document.all (alpha gate), traffic lights (#156), aux webviews (#157 open).
+gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
+and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
+originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
+by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
+showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
+re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
+The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
+||||||| parent of 97426c6c2 (memory: aux paint residual isolated to create-request builder path)
+=======
+
+## Aux final verification state: post-paint-fix, normal tab switching verified correct both directions, BUT aux-adopted tabs still never paint their content even after manual tab cycling — deeper than frame timing: webview.paint() on the aux webview appears to composite nothing/the wrong thing. Suspect the WebViewBuilder::new_for_create_request path misses some compositor/constellation registration that normal creation performs (compare what new() does beyond builder vs new_for_create_request in components/servo/webview.rs). Tab chrome/navigation/omnibox all correct — purely compositing. This is the last aux-blocking defect; fix site comparison is the next step.
 ||||||| parent of d1863b5901e (memory: target=_blank + window.open verification PASSED — popup cluster closed)
 
 sec1zt38 — target=_blank + window.open verification: BOTH PASS, popup cluster CLOSED
@@ -2774,11 +2785,3 @@ Workaround: none needed for external testing; local-http testing still broken (s
 connect issue unresolved for explicit http:// too — low priority, eval-injection covers repro needs).
 
 sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with caveat)
-==================================================================================
-gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
-and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
-originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
-by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
-showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
-re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
-The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
