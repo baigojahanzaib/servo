@@ -24,7 +24,7 @@ use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use crossbeam_channel::{Sender, unbounded};
 use cssparser::SourceLocation;
 use dom_struct::dom_struct;
-use embedder_traits::user_contents::UserScript;
+use embedder_traits::user_contents::{UserContentManagerId, UserScript};
 use embedder_traits::{
     AlertResponse, ConfirmResponse, EmbedderMsg, LoadStatus, PromptResponse, ScriptToEmbedderChan,
     SimpleDialogRequest, Theme, UntrustedNodeAddress, ViewportDetails,
@@ -448,6 +448,9 @@ pub(crate) struct Window {
     #[no_trace]
     #[conditional_malloc_size_of]
     user_scripts: Rc<Vec<UserScript>>,
+    #[ignore_malloc_size_of = "plain Copy id type"]
+    #[no_trace]
+    user_content_manager_id: Option<UserContentManagerId>,
 
     /// Window's GL context from application
     #[no_trace]
@@ -872,6 +875,10 @@ impl Window {
 
     pub(crate) fn userscripts(&self) -> &[UserScript] {
         &self.user_scripts
+    }
+
+    pub(crate) fn user_content_manager_id(&self) -> Option<UserContentManagerId> {
+        self.user_content_manager_id
     }
 
     pub(crate) fn get_player_context(&self) -> WindowGLContext {
@@ -4231,6 +4238,7 @@ impl Window {
         unminify_css: bool,
         local_script_source: Option<String>,
         user_scripts: Rc<Vec<UserScript>>,
+        user_content_manager_id: Option<UserContentManagerId>,
         player_context: WindowGLContext,
         #[cfg(feature = "webgpu")] gpu_id_hub: Arc<IdentityHub>,
         inherited_secure_context: Option<bool>,
@@ -4316,6 +4324,7 @@ impl Window {
             exists_mut_observer: Cell::new(false),
             paint_api,
             user_scripts,
+            user_content_manager_id,
             player_context,
             throttled: Cell::new(false),
             layout_marker: DomRefCell::new(Rc::new(Cell::new(true))),
