@@ -1916,3 +1916,15 @@ Symptom: video colors wrong on SD content → check: Rec709+Limited hardcoded in
 Threading note for future work: MediaFrame now carries image_key + uv_key + v_key; uv_key+v_key both present = planar, uv_key alone = NV12 (legacy path retained), neither = BGRA. Key lifecycle: generated per frame-format-change in media_frame_renderer render(), deleted in delete_frame_keys.
 
 Residual cost: deinterleave allocates two new vectors per frame (half-res each) — memcpy-bound, unmeasured but small vs decode. The gst copy-out remains as documented in the NV12 pipeline notes.
+
+## sec1zn — media teardown stress: seek-ack panic FIXED + youtube-test environmental block (2026-11-26)
+
+REPRO HARNESS for youtube-class media crashes without youtube (youtube is bot-walled on v4-only VMs even with valid cookies — verified LOGIN_INFO sent yet still walled; youtube-nocookie embed also walled, zero videoplayback requests): /tmp/vp9stress.html — 4 concurrent looping vp9 decoders + create/destroy churn every 3s. This reproduces teardown-race crashes in minutes.
+
+FIXED crash class (commit in player.rs): seek-ack channel Disconnected panic at player.rs seek_data callback — teardown drops the ack receiver while a gst-streaming-thread seek is in flight; ack_channel.send(()).unwrap() panicked. Reproduced 5 panics in 2min of churn pre-fix; ZERO panics in 3min of identical stress post-fix. Mechanism codec-agnostic but exposed by vp9-style decode churn.
+
+Symptom index: symptom "panic player.rs seek_data ack_channel Disconnected during video teardown/seek churn" -> FIXED — send failure is benign (nobody waiting), now let-_. Rule for this file: ALL cross-thread channel sends in player.rs teardown-adjacent paths must be let-_ style — the receiver lifetime is never guaranteed during teardown.
+
+OPEN — playerleak volume: the intentional-leak mitigation fires constantly under teardown churn (74 leaks in 3min extreme stress; real-world infinite-feed teardown rate is much lower but nonzero). Each leak pins a gst pipeline shell. PROPER FIX candidate: deferred-dispose retry — instead of permanent mem::forget, queue the player for a dispose retry when refs drain (poll on next player creation or a timer). Not attempted — design change beyond crash-fix scope.
+
+UNRESOLVED — the "vp9 threads crash on YouTube" as a named defect: no documented signature exists in FEATHER_MEMORY or lane history (grepped). Direct vp9 playback (1080p webm loop) does NOT crash. YouTube itself untestable on this VM environmentally. If the crash resurfaces with a concrete signature, the vp9stress harness is the reproduction starting point.
