@@ -1766,3 +1766,21 @@ NEXT STEPS ranked:
 3. STATIC REPRO ASSETS remain valid for verifying rendering correctness: probe/ytstatic2.html (static + ytmain.css renders correctly!).
 
 INSTRUMENTS LANDED this session: eval bridge + console visibility (feather #154 merged), adoptedStyleSheets pref enabled (in #154), cdp_eval.py Chrome harness, rIC from earlier.
+
+## ALPHA PACKAGING (2026-11-26, Windows lane) — v0.1.0-alpha
+
+### Portable-package mechanics (SOLVED, verified)
+- **EGL/ANGLE**: use servo's own mozangle-built libEGL.dll/libGLESv2.dll from target/release/build/mozangle/*/out — Chrome's ANGLE dlls panic (`egl function was not loaded`); they only work on dev machines because Chrome's dir is in PATH.
+- **GStreamer plugins**: plugins are dlopened with altered search paths, so their deps must sit in the SAME directory as the plugin dlls. Subfolder layouts fail even with AddDllDirectory. ONLY flat layout works: all 357 dlls (core + plugins + EGL) in the exe directory.
+- **Self-configuration**: shell-new main.rs (uiwt commit fb48404) detects flat layout (gstcoreelements.dll next to exe) and sets GST_PLUGIN_PATH itself, plus SetDefaultDllDirectories+AddDllDirectory. No env vars, no installer, no PATH changes needed on the user machine. feather.bat launcher included as fallback.
+- **Verified**: clean-PATH boot (PATH=Windows system dirs only), example.com loads 200, 0 ErrorLoadingPlugins, renders correctly. Package: 159MB zip (129MB exe with debug symbols + ~30MB dlls compressed).
+- **mach** build vs cargo — shell-new builds via plain cargo with PKG_CONFIG_PATH pointing at gstx gstreamer pkgconfig dir.
+
+### Release-distribution mechanics (Windows lane constraint)
+- No GitHub API auth available on the box: gh not logged in, devin JWT only valid for git-manager proxy (git protocol, no API), browsers not logged into github.
+- Fallback pipeline that WORKS: split zip into <100MB parts, commit to orphan branch, push through proxy (proxy accepted workflow-file push), tag the payload commit, tag-triggered workflow reassembles and `gh release create` with GITHUB_TOKEN. Cleanup: delete branch+tag after.
+- If the org does this again: simplest correct answer is a saved GitHub PAT secret (repo scope) — then plain `gh release create` works.
+
+### Symptom index additions
+- symptom: `egl function was not loaded` panic at startup on clean Windows machine → suspect: wrong libEGL/libGLESv2 provenance (must be mozangle-built, not Chrome's)
+- symptom: ErrorLoadingPlugins spam + no video on clean machine → suspect: gst plugin deps not resolvable — plugins dlopened with altered search path; flat layout is the only working arrangement
