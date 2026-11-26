@@ -3014,3 +3014,20 @@ feather PR #175, each verified live. Symptom-index entries:
 - PATTERN: favorites/quick-access must be user state, not static mock —
   one `Browser.pinned` list feeding sidebar grid + new-tab tiles +
   session.json persistence.
+
+## dogfood-ui-2 — round-2 shell fixes (2026-11-26, macOS lane)
+
+- SYMPTOM (Windows): onboarding/window spawns bottom-left, layout reads random.
+  CAUSE: winit default placement; everything IS anchored to the window rect —
+  the window position itself was the randomness. FIX: explicit centering from
+  monitor size/pos/scale at creation.
+- SYMPTOM (Windows): clicking into onboarding produces a stroked rectangle at
+  a random position. CAUSE: set_window_border activated the DWM border when
+  phase left Splash — i.e. exactly on first click — around the transparent
+  floating window. FIX: border only in Browser phase. PATTERN: on Windows,
+  window-chrome state changes that fire on user interaction read as
+  click-produced artifacts.
+- DISK HYPOSTASIS: shell-new target/deps accumulates duplicate fingerprint
+  copies of huge servo crates (3x libscript rlib @200MB). Purge pattern:
+  group by crate-stem+ext, keep newest, delete rest — freed 2.88GB, no
+  rebuild breakage (cargo rebuilds only if actually referenced).
