@@ -3211,3 +3211,15 @@ NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskadem
 => BOTH halves must be solved for any working seek: correct in-band re-sequencing (which recreation attempts and fails to deliver in a live playbin3 pipeline) AND correct running-time mapping. This converges with the long-standing WebKit-style verdict: a custom source element must own the stream lifecycle properly — incremental fixes to the appsrc-recreation design are exhausted. Honest cost estimate for a proper implementation (custom MSE source bin managing stream-start/segment/timestamp-rewrite per track, WebKitMediaSrc-style): multiple days of expert gst work. Until then YouTube seek remains degraded-not-crashing.
 
 **Recommended prioritization call**: suspend the seek hunt unless media-seek is a hard launch blocker; the compat tail and stability work have better ROI. If resumed, the only untried cheap experiment: probe-inject a correct stream-start+segment sequence INTO the existing (non-recreated) appsrc data path — servomse can synthesize events on its ghost pad before the first post-seek buffer using a pad probe or manual serialized push timed WITH the data flow (the §1q wedge warning applied to application-thread injection; in-data-path injection timed at push time may avoid it).
+
+
+## sec1zt76 — discord logo rendering: NEGATIVE RESULT on Linux + SVG feature analysis (2026-11-26, linux)
+
+**Symptom: discord.com logo renders thin/outline/broken (Windows lane report) → check: which SVG instance and which embedding mechanism before assuming rasterizer bugs.**
+
+1. **The landing-page wordmark is the plainest possible SVG**: one `<path>` with fill="white", many ZM subpaths, NO masks/filters/gradients/clipPaths/fill-rule/text — default nonzero winding; holes rely on subpath winding direction. Asset: `66e90ab9506850e8a5dd48e3_Discrod_MainLogo.svg` (sic, "Discrod") on cdn.prod.website-files.com.
+2. **Renders CORRECTLY on Linux in feather** — verified three ways: isolated `<img>` at 330px+660px (correct fills, correct letter holes), real discord.com nav (correct), and inline `<svg>` in HTML (correct — servo DOES render inline SVG paths). Servo rasterizes SVG via resvg 0.50 (tiny-skia) — mature winding handling.
+3. **Conclusion: not reproducible on Linux; platform divergence or different element.** If Windows reproduces on the same asset: suspect platform-specific compositing or hi-DPI rasterization scale, not fill semantics. Before any engine fix, the Windows lane should capture WHICH element is broken (landing nav `<img>` vs in-app inline SVG) and at what DPI scale.
+4. **REAL discord defect found instead: discord.com/login SPA never boots** — readyState complete, body 1448 chars, ZERO svg elements in DOM, blank white page. The React bundle fails silently before mount. This is the actual user-facing discord breakage on Linux. Uninvestigated — next engine target. (Tab favicon — an `<img>`-embedded SVG — renders correctly, reinforcing that SVG rasterization is fine.)
+
+Harness: /tmp/elltest/discordlogo.html + inlinesvg.html + mainlogo.svg (served :8899).
