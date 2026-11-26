@@ -2897,3 +2897,11 @@ papercuts #1/#2 — revert-mid-load needs pending-destination display state in t
 fake-focus needs egui selection-state cleanup on focus loss — both shell-side, subtle state-machine work;
 (2) text-overflow engine implementation (scoping in sec1zt44) — most visible recurring CSS gap on real sites;
 (3) find-in-page/page-zoom need servo webview APIs that don't exist — engine-queue items.
+
+sec1zt47 — omnibox revert-mid-load: FIXED + verified (feather#167)
+===================================================================
+Fix: skip the unfocused resync while loading_since.is_some() — one-guard fix, uses the existing
+loading state. Verified live: typed destination stays in the bar 1s after Enter mid-load (pre-fix
+snapped back instantly). loading_since was ALREADY maintained for the loading-bar widget — lesson:
+check for existing state before designing new tracking. Papercut #2 (fake-focus selection) still open:
+egui TextEdit selection state persists after focus loss — needs state cleanup on the sync/lost-focus path.
