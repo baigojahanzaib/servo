@@ -3649,3 +3649,8 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 - Probe lesson: gradient sampling at the midpoint hits exactly 50% interpolation — thresholds must sample asymmetric regions.
 - Grid state close to green-wall: remaining reds ALL explained — webgl x2 environmental (no GPU on VM), webrtc known-large, backdrop-filter unimplemented, range-geometry architectural-documented, cookiestore deliberately reverted, gamepad/webgpu feature-gated-not-enabled.
 - #221 merged (execCommand+credentials in main), #228 merged (Ahem fixture). platform-apis greens on next current-binary grid.
+
+## sec1zt115 — honest-UA policy NARROWED (PR followup to #225)
+- Symptom: sheets/docs must NOT get honest UA (banner cost, never walled) → policy narrowed: default list `www.google.com` only, exact-or-dot-suffix matching in BOTH layers (net http_loader + shim JS). CAUTION: a dot-suffix entry `google.com` matches every subdomain — re-includes docs/sheets and defeats narrowing. bare google.com 301s to www before any /sorry decision so exact www.google.com suffices.
+- Verified: search renders unwalled under narrowed default. Negative-control check (docs.google.com) redirected to sign-in in the probe — UA-on-docs verification incomplete, mechanism-only: docs.google.com neither equals nor dot-suffix-matches `www.google.com` so it gets the chrome UA in both layers.
+- Env override FEATHER_HONEST_UA_HOSTS for widening per-property as evidence accumulates.
