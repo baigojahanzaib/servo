@@ -3318,3 +3318,23 @@ deferred mass is gone), playback restarts cleanly on nav back, zero panics, zero
 sec1zt86 deferred-dispose design is now actually functional rather than permanent-leak-with-extra-steps.
 Media retention investigation CLOSED — true per-player leak now disposes within seconds; residual RSS
 mass is the documented reusable-arena behavior. Commit 4c126d64190.
+
+sec1zt89 — youtube thumbnails: original defect NON-REPRO in severe form + IO matrix exonerated (2026-11-26, linux lane):
+The reported "youtube search thumbnails don't render" defect does NOT reproduce in its severe form:
+initial-viewport thumbnails render fully (video thumbs, channel avatars, shorts thumbs — screenshot
+verified). RESIDUAL defect: scroll-triggered lazy population never fires — images below the initial
+viewport keep empty src forever even after incremental user-like scrolling (18 in-viewport imgs, 0
+populated). Symptom: lazy-loaded content never populates on scroll → do NOT check IntersectionObserver
+primitives first — full matrix VERIFIED WORKING in servo: window-scroll viewport-root IO fires on
+scroll, rootMargin px + threshold arrays work, percentage/4-value/zero rootMargin + scrollMargin
+constructors all valid, ELEMENT-root IO with inner-scroller scrollTop works, scroll events fire.
+Negative results mandatory-recorded here to prevent re-walking. DEDUCTION: YouTube's visibility
+monitor runs and its IO fires for initial elements (they populate) — so the failure is inside
+YouTube's obfuscated component chain between intersection notification and src write, NOT in any
+servo IO/scroll primitive. Hunting further requires reverse-engineering the ytCoreImage/visibility-
+monitor internals (same class of exercise as the sec1zt17-21 unhide hunt — multi-hour, uncertain).
+Severity DOWNGRADED: initial viewport fully renders; user must know the defect is scroll-population
+only. Next step if resumed: instrument yt-core-image custom element reactions, or capture whether
+YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
+fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
+observer-root geometry on youtube specifically is the lead).
