@@ -1876,3 +1876,12 @@ Sannysoft residual: PluginArray constructor not exposed in servo (setPrototypeOf
 
 ## SYMPTOM INDEX UPDATE — PluginArray sannysoft failure root-caused (NEGATIVE result for constructor theory)
 Symptom: sannysoft "plugins is PluginArray" red. Suspect location: userscript injection timing in components/script/dom/userscripts.rs — injection is add_delayed_task, NOT synchronous document-start. PROOF: runtime eval on freeze build shows typeof PluginArray=function, navigator.plugins instanceof PluginArray=TRUE, ctor name correct, len=5 (shim landed). The constructor IS exposed and setPrototypeOf works — the earlier theory was wrong. The failure is that sannysoft's test scripts execute during page load BEFORE the delayed-task userscript lands, so they see the real empty PluginArray (len 0). Mechanism class: SAME as HEADCHR_IFRAME — one engine fix (synchronous document-start userscript execution per spec) clears BOTH symptoms. This is now the highest-value single engine fix for detection-suite conformance.
+
+
+## VERIFICATION PASS COMPLETE ON THE FREEZE BINARY ITSELF (18:15 UTC) — all gate items green
+- Centered launch: win32 rect (160,190)-(1440,1010) = exact centering math for 1280x820 on 1600x1200. VERIFIED on freeze binary.
+- Onboarding centered: fresh-profile boot screenshot — hello/Continue centered in window. VERIFIED.
+- Close button: process exits on X click. VERIFIED on freeze binary.
+- Caption glyphs: zoomed capture shows Segoe MDL2 minimize/maximize/close rendering natively. VERIFIED.
+- No demo pins, no phantom rectangle: confirmed (earlier visual ambiguity was Chrome window overlapping behind, not a Feather artifact).
+Evidence files: work/onboard-check.png, work/caption-zoom.png.
