@@ -1537,3 +1537,90 @@ the jemalloc global allocator. UNVERIFIED alternate hypothesis: reporters may ne
 wired for in-process single-process mode — servo multiprocess architecture assumption may
 permeate the memory-report collection path. Meanwhile: feather shell change is in
 shell/src/app.rs (uncommitted as of writing).
+
+## Memreport plumbing verdict + symptom index (2026-11-25, evening)
+
+RESOLVED — the "empty memory report" investigation above is now fully explained, and none of the
+hypotheses in the previous section were correct. Verified facts:
+
+1. The reporter chain works end-to-end on Windows single-process: registration arrives at the
+   profiler (script-reporter-ScriptEventLoopId(N) confirmed in profiler-side probes), profiler
+   dispatches, the crossbeam self-channel delivers, the script thread dispatches and collects,
+   responses return. js/* rows verified flowing on example.com AND on reddit's main document
+   (34 rows: js/malloc-heap, gc-heap used/unused/admin/decommitted, non-heap, dom node counts,
+   layout-thread/box-tree, webrender).
+2. Why reports LOOKED empty — two independent artifacts, neither a plumbing bug:
+   a. FEATHER_MEMREP shim fires inside winit user_event. Since paint-gating/ControlFlow::Wait
+      (PR #114), an idle page produces no winit events, so only round 1 ever ran — and round 1
+      happens BEFORE script threads finish registering their reporters. All later rounds
+      silently never fired. Input injection (wheel events) or a heavy page is required for
+      rounds to fire at all until the shim becomes timer-driven.
+   b. On heavy pages the profiler collection loop (components/profile/mem.rs collect_reports)
+      is SERIAL AND BLOCKING per reporter, and layout().collect_reports() can hang indefinitely
+      for specific documents (observed: script thread processing multiple documents completed
+      layout+doc collection for documents 1-2, then hung inside document 3's layout traversal
+      — never returned). One hung document blocks the entire round and every later round.
+3. reddit registers only 3 script reporters despite dozens of iframes — iframe realms multiplex
+   onto few script threads in single-process mode. Quantify when doing per-realm attribution.
+4. system-main reporter responds with 0 rows on Windows — system_reporter is glibc-mallinfo-only;
+   Windows needs its own implementation (unimplemented, small task).
+
+FIX APPLIED (feather-engine probe branch, uncommitted at writing): parallel collection with
+5s per-reporter timeout — send all requests first (reporters generate concurrently), then poll
+try_recv per reporter with deadline; timed-out reporters are skipped with a log line instead of
+blocking forever.
+
+SYMPTOM INDEX entries:
+- Symptom: memory report empty/missing js rows → check: FEATHER_MEMREP shim event-drive artifact
+  (CONFIRMED cause for idle pages — rounds never fire; NOT plumbing), serial-blocking profiler
+  collection + layout-collect hang (CONFIRMED cause for heavy pages). Ruled out: crossbeam
+  self-channel delivery (verified working — task_queue IS backed by self_receiver, line
+  TaskQueue::new(self_receiver) in script_thread startup), OpaqueSender send path (verified),
+  registration delivery (verified — arrives at profiler), multiprocess-only assumptions (ruled
+  out — single-process works).
+- Symptom: profiler collection never completes on heavy sites → check: layout().collect_reports
+  hang on specific documents (CONFIRMED — mid-load or pathological documents; root cause inside
+  layout tree traversal still open, deserves own investigation), profiler serial blocking loop
+  (CONFIRMED amplifier — fixed with parallel+timeout).
+- Symptom: system-main 0 rows on Windows → no system heap implementation for Windows (CONFIRMED —
+  mallinfo is glibc-only; needs Windows HeapQueryInformation or GetProcessMemoryInfo impl).
+
+## MISSION PAUSE CHECKPOINT — memory instrumentation (2026-11-26, paused for UI integration)
+
+RESUME INSTRUCTIONS (exact):
+1. State: instrument chain proven working end-to-end (js rows flow: 34 rows reddit main doc,
+   full per-url js/malloc-heap+gc-heap+dom+layout breakdown verified). Profiler collector
+   rewritten parallel+timeout in components/profile/mem.rs UNCOMMITTED in worktree along with
+   diagnostic eprintln probes across shared/profile/mem.rs, profile/mem.rs,
+   script/messaging.rs, script/event_loop/script_thread.rs, script/tasks/task_queue.rs.
+   PR #121 (FEATHER_MEMREP shim) merged to feather main.
+2. OPEN PROBLEM: on heavy pages round 2+ never completes — reporter RESPONSES never return
+   even from fast reporters (network-cache, paint) while requests deliver fine. Prime suspect:
+   GenericSender responses are ROUTED through single per-process router thread (see
+   components/shared/base/generic_channel/mod.rs — Crossbeam variant uses RoutedReceiver) —
+   congestion under reddit IPC load. Asymmetric because script-bound requests travel direct
+   crossbeam channels. VERIFY FIRST: probe response-send completion inside net/paint reporters
+   (do responses leave the sender?) vs router backlog. CHEAP ALTERNATIVE worth trying first:
+   ReportsChan responses are small — check if in-process mode can use a NON-routed direct
+   channel for memory reports specifically.
+3. THEN: run reddit measurement — FEATHER_MEMREP=55, input injection loop (mouse_event wheel
+   every 4s — required because shim is event-driven), 150s runtime, extract === dump === table.
+   THE DELIVERABLE: category table of the 2.8GB baseline (js heap per-realm, layout, webrender).
+4. Known side-facts: system-main 0 rows on Windows (no system heap impl — needs
+   GetProcessMemoryInfo/HeapQuery); layout().collect_reports can hang on mid-load documents;
+   reddit registers 3 script reporters + dedicated-worker-reporter-<uuid> workers.
+5. Cleanup before any commit: strip/gate all [memprof]/[repcb]/[scriptmem]/[taskq] probes.
+
+## CLOSED CASE: window input starvation after first webview paint (Windows shell, Nov 2026)
+
+**Symptom**: seconds after a real page loads, the embedder window stops receiving ALL input (mouse, keyboard, clicks). Window reports Responding; no overlay; WindowFromPoint correct.
+
+**Mechanism chain** (three amplifiers + root cause):
+1. ROOT: servo wakes the embedder event loop at up to 32kHz — an unthrottled compositor/rAF feedback loop where frames are consumed as fast as produced. Any per-wake work that re-triggers paint amplifies it.
+2. Amplifier: requesting a redraw unconditionally on every user-event wakeup.
+3. Amplifier: unconditional egui request_repaint in the composite path (14k-fps repaint storm).
+4. Amplifier: URL writeback feedback loop — reloading the page every frame when the canonicalized url differed from the last commanded url.
+
+**Fix pattern** (shell-side): coalesce wakeups (~8ms spin window), gate redraws on actually-new-frames (notify_new_frame_ready), throttle engine sync, and make writeback loop-free by recording the written-back url as the new commanded url. See feather shell-new/src/main.rs user_event + app.rs writeback/composite.
+
+**Suspect locations if this recurs**: servo compositor wake generation (paint feedback), embedder event-loop user_event handler, any url/title writeback path that can re-trigger load.
