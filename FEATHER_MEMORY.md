@@ -3470,6 +3470,8 @@ components/layout/flow construction entry, stylo container_rule.rs traverse_cont
 - Symptom: container query never matches even with correct sizes → check: whether RestyleHint::recascade vs restyle matters — query evaluation happens during RULE MATCHING, so recascade_subtree is INSUFFICIENT (only re-cascades already-matched rules); must be restyle_subtree (re-matching).
 - Symptom: query matches/doesn't match on first paint but never updates → check: the convergence loop only re-evaluates when a REFLOW happens; resize/mutation driven invalidation comes free since sizes change → loop triggers. Oscillating layouts terminate at the 4-iteration bound (documented caveat, matches sec1zt97 design).
 
+**Verification addendum** (same day, post-PR): unnamed `@container (min-width: ..)` (nearest-ancestor resolution) verified working; dynamic invalidation verified — JS mutation of container width flips query results live (green→red on shrink); heavy non-container pages (YouTube watch) show zero spurious restyle iterations and zero panics.
+
 **Verification gaps honestly noted**: live google.co.uk SERP test BLOCKED — the IP is now captcha-walled on co.uk too as of 2026-11-26T20:40 (was unblocked earlier same day — wall state decays with traffic volume, per-IP behavioral). serp.html capture is the wall shell, useless as repro. Resize-invalidation untested. Style-type container queries (non-size) out of scope. Units (cqw etc) untested.
 
 ## hittest-verdict — elementFromPoint is CORRECT in servo (2026-11-26)
