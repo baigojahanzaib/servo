@@ -3385,3 +3385,20 @@ layout investigation requires either unwalling feather or a MITM-style replay. H
 unblocked path if resumed: dump exactly what headers servo sends (net crate) vs curl's set —
 google's wall on headless-ish clients is often triggered by missing/odd accept-language or
 sec-fetch headers, a cheap mechanism-level fix healing ALL google properties.
+
+sec1zt93 — google wall: header-set exonerated, TLS fingerprint prime suspect (2026-11-26, linux):
+servo already sends Accept-Language (single-locale anti-fingerprint value, net/fetch/methods.rs
+step 12) AND the Sec-Fetch-* fetch-metadata headers (http_loader.rs:2913). Header-set theory
+DEAD. Remaining discriminant vs curl-with-firefox-UA: the TLS ClientHello fingerprint — servo
+uses rustls, whose handshake signature differs from firefox/chrome and is trivially classified
+by bot walls. NOTE curl passes BECAUSE curl's own TLS is also non-browser — so the wall logic
+isn't purely "non-browser-TLS = block" either; more likely servo sends some COMBINATION or
+curl's minimalism (no subresource burst, no cookies, single request) reads as a plain bot-fetch
+which google tolerates for one-shot html, while servo's full browser-like subresource burst
+WITHOUT a matching browser TLS fingerprint reads as spoofing. Discriminator if resumed: fetch
+google in feather but block ALL subresources (or curl the exact subresource set rapidly) —
+if the burst-without-matching-TLS is the trigger, mitigation is rate/cookie policy work, not
+TLS. If TLS is the trigger regardless, options are boringssl/openssl passthrough (big) or
+accepting the wall. Symptom index: site captcha-walls servo but not curl same-IP → check in
+order: UA string (exonerated), header set inc. accept-language/sec-fetch (exonerated — servo
+sends both), TLS ClientHello fingerprint (prime suspect), request-burst behavioral pattern.
