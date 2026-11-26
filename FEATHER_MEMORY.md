@@ -1808,3 +1808,23 @@ SYMPTOM INDEX: youtube-search-results-blank → RESOLVED-BY-MITIGATION; underlyi
 User provided org-scoped GITHUB_USER_PAT secret — NOTE: it is marked "(not in environment)" so it must be bound explicitly per-exec: env={"GH_TOKEN": "secret:org:GITHUB_USER_PAT"}. `gh release create` then works fine (159MB asset upload took ~4 min).
 Cleanup done: alpha-payload + alpha-release-workflow branches deleted, PR #159 closed, tag v0.1.0-alpha kept (release lives on it).
 IN FLIGHT: mitigation release rebuild — when done, replace the release asset: cp exe to staging, clean-env verify, rezip, `gh release upload v0.1.0-alpha feather-0.1.0-alpha.zip --clobber` (delete old asset first if needed) — the refreshed zip adds working YouTube search results.
+
+
+## 2026-11-26 late — gmail signin verdict, GPU audit, installer published (windows lane)
+
+### Gmail sign-in — VERDICT: engine-deep, surface-insufficient
+- Full sign-in flow reproduced end-to-end in feather: the real form renders, email submission drives navigation — then `/v3/signin/rejected` fires AFTER submit. Detection happens inside Google's post-submit encrypted botguard challenge, not the readable browser surface.
+- Compat-shim userscript (pre-boot, registered via `UserContentManager`) VERIFIED present: `navigator.webdriver=false`, `window.chrome` object, `navigator.vendor=Google Inc.`, 5-entry plugins array, UA-CH (userAgentData Chrome/131) — rejection persists anyway. Therefore: NOT a fingerprint problem — it's deep engine conformance exercised by the encrypted challenge (canvas/WebGL fingerprint realism, WASM, timing, or specific API behavior). This is the top compat target for post-alpha.
+- Symptom index: google "This browser or app may not be secure" / `/v3/signin/rejected` → suspect botguard challenge conformance; surface spoofs (webdriver/vendor/plugins/UA-CH) verified insufficient; do NOT re-walk the surface-spoof path. Next probes: compare canvas fingerprint hash servo-vs-chrome, check WASM compilation of their challenge blob, WebGL parameter conformance matrix.
+
+### GPU/hardware acceleration — mechanism mapped, dual-GPU fix shipped
+- Compositing: webrender rasterizes via ANGLE→D3D11 — GPU-accelerated whenever ANGLE creates a hardware device. Shell presents through the same GL context (egui_glow shares servo's), no copy layer.
+- Software fallback = "Microsoft Basic Render Driver" in the WebGL renderer string (`WEBGL_debug_renderer_info.UNMASKED_RENDERER_WEBGL`) — THE diagnostic probe.
+- Fix shipped: `NvOptimusEnablement`/`AmdPowerXpressRequestHighPerformance` static exports in feather-ui.exe (shell-new/src/main.rs) — requests discrete GPU on Optimus/PowerXpress laptops. Same mechanism as Chrome/Firefox.
+- Symptom index: "feels like no hardware acceleration" → FIRST probe renderer string; if Basic Render Driver on real-GPU machine, suspect ANGLE device creation params in surfman; if real GPU listed, the slowness is engine layout/script perf, NOT compositing — do not conflate.
+- Open: log renderer string to logs/ at startup for self-describing support reports.
+
+### Alpha release v0.1.0-alpha — installer + zip published
+- feather-0.1.0-setup.exe (NSIS, 105MB): Program Files install, shortcuts, StartMenuInternet browser registration, uninstaller. Verified silent-install → clean boot. Script: shell/packaging/feather.nsi adapted (APP_EXE feather-ui.exe).
+- feather-0.1.0-alpha.zip refreshed to the identical build (shim+GPU+crashcapture+mitigation).
+- Asset contents as of this entry = uiwt main @ PR#172 merge.
