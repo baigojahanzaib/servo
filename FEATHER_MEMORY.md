@@ -3612,3 +3612,73 @@ DATA: during 720p mp4 playback on the GPU-less VM: 28 consecutive "UI thread sti
 INTERPRETATION: video frames arrive ~30-60/s; each triggers a full egui composite+present of a large texture on software GL. The UI thread is saturated by present, not by engine compositor work (spin fast) nor paint. On real-GPU hardware the same frame cost is ~1ms — playback should be smooth; BUT the architecture still pumps every video frame through the UI thread present path, so any GPU hiccup or large video (4k) can reproduce user-visible input loss. This is now the best-quantified freeze-amplifier chain: video playback -> continuous UI-thread present load -> input swallowed -> user reads it as "glitchy/frozen".
 SYMPTOM INDEX ENTRY: video-heavy page + input glitching/stalls -> suspect present-path saturation, NOT hit-test, NOT compositor spin. Confirm via watchdog cadence matching video fps. Fix = the zero-copy/off-thread present project (see GPU decode scoping entry).
 COLD-BOOT RACE: unchanged, still the only true-freeze class — engine lane.
+
+## pref-batch-verdicts (2026-11-26, PR #221)
+- execCommand EXPOSED + FUNCTIONAL: insertText writes into contenteditable, ret=true. Editor-class mechanism unlocked. Composes with shadow-input fix.
+- cookieStore exposed but roundtrip RED: set().then(get) returns null — functional-level gap in the store path (or jar keying). Exposed-but-broken is arguably worse than absent for feature-detecting sites — WATCH: if sites branch on cookieStore presence and break, revert. Matrix tracks it in platform-apis.
+- credentials exposed. permissions was already green (query returns real states).
+- GAMEPAD requires cargo feature not pref: webidl has skip-unless CARGO_FEATURE_GAMEPAD — pref alone is a no-op. Before enabling any pref, check the webidl header for skip-unless lines — pref-gates and feature-gates are DIFFERENT levers.
+- Branch note: platform-apis branch carries its own copy of the clipboard pref line (branched pre-#219-merge) — merge conflict with main is trivial/identical content.
+
+## cookiestore-decision — exposed-but-broken worse than absent; REVERTED (2026-11-26)
+- Differential verdict: document.cookie roundtrips fine on the same host — cookie storage sound generally; the CookieStore API path specifically broken (set resolves, get returns null — implementation structurally complete in dom/cookiestore/cookiestore.rs, Get uses GetCookieDataForUrlAsync; the write/read path divergence is unfixed upstream).
+- DECISION PRINCIPLE (matrix-driven): when a feature has a working fallback (sites feature-detect cookieStore and fall back to document.cookie), exposing a broken implementation is strictly worse than absence — absence routes sites to the working path. Reverted the pref; engine-lane investigation candidate with exact file refs.
+- Full 30-class grid: 173/183 with zero unexplained reds. Every failure is environmental (webgl x2 — no GPU on VM), known-large (webrtc), unimplemented-upstream (svg-canvas-source, backdrop-filter, FontFaceSet.check), pref-not-applicable (gamepad cargo feature, webgpu), or documented engine gap (range-geometry, cookiestore).
+- Round-5 greens: workers incl transferable detachment 5/5, custom-elements+slots full lifecycle 9/9, crypto sha256 spec-vector correct 10/10 — the deep mechanism layers are sound.
+
+## sec1zt107 — svg-canvas-source SOLVED + byte-completion mechanism (2026-11-26)
+- Symptom: drawImage of SVG image produces transparent pixels (was: silent no-op with warn) → check: image_cache key-gated completion, NOT the rasterizer. resvg pipeline was never broken.
+- ROOT CAUSE: `rasterize_vector_image` completion is gated on a WebRenderImageKey assignment that rides the paint pipeline frame cadence — the round trip takes SECONDS on an idle page. Canvas drawImage is synchronous; any listener-wait design is hostage to frame timing.
+- FIX (feather-engine): split completion into two levels. `RasterizationTask.bytes_result` is set in the resvg worker the moment pixels exist (before keycache submission); new trait method `rasterize_vector_image_bytes` returns Image as soon as bytes are ready. Layout path (`result`, key-gated) completely untouched. Canvas consumers (`HTMLImageElement::get_raster_image_data` — the real drawImage path, NOT canvas_state::fetch_image_data which only serves CSS/url draws — plus fetch_image_data for completeness) poll bytes with 20ms sleep, 2s bound.
+- VERIFIED: svgcanvas2 harness CENTER_PIXEL 255,0,0,255 (red circle) CORNER_PIXEL 0,255,0,255 (green rect) — exact expected values.
+- Symptom-index negative results: resvg panic theory — WRONG (no panic, job completed every time). blob: URL SVG theory — WRONG (file-hosted identical). Rasterization pipeline broken — WRONG (visible <img> of same SVG rendered correctly on screen while canvas was blank).
+- Lesson: when a consumer needs only pixel bytes, never gate on compositor key assignment. Key generation is a display concern.
+
+## sec1zt108 — google wall: pacing NEGATIVE + honest-UA experiment (2026-11-26)
+- FEATHER_SLOW_FETCH_HOSTS=google.com,gstatic.com,googleapis.com FEATHER_SLOW_FETCH_MS=400 → /search STILL /sorry-walled. Burst-shape/pacing exonerated as the wall trigger (negative result, symptom index: wall response unchanged by request pacing → not behavioral-burst-driven).
+- Residual theory standing: impersonation-mismatch composite — feather claims Chrome UA + Chrome-ish headers but rustls TLS/h2 fingerprints mismatch; google scores the mismatch. curl passes because it doesn't impersonate (or UA-only shallow impersonation). TEST ADDED: FEATHER_USER_AGENT env override in shell-new engine.rs — honest non-Chrome UA experiment queued.
+- Reference doc: feather docs/wiki/BOT-FINGERPRINT.md (PR #218 merged) is the standing Chrome-vs-servo layer checklist; SPEC-COMPLIANCE.md (PR #223) is the WPT completeness map.
+
+## range-geometry-VERDICT — architectural gap, confirmed by code reading (2026-11-26)
+- ROOT CAUSE chain complete: Range.client_rects → border_boxes → box_areas_query → process_box_areas_request → node.fragments_for_pseudo → with_fragments → LayoutBox::with_base — which returns None verbatim for `LayoutBox::DisplayContents(..) | LayoutBox::Text(..)` (components/layout/dom.rs). Text nodes NEVER yield fragments through this path.
+- WHY it's architectural: in servo's new layout, text doesn't own per-node fragments — text is shaped into TextRuns folded into the PARENT inline formatting context's line fragments. Correct Range-over-text geometry requires walking the parent's inline fragments and clipping to the text node's byte range — upstream feature-scale work, not a patch.
+- Spec note: cssom-view getClientRects explicitly covers text nodes, so this is a real spec gap — legitimate upstream candidate but LARGE. Priority-wise: affects caret measurement/selection-geometry/editor floating UI — but selection RENDERING itself evidently works through a different path (real typing/selection verified working in dogfooding), so user-facing impact is narrower than it first appeared — mostly editor-class JS measurement.
+- RANGE_DEBUG instrumentation left in the fork (layout/query.rs, env-gated) — prints fragment count+kinds and which branch fires; expect fragments=0 confirmation.
+
+## sec1zt109 — GOOGLE WALL SOLVED: impersonation-mismatch confirmed, honest UA lifts wall (2026-11-26)
+BREAKTHROUGH with causal A/B: same binary, same minute, same IP — only the UA varies:
+- Chrome/131 desktop UA → /sorry walled (4 recaptcha hits). Mobile-Chrome UA → walled. Safari/17.4 UA → WALLED TOO (webkit impersonation also policed).
+- Firefox/133 UA → NOT walled — but google serves gecko-flavored SERP CSS (-moz-box-* XUL-era properties) and servo STACK-OVERFLOWS in StyleThread (new crash defect, repro: FF UA + google search).
+- HONEST UA "Feather/1.0 (X11; Linux x86_64) Servo/1.0" → NOT walled, NO crash, and the SERP FULLY RENDERS: centered layout, correct padding, AI Overview, result cards, dictionary widget — the first correct Google SERP in feather history (container-queries fix + wall lift compounding).
+MECHANISM VERDICT: google polices major-browser IMPERSONATION — when TLS/h2/behavior fingerprints mismatch the claimed Chrome/Safari identity, the wall engages. Honest/unknown UAs are served like curl. Pure-fingerprint mimicry was NEVER the required path — the alternative is stop impersonating.
+STRATEGIC DECISION FORK (needs coordinator/user): (a) honest UA everywhere — walls down fleet-wide BUT sites serve basic/degraded content (YouTube/modern-SPA compat relies on chrome claims — this breaks the compat-shim strategy); (b) per-host UA switching — chrome UA generally, honest UA on walled properties (google.*) — hacky but cheap and preserves both; (c) full TLS mimicry megaproject — no longer the only path, probably not worth it given (b).
+Also: the JS surface must stay CONSISTENT with whatever network UA is sent (shim currently hardcoded chrome-flavor) — mixed signals are themselves a bot tell.
+Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engine.rs.
+
+## sec1zt110 — per-host honest-UA SHIPPED + verified (2026-11-26)
+- feather#225 (shell shim consistency + env hooks) + engine 7a6b3b3544b (net-layer per-host switch). Default policy: chrome UA everywhere, honest "Feather/1.0 (X11; Linux x86_64) Servo/1.0" on .google. hosts, FEATHER_HONEST_UA_HOSTS/FEATHER_HONEST_UA/FEATHER_USER_AGENT env overrides. Shim skips chrome spoof on honest hosts and overrides navigator.userAgent/appVersion/vendor/platform — JS/net never disagree.
+- VERIFIED same build: google SERP fully renders (centered, AI overview, dictionary card, zero /sorry) + youtube search fully renders with chrome UA intact.
+- UNBLOCKED: all google properties now testable — gmail, maps, live-SERP container-query validation (was environmentally blocked). The TLS-fingerprint megaproject is definitively dead — impersonation-mismatch was the mechanism.
+- OPEN crash defect: Firefox-UA gecko-flavored SERP stack-overflows StyleThread (rayon thread, deep cascade recursion — servo has no iterative cascade). Repro: FEATHER_USER_AGENT=firefox-UA + google search. Not hit in production config (gecko content never served to chrome/honest UAs) but it's a latent crash class for any deeply-nested page.
+- ALSO SHIPPED this session: svg-canvas-source complete (byte-level completion split, engine 24842544161); layout/query.rs RANGE_DEBUG compile fix for another lane (Fragment lacks Debug — match on variants).
+
+## range-geometry-EMPIRICAL (2026-11-26) — case closed
+- RANGE_DEBUG instrumentation live-verdict: `[range-debug] NO-TRANSFORM fallback hit — fragments=0` (10 hits per page). Text nodes yield ZERO fragments exactly as statically proven via LayoutBox::with_base returning None for Text. Both traps confirmed: empty fragments AND the silent zero-size fallback. Case closed — architectural upstream feature documented in docs/wiki/UPSTREAM-CANDIDATES.md.
+
+## fontfaceset-check-implemented (2026-11-26)
+- FontFaceSet.check() implemented upstream-style: webidl uncommented (+Pref gate), rust impl pattern-matched on Load — parse via find_the_matching_font_faces, syntax error → false, all matched faces must have Status()==Loaded, unmatched families count as system-available (spec font matching rules). Compilation+matrix validation in flight.
+- NOTE DOMString deref: &font passed to &str param relies on DOMString's Deref — compile verdict pending; if it fails the fix is font.str() or &*font.
+
+## sec1zt111 — favicon pipeline RESOLVED (side effect of svg-canvas byte-completion) + github intermittent segfault OPEN (2026-11-26)
+- Favicon verdict: engine pipeline was never broken — link-rel fetching, decode, process_favicon_image, set_favicon all fire correctly. The visible failure (wv.favicon() never Some) was the VECTOR favicon path: svg favicons rasterize through the key-gated completion which stalls for seconds/never on idle pages. The byte-completion split (sec1zt107) healed it: fresh-cache run shows set_favicon x2 (svg+png), shell has_favicon=true, 32x32 upload. Symptom index: 'favicons never appear despite full pipeline existing' → check vector rasterization completion gating, NOT the shell writeback (writeback/upload/origin-keying all verified correct).
+- github.com INTERMITTENT SEGFAULT — new open defect, process dies silently (no panic message, no overflow note). Repro rate ~2/3 launches within 10-13s of github.com load; NOT reproduced under gdb in 60s (timing-sensitive). Suspect: webgl (mona-smile .glb loads shortly before death; 'GL point sprites 1280' warning adjacent). Next: repeated-run statistics, core_pattern apport already captures? check /var/crash for feather cores, test with webgl disabled pref if one exists. THIS BLOCKS github dogfooding — prioritize.
+- UA-SURFACE consistency VERIFIED on google: ua=honest, vendor empty, chrome undefined, userAgentData undefined, platform Linux — shim/net agreement exact.
+
+## sec1zt112 — github segfault heisenbug statistics (2026-11-26)
+- Crash rates: 2/4 bare runs, 0/3 under gdb, 0/4 second batch bare — timing-sensitive race, gdb-hidden. No panic message — hard segfault. Webgl adjacent (mona .glb + GL-point-sprites warning precede death in crashing runs). Do NOT burn cycles on gdb repro — needs rr (not installed) or systematic core capture (core_pattern experiments inconclusive). STATUS: open, timeboxed. If it recurs in dogfooding: capture which thread dies via `/proc/pid/task` monitoring or add canary eprintlns in webgl thread command processing.
+
+## webfonts-fully-green + check() verified (2026-11-26)
+- FontFaceSet.check() implementation VERIFIED through matrix: document-fonts-api green. parse-error→false, all-matched-loaded semantics. FOURTH upstreamable engine fix in the fork (document.all, shadow-input, devtools-teardown, fontfaceset-check).
+- font-loads probe deep truth: original failure was test-infrastructure — no font file existed on the matrix server. With WPT's Ahem.ttf served, the ENTIRE webfont pipeline proven working: @font-face parse, fetch, decode, font matching, metrics application (canvas measureText 240px Ahem vs 126.9px serif — exact 6×40 square-glyph math). webfonts class 3/3.
+- Matrix infrastructure lesson: probes depending on served binary assets need the assets committed in pages/ — Ahem.ttf (21KB, WPT-licensed) now vendored in tests/scenarios/pages/fonts/.
+

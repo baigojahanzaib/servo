@@ -1593,9 +1593,34 @@ async fn http_network_or_cache_fetch(
     // Step 8.15: If httpRequest’s header list does not contain `User-Agent`, then user agents
     // should append (`User-Agent`, default `User-Agent` value) to httpRequest’s header list.
     if !http_request.headers.contains_key(header::USER_AGENT) {
+        // Per-host honest-UA policy: bot walls police major-browser
+        // impersonation (verified causal A/B: Chrome/Safari UA + rustls TLS =
+        // google /sorry; honest UA = served). On hosts listed in
+        // FEATHER_HONEST_UA_HOSTS (comma-separated substrings, default
+        // ".google.") send the honest UA instead of the configured one. The
+        // embedding shell mirrors this list into its JS-surface shim so the
+        // two never disagree.
+        let ua = {
+            let hosts = std::env::var("FEATHER_HONEST_UA_HOSTS")
+                .unwrap_or_else(|_| ".google.".to_string());
+            let host = http_request.current_url().host_str().unwrap_or_default().to_string();
+            let honest = host.as_str() == "google.com" ||
+                hosts
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|h| !h.is_empty())
+                    .any(|h| host.contains(h));
+            if honest {
+                std::env::var("FEATHER_HONEST_UA").unwrap_or_else(|_| {
+                    "Feather/1.0 (X11; Linux x86_64) Servo/1.0".to_string()
+                })
+            } else {
+                context.user_agent.clone()
+            }
+        };
         http_request
             .headers
-            .typed_insert::<UserAgent>(context.user_agent.parse().unwrap());
+            .typed_insert::<UserAgent>(ua.parse().unwrap());
     }
 
     // Steps 8.16 to 8.18

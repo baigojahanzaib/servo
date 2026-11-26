@@ -139,15 +139,46 @@ pub(crate) fn process_box_areas_request(
     let transform =
         root_transform_for_fragments(&stacking_context_tree.paint_info.scroll_tree, &fragments);
 
+    let fragment_count = fragments.len();
+    let fragment_kinds: Vec<String> = fragments
+        .iter()
+        .map(|f| {
+            match f {
+                crate::fragment_tree::Fragment::LayoutRoot(_) => "LayoutRoot",
+                crate::fragment_tree::Fragment::Box(_) => "Box",
+                crate::fragment_tree::Fragment::Float(_) => "Float",
+                crate::fragment_tree::Fragment::Positioning(_) => "Positioning",
+                crate::fragment_tree::Fragment::AbsoluteOrFixedPositionedPlaceholder(_) => {
+                    "AbsOrFixedPlaceholder"
+                },
+                crate::fragment_tree::Fragment::Text(_) => "Text",
+                crate::fragment_tree::Fragment::Image(_) => "Image",
+                crate::fragment_tree::Fragment::IFrame(_) => "IFrame",
+            }
+            .to_string()
+        })
+        .collect();
     let rects = fragments
         .into_iter()
         .filter_map(move |fragment| fragment.cumulative_box_area_rect(area, layout_thread.into()));
 
     let Some(transform) = transform else {
+        if std::env::var("RANGE_DEBUG").is_ok() {
+            eprintln!(
+                "[range-debug] NO-TRANSFORM fallback hit — fragments={}",
+                fragment_count
+            );
+        }
         return rects
             .map(|rect| Rect::new(rect.origin, Size2D::zero()))
             .collect();
     };
+    if std::env::var("RANGE_DEBUG").is_ok() {
+        eprintln!(
+            "[range-debug] transform ok — fragments={}",
+            fragment_count
+        );
+    }
 
     rects
         .filter_map(move |rect| transform_au_rectangle(rect, transform))

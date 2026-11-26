@@ -249,6 +249,17 @@ pub trait ImageCache: Sync + Send {
         svg_id: Option<Uuid>,
     ) -> RasterizationResult;
 
+    /// Like `rasterize_vector_image`, but completion is gated on pixel bytes being
+    /// ready rather than on a WebRender image key being assigned. Canvas consumers
+    /// only need the bytes; the key-assignment round-trip can take seconds because
+    /// it rides the paint pipeline's frame cadence.
+    fn rasterize_vector_image_bytes(
+        &self,
+        image_id: VectorImageId,
+        size: DeviceIntSize,
+        svg_id: Option<Uuid>,
+    ) -> RasterizationResult;
+
     /// Adds a new listener to be notified once the given `image_id` has been rasterized at
     /// the given `size`. The listener will receive a `VectorImageRasterizationComplete`
     /// message on the given `sender`, even if the listener is called after rasterization

@@ -15,6 +15,7 @@ use js::rust::HandleObject;
 use layout_api::BoxAreaType;
 use mime::{self, Mime};
 use net_traits::image_cache::{
+    ImageCacheResponseMessage, RasterizationResult,
     Image, ImageCache, ImageCacheResult, ImageLoadListener, ImageOrMetadataAvailable,
     ImageResponse, PendingImageId,
 };
@@ -166,11 +167,42 @@ impl HTMLImageElement {
 
     /// Gets the copy of the raster image data.
     pub(crate) fn get_raster_image_data(&self) -> Option<Snapshot> {
-        let Some(raster_image) = self.image_data()?.as_raster_image() else {
-            warn!("Vector image is not supported as raster image source");
+        let image = self.image_data()?;
+        if let Some(raster_image) = image.as_raster_image() {
+            return Some(raster_image.as_snapshot());
+        }
+        let net_traits::image_cache::Image::Vector(vector_image) = image else {
             return None;
         };
-        Some(raster_image.as_snapshot())
+        let global = GlobalScope::entry();
+        let size = webrender_api::units::DeviceIntSize::new(
+            vector_image.metadata.width as i32,
+            vector_image.metadata.height as i32,
+        );
+        if size.is_empty() {
+            return None;
+        }
+        let image_cache = global.image_cache();
+        // drawImage is synchronous with no spec'd async path, so poll briefly
+        // for the byte-level rasterization result. The bytes-complete signal
+        // fires as soon as resvg finishes; the WebRender key round-trip (which
+        // layout needs but canvas does not) can take seconds.
+        for _ in 0..100 {
+            match image_cache.rasterize_vector_image_bytes(
+                vector_image.id,
+                size,
+                vector_image.svg_id,
+            ) {
+                RasterizationResult::Image(raster) => {
+                    return Some(raster.as_snapshot());
+                },
+                RasterizationResult::InvalidSvgParameters => return None,
+                RasterizationResult::PendingRasterization => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                },
+            }
+        }
+        None
     }
 
     /// Drop the decoded image surface held by the current request, if any.
