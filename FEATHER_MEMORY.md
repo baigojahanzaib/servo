@@ -2978,3 +2978,12 @@ panic class. HARNESS LESSON: ServoTestUtils.crashHard() is a null-write SIGSEGV 
 death with zero log output, unrecoverable by ANY unwind-based mechanism (that's the stage-3 process-
 isolation territory). Use panic() for unwind-recovery tests. Residual gaps per scoping doc: WR/
 compositor singletons (never-bugs), media threads (degrade-not-notify), crash-banner UX polish.
+
+sec1zt54 — crash-isolation edge case: repeated panic in same tab (crash-loop protection)
+=========================================================================================
+3 consecutive panics in one tab: browser ALIVE throughout; constellation counts: 2 replacement-pipeline
+recoveries + 1 "crash page crashed" give-up. Upstream behavior by design: if the CRASH PAGE ITSELF
+crashes (old_load_data.crash.is_some()), no further replacement is created — infinite-crash-loop
+protection, tab left in dead state but browser unaffected. v1-acceptable; a shell-side "this tab keeps
+crashing — close it?" affordance would be the UX polish. The core guarantee held in every test: the
+process never died regardless of crash pattern.
