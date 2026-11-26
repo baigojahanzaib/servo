@@ -1909,6 +1909,14 @@ Key diagnostic pattern: when an entire subtree is 0x0@0,0, walk UP the chain bef
 
 Tooling lesson: an evaluate-javascript escape hatch in the shell (/tmp/feather-eval.js hook) converts blind-probe hours into direct-measurement minutes. Console+exception+rejection visibility is necessary but not sufficient — silent logic failures need DOM inspection.
 
+## YouTube final unhide chain + negative results (2026-11-26, macOS lane, round 2)
+
+Symptom: results fully built in DOM but never visible → check: hydration element replacement (CONFIRMED — boot instance gets unhidden at T+1952ms, hydration then swaps in a NEW element instance stamped with hidden again; the final unhide step never executes on it; verified by identity tracking: current element has zero hidden-ops in log). Binding churn ruled out (MutationObserver — nothing re-sets hidden). scheduler.postTask ruled out (zero references in YouTube's entire JS payload — would have been wasted implementation). Trusted Types ruled out (fully correct). Unhide machinery generally ruled out (100+ successful removals across other elements).
+
+Post-manual-unhide functionality measured: search results render fully (thumbnails, badges, metadata), SPA click-through to /watch works, watch page renders full chrome incl. live chat. YouTube visible gaps reduced to exactly two: final unhide step + video frame compositing (F3).
+
+Diagnostic tooling pattern that worked: persistent eval hook (re-injected at navigation commit) + monkeypatched Element.prototype.setAttribute/removeAttribute/hidden-setter with element identity tagging (WeakMap ids) — this is the general instrumentation pattern for "which JS touches which DOM state when" questions in servo. Also: shell-new spin-throttle Duration subtraction underflow panic — TOCTOU between guard check and subtraction; any elapsed()-then-subtract pattern in the shell needs saturating_sub.
+
 ## sec1zm — RG8 video-plane crash FIXED: planar YCbCr upload (2026-11-26)
 
 FIXED — commit f9180e2bf1d. NV12 video chroma is now deinterleaved into separate Cb/Cr planes and uploaded as planar YCbCr — all-R8 planes, fully shared-cache compatible, natively supported by WebRender's brush_yuv shader. Deinterleave cost is a quarter-resolution byte shuffle — negligible against decode cost.
@@ -1980,3 +1988,4 @@ Post-everything measurement (planar video + seek-ack fix + MSE quota, feather de
 
 Remaining open engineering item, deliberately not attempted: playerleak deferred-dispose-retry. Risk assessment: the dragons-condition refcount semantics are subtle (glib clone counting unverified), a wrong implementation resurrects the use-after-finalize crash class (alpha-critical) — risk-adjusted ROI poor vs the few-MB leak cost. Documented for a future careful session.
 ||||||| parent of d27770055 (memory: youtube hidden-attribute root cause chain)
+||||||| parent of 4860cfd90 (memory: youtube final unhide chain + replacement mechanism + tooling patterns)
