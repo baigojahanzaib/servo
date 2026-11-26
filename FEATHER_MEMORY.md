@@ -3661,3 +3661,8 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 
 ## merge-resolution-validation-gap (2026-11-26) — CRITICAL PROCESS RULE
 - PR #221's squash-merge carried UNRESOLVED conflict markers (<<<<<<< ||||||| ======= >>>>>>>) into matrix.py on main. Root cause: union-resolving conflicts by hand without a final validation pass. RULE for all lanes: after ANY manual conflict resolution, before pushing: `git grep -l '^<<<<<<< \|^>>>>>>> '` MUST be empty for the whole tree — not just the files you remember touching. Diff3-style markers (`|||||||`) also count. One broken harness file invalidated main for hours; PR #231 is the hotfix.
+
+## final-baseline-174-of-183 (2026-11-26) — quality gate operational
+- PR #233: definitive baseline. ALL remaining reds explained — zero unknowns in matrix. Grid movement validated merges: platform-apis 3→6/9 post-#221.
+- LESSON from the branch-tangle: after rebase conflicts ALWAYS verify `git merge-base --is-ancestor origin/main HEAD` before pushing — stale-base branches look fine locally. And abort-verify: `ls .git/rebase-merge` must be empty before further work.
+- Queue state at close: x.com click-glitch NEEDS USER INPUT (credentials or recording — repro-negative unauthenticated, documented). favicons done. matrix done beyond scope.
