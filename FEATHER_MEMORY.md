@@ -2698,3 +2698,12 @@ undefined binding values through untouched → hidden=false → results visible.
 
 The document.all mission is COMPLETE. Verification evidence: screenshots + eval results in session
 devin-d3790f631f184a44862d36d5fb5f39e4.
+
+sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
+==================================================================================
+youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
+with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
+working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
+readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
+planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
+search, watch, playback. This closes the alpha-critical YouTube cluster.
