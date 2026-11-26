@@ -3338,12 +3338,10 @@ only. Next step if resumed: instrument yt-core-image custom element reactions, o
 YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
 fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
 observer-root geometry on youtube specifically is the lead).
-<<<<<<< HEAD
 ||||||| parent of a527049da (memory: harness progress)
 - matrix-harness-2 (2026-11-26): hang FIXED — root cause was location.href navigation never replying to evaluateJS + blocking recv; now fire-and-forget + socket timeouts + reconnects, harness completes all 13 pages end-to-end. REMAINING narrowed bug: evaluateJS results never arrive even on stable pages (every collection times out; listTabs/getTarget verified working). Next: manually probe evaluateJS reply format against a live instance — compare with /tmp/dt.py session transcripts; possibly reply key differs or consoleActor resolution picks a worker actor.
 - matrix-harness-3 (2026-11-26): eval replies flow now (Ok-envelope unwrapped; navigateTo primitive works and acks) — BUT two live-probed facts define the remaining bug: (1) evaluateJS SANDBOX quirk — even READING location.href returns None, strongly suggesting eval runs in a sandbox/scope that isn't the page's window (or location access specifically broken); (2) navigateTo DROPS the devtools connection entirely (EOFError right after the ack) — harness reconnects, but reconnection timing vs page load is racy. Symptom: every page collects the FIRST page's results (visibility probes everywhere) — either eval targets a stale sandbox or MATRIX_RESULTS lookup hits the wrong global. NEXT: eval `typeof window` / `typeof document` / `1+1` in sequence after nav+reconnect and compare against pre-nav; check servo's console.rs whether evaluateJS uses a sandbox global (grep components/devtools/actors/console.rs for sandbox/compile).
 ||||||| parent of 443c970735d (memory: sec1zt90 prefers-color-scheme shipped)
-=======
 
 sec1zt90 — prefers-color-scheme SHIPPED (feather#205, 2026-11-26, linux lane):
 Sites were locked light because feather never called the engine's existing theme API. Mechanism
@@ -3361,7 +3359,6 @@ fast (~7ms) when no portal service, no hang risk. Verification trap: matchMedia 
 page-load JS object is STALE — re-evaluate live. Also: JS matchMedia and stylesheet @media
 evaluate through different paths in servo — verify BOTH. Bonus fixed: shell chrome follows OS
 dark on Linux now (same detection fed both).
->>>>>>> 443c970735d (memory: sec1zt90 prefers-color-scheme shipped)
 
 sec1zt91 — google SERP layout investigation: repro-path head start (2026-11-26, linux lane):
 The captcha wall is NOT IP-level for plain fetches: curl with a plain Firefox UA gets a REAL
@@ -3418,3 +3415,11 @@ suspect, redo carefully. NEXT: ground-truth A/B — load google.co.uk/search?q=t
 chromium via playwright (CDP localhost:29229), dump center_col/parent-chain computed styles +
 matched rules, diff against servo's computed values. The first divergent computed property up
 the chain localizes the broken mechanism.
+||||||| parent of aa2142d13 (memory: first real grid + harness breakthrough chain)
+=======
+
+## matrix-harness-4 — FIRST REAL GRID PRODUCED (2026-11-26, breakthrough)
+- Grid: 53/61. REAL engine gaps found: WebGL absent in shell-new (shell had it via #112), SVG-in-img rasterization broken (DOM fine, raster transparent), FontFace constructor missing, WebRTC absent. Alpha-gate fixes all hold green. Baseline at feather docs/wiki/SCENARIO-MATRIX.md, PR #206.
+- HARNESS-SOLVING chain (each proven live): (1) evaluateJS replies wrap in top-level Ok envelope; (2) location.href assignment no-ops in devtools eval — use tab actor navigateTo instead; (3) evaluateJS itself works PERFECTLY (strings/typeof/page globals all fine) — the identical-results mystery was pipeline staleness: after navigateTo, document.URL inside eval showed the PREVIOUS page forever. Root: browsing-context actor's active pipeline never rebinds in practice despite update_pipeline existing (NavigationState::Stop path). UPSTREAM SERVO DEVTOOLS DEFECT — strong upstream candidate.
+- WORKAROUND SHIPPED: boot-per-page isolation — each probe page gets a fresh feather boot (first pipeline IS the page). matrix.py run_one_page. ~10s/page.
+- devtools evaluateJS SANDBOX myth busted: eval runs in the real page context fine — earlier location.href=None was the stale-pipeline effect, not sandboxing.
