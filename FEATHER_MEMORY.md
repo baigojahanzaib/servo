@@ -3777,3 +3777,6 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 
 ## definitive-grid-239-of-254 (2026-11-27) — matrix comprehensive
 - 37 classes, 254 probes, 239 passing, EVERY red categorized zero-unknowns. Union PR #251 supersedes conflicting per-round PRs (closed 245/247/248/249/250 — per-round branches conflict on shared matrix.py registration line; union carries identical content + definitive grid). LESSON: matrix rounds that all edit the same registration line should batch 2-3 classes per branch, or accept the union-merge pattern.
+
+## writing-mode-force-horizontal-localization (2026-11-27) — partial
+- NOT in stylo style_adjuster (gecko-gated adjusters only). NOT in servo layout construct paths greppable. Cascade somewhere forces horizontal-tb for computed values despite correct parsing. NEXT investigator: instrument — print the computed writing-mode value inside servo's style resolution for a vertical-rl element (components/script style query path), binary-search the pipeline: parse→cascade→computed-struct→readback. streams 8/8 and editing 5/6 also green this session (matrix union PR #251 — 40 classes now).
