@@ -2529,49 +2529,30 @@ Verification gate: `document.all === undefined` must be false; YouTube search re
 Symptom index: ANY framework branch keying on `x === document.all` misfires in servo → check
 document.all implementation (IsHTMLDDA object identity). Indexed by mechanism: strict-equality
 with undefined incorrectly true for document.all.
-||||||| parent of c757f75b8 (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
-||||||| parent of 303ceb416 (memory: ROOT CAUSE — single wrong bit, truthy vs falsy binding eval at stamp time)
-||||||| parent of 303ceb416 (memory: ROOT CAUSE — single wrong bit, truthy vs falsy binding eval at stamp time)
+## sec1zt32 — document.all implementation in progress (Linux lane) + codegen mechanics decoded
 
-## The write value identified: zClosurez (endgame-14)
+IMPLEMENTING HTMLAllCollection (servo#7396 — never implemented upstream). Files:
+- components/script_bindings/webidls/HTMLAllCollection.webidl — interface : HTMLCollection, namedItem getter union
+- Document.webidl — `[SameObject] readonly attribute HTMLAllCollection all;` (uncommented)
+- components/script/dom/html/htmlallcollection.rs — embeds HTMLCollection rooted at document with
+  match-all filter; NamedItem: id-or-name match, single→Element, multiple→live HTMLCollection
+- Document::All lazy-cached via MutNullableDom or_init
+- html/mod.rs registration
 
-Setter-capture with full value inspection: servo write passes **typeof=object, serializes as "zClosurez"** — Closure library's listener-registry expando (the object goog.events stores under the `zClosurez` key on listenable objects). Chrome's write passes falsy (undefined-ish). So the polymer binding evaluation of `data.hideContents` (or sibling) in servo walks a differently-shaped object graph and bottoms out on an object's zClosurez expando instead of yielding undefined. TRUTHY STRING/OBJECT → hidden=true. Deterministic across boots (3/3 identical). Boot variance dead as explanation; literal-binding-attribute theory dead (final attr empty, no literal bindings survive); data absent at write time in BOTH browsers (hasData=N, this.data=N).
+KEY MECHANISM — emulates-undefined for PROXY objects: DOM objects with indexed/named getters are JS
+proxies in servo, so JSCLASS_EMULATES_UNDEFINED on the DOMJSClass has NO effect (proxies don't use the
+interface class). Solution: mozjs glue NewProxyObject accepts aClass → js::ProxyOptions.setClass.
+Added `EMULATES_UNDEFINED_PROXY_CLASS` static in script_bindings/init.rs — bare JSClass carrying only
+the EMULATES_UNDEFINED flag; codegen emits `class: Some(&crate::init::EMULATES_UNDEFINED_PROXY_CLASS)`
+for HTMLAllCollection's WrapConfig; wrap.rs proxy path now passes config.class through to NewProxyObject
+(was hardcoded null). SpiderMonkey reads class flags directly for typeof/truthiness/loose-equality
+(verified in jit/MacroAssembler-inl.h branchIfObjectEmulatesUndefined); strict equality untouched.
 
-Interpretation direction: polymer path resolution (`data.hideContents`) descends into a host/target object that in servo carries the listener registry as its OWN shape — possibly because property enumeration order, expando placement, or prototype chain differs under servo's DOM — or because in servo the walk starts from the wrong root (e.g. resolving `data` against the wrong object that happens to be a listenable with no real data). The object identity behind the resolution is the next probe target. NOTE: the write occurs at stamping BEFORE data system init — this is the framework's initial stamp evaluation; in Chrome it harmlessly evaluates falsy. If the resolution bug is order-of-keys dependent, suspect SpiderMonkey vs V8 enumeration differences for expando/class fields — a REAL engine-divergence class worth checking: key enumeration order on objects with mixed string/symbol/expando keys.
->>>>>>> 7da7aea6a (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
->>>>>>> c757f75b8 (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
+KEY CODEGEN LEARNING (symptom index — saves hours on any future interface work): cx-ness of generated
+trait methods is NOT inferred from webidl types — it's MANUAL per-interface config in
+codegen/Bindings.conf (`'cx': [...]`, `'cx_no_gc': [...]`, `'no_gc': [...]` lists). Attributes/methods
+not listed generate cx-less trait signatures. HTMLFormControlsCollection entry was the template.
+Document::All needed 'All' added to Document's cx list.
 
-## HTMLAllCollection implementation — IN PROGRESS (macOS lane, endgame-15)
-
-sec1zt31 root cause confirmed correct. Implementation landed locally (compiles clean), verification pending:
-- `components/script_bindings/webidls/HTMLAllCollection.webidl` — new (length/item/namedItem union, LegacyOverrideBuiltIns; LegacyFactoryFunction intentionally omitted v1)
-- `components/script/dom/html/htmlallcollection.rs` — new DOM type wrapping HTMLCollection rooted at document, all-elements filter; namedItem returns Element/union sub-collection per spec
-- `components/script_bindings/codegen/codegen.py` — class flags for HTMLAllCollection get `JSCLASS_EMULATES_UNDEFINED` (bit exists in vendored SM 153 as 1<<6, bindgen exposes it — compiled)
-- `components/script_bindings/import.rs` — re-export the constant
-- `Document.webidl` — `all` uncommented (plain readonly attr, or_init caching like images)
-- `document.rs` — all_collection field + All() impl
-- `Bindings.conf` — HTMLAllCollection entry (cx for named methods, cx_no_gc for indexed; 'All' added to Document cx list)
-- dom/html/mod.rs — module registered
-KEY ENGINE FACT: SpiderMonkey implements all IsHTMLDDA semantics (typeof undefined, falsy, loose==undefined true, strict===undefined FALSE) purely from the class flag — no VM changes needed.
-Verification gate: `document.all === undefined` must be false in servo, typeof document.all "undefined", !document.all true, document.all==undefined true; then YouTube results render unassisted.
-
-## HTMLAllCollection round 2 — the proxy class path (endgame-16)
-
-CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
-
-## HTMLAllCollection VERIFIED — YouTube alpha gate DOWN (endgame-17, THE fix)
-
-Primitive verification (docall.html): typeof document.all="undefined" ✓, !document.all=true ✓, document.all==undefined=true ✓, **document.all===undefined=FALSE** ✓ (the critical bit), instanceof Object=true ✓ — full spec IsHTMLDDA semantics correct.
-END-TO-END VERIFICATION: youtube.com/results?search_query=techno+mix renders full search results UNASSISTED — no shim, no manual unhide. Video entries, thumbnails, sponsored slots all visible. The multi-session hunt (hydration stall → rIC starvation → hidden attribute → resin sanitizer → document.all) is CLOSED.
-KNOWN RESIDUALS: (1) devtools evaluateJS accessing document.all properties crashes/brands-fail — grip serialization or brand-check interaction with the custom proxy class, devtools-only path, in-page semantics correct; (2) LegacyFactoryFunction omitted (document.all callable form unimplemented — essentially unused on real web); (3) namedItem multiple-match sub-collection path untested. Follow-ups non-blocking.
-Implementation notes for upstream port: JSCLASS_EMULATES_UNDEFINED exists in vendored SM 153 (=64); proxies accept custom classes via NewProxyObject class arg; servo previously passed ptr::null() for all DOM proxies — the plumbing added in wrap.rs is generic (any proxy interface can now carry a custom class).
-
-## HTMLAllCollection FINAL — stable + fully verified (endgame-18)
-
-Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — proxy objects NEED SpiderMonkey's proxy class ops (proxy_Finalize/ProxyObject::trace/objectMoved + ProxyObjectOps for all property access). Fix: clone the exported `js::ProxyClass` (JS_PUBLIC_DATA, available in bindgen as js::jsapi::ProxyClass) and OR JSCLASS_EMULATES_UNDEFINED into flags — `html_all_collection_proxy_class()` in script_bindings/utils.rs (lazy OnceLock, SyncClass wrapper for Send/Sync). Final verification all green: typeof=undefined, falsy, loose-eq true, strict-eq false, instanceof Object true; in-page len/indexed/namedItem/keys all work (len=5, i0=HTML, nm=object, keys=7); devtools-path eval access works; NO crashes; YouTube results render fully unassisted (channel cards, shelves, sponsored). The multi-session YouTube invisible-results defect chain is CLOSED at the engine level.
-
-## Post-fix breadth verification (endgame-19)
-
-Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
-
-## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
+Verification gate once built: document.all === undefined must be FALSE, typeof "undefined", falsy,
+document.all.length == element count, document.all('id') lookup; then YouTube search results render.
