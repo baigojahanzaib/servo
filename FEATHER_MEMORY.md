@@ -3338,6 +3338,39 @@ only. Next step if resumed: instrument yt-core-image custom element reactions, o
 YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
 fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
 observer-root geometry on youtube specifically is the lead).
+<<<<<<< HEAD
 ||||||| parent of a527049da (memory: harness progress)
 - matrix-harness-2 (2026-11-26): hang FIXED — root cause was location.href navigation never replying to evaluateJS + blocking recv; now fire-and-forget + socket timeouts + reconnects, harness completes all 13 pages end-to-end. REMAINING narrowed bug: evaluateJS results never arrive even on stable pages (every collection times out; listTabs/getTarget verified working). Next: manually probe evaluateJS reply format against a live instance — compare with /tmp/dt.py session transcripts; possibly reply key differs or consoleActor resolution picks a worker actor.
 - matrix-harness-3 (2026-11-26): eval replies flow now (Ok-envelope unwrapped; navigateTo primitive works and acks) — BUT two live-probed facts define the remaining bug: (1) evaluateJS SANDBOX quirk — even READING location.href returns None, strongly suggesting eval runs in a sandbox/scope that isn't the page's window (or location access specifically broken); (2) navigateTo DROPS the devtools connection entirely (EOFError right after the ack) — harness reconnects, but reconnection timing vs page load is racy. Symptom: every page collects the FIRST page's results (visibility probes everywhere) — either eval targets a stale sandbox or MATRIX_RESULTS lookup hits the wrong global. NEXT: eval `typeof window` / `typeof document` / `1+1` in sequence after nav+reconnect and compare against pre-nav; check servo's console.rs whether evaluateJS uses a sandbox global (grep components/devtools/actors/console.rs for sandbox/compile).
+||||||| parent of 443c970735d (memory: sec1zt90 prefers-color-scheme shipped)
+=======
+
+sec1zt90 — prefers-color-scheme SHIPPED (feather#205, 2026-11-26, linux lane):
+Sites were locked light because feather never called the engine's existing theme API. Mechanism
+chain documented for future embedding work: servo engine support is COMPLETE upstream —
+webview.notify_theme_change(Theme), runtime MQL re-eval + restyle (upstream tests webview.rs
+test_theme_change prove it); the gaps were all shell-side. Symptom: site renders light despite
+OS dark mode → check in order: (1) does the shell ever call notify_theme_change (feather didn't),
+(2) does the OS-theme detection layer work on the platform — winit reports NOTHING on X11, use
+XDG portal org.freedesktop.appearance/color-scheme with gsettings fallback (feather platform.rs
+linux_system_dark probe thread), (3) CRITICAL non-obvious one: on ControlFlow::Wait event loops,
+static pages produce no frames, so a poller thread updating shared state is useless without a
+wake that forces a redraw — feather's servo-wake handler deliberately never redraws (flood
+protection), needed a separate UiRefresh wake kind. Negative result: gdbus portal errors return
+fast (~7ms) when no portal service, no hang risk. Verification trap: matchMedia captured in a
+page-load JS object is STALE — re-evaluate live. Also: JS matchMedia and stylesheet @media
+evaluate through different paths in servo — verify BOTH. Bonus fixed: shell chrome follows OS
+dark on Linux now (same detection fed both).
+>>>>>>> 443c970735d (memory: sec1zt90 prefers-color-scheme shipped)
+
+sec1zt91 — google SERP layout investigation: repro-path head start (2026-11-26, linux lane):
+The captcha wall is NOT IP-level for plain fetches: curl with a plain Firefox UA gets a REAL
+200 SERP (93KB html) — the wall triggers on feather's behavioral fingerprint only. BUT the
+local-repro plan has a catch: the SERP html carries almost NO inline critical css (3 style
+blocks totaling 228 chars, zero flex/grid/margin-auto in them) — google's layout CSS is in
+EXTERNAL stylesheets. A localhost repro must also fetch+rewrite the external css/js links,
+or use a rewriting proxy. Fetched html saved at /tmp/elltest/serp.html (gone on reboot —
+refetch with: curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 Firefox/128.0"
+"https://www.google.com/search?q=test"). Next steps: extract <link>/css urls from the html,
+fetch them, rewrite references to local paths, serve, screenshot feather vs expectation,
+identify broken mechanism with scenario-matrix minimal repros.
