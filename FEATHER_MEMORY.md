@@ -2664,6 +2664,24 @@ Sites re-tested after the document.all fix on the stable build: YouTube results+
 Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
 
 ## window.open panic root cause + fix (post-alpha): `windowproxy.open` did `maybe_entry_global().map(|g| g.as_window().Document())` — as_window() PANICS when the entry global isn't a Window (devtools evaluateJS frames, possibly WASM instantiation). Reproduced 2/2 via devtools eval of window.open on trivial page (example.com) — Script thread panic "expected a Window scope" then webrender cascade kills the app. Fixed on feather-engine: only use entry global when it downcasts to Window, else fall back to the browsing context's active document. NOTE: real-link target=_blank clicks don't hit this (entry global IS the window during event dispatch) — devtools-eval-driven testing did. Upstreamable bugfix, small.
+youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
+with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
+working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
+readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
+planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
+search, watch, playback. This closes the alpha-critical YouTube cluster.
+
+sec1zt36 — post-document.all regression sweep (negative results + one environmental)
+====================================================================================
+- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
+- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
+- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
+  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
+  chase engine causes.
+||||||| parent of 8e00d9628 (memory: aux-popup upstream RefCell blocker filed)
+=======
+
+## Aux-popup upstream blocker (filed): after the windowproxy entry-global fix, window.open gets further but hits `RefCell already borrowed` at script_thread.rs handle_loads_complete / documents.borrow_mut().insert — re-entrancy in the aux browsing context document load path. This is upstream servo popup-path breakage (unexercised in embedding), NOT shell-adoption-specific — popups would crash the same way in any embedder that builds the requested webview. NOTE: window.open was NEVER safe in feather — it panicked even before aux shell support (the entry-global panic fires before the constellation consults the embedder), so the shell's adoption support is strictly additive, no regression either way. Next step when prioritized: backtrace the borrow conflict (RUST_BACKTRACE=1), likely the documents RefCell held across a re-entrant load callback in the initial-about-blank aux document path.
 ||||||| parent of 5ca51d09be0 (memory: document.all verification PASSED end-to-end — YouTube results render)
 ||||||| parent of acd75309d67 (memory: document.all verification PASSED end-to-end — YouTube results render)
 
@@ -2700,18 +2718,3 @@ The document.all mission is COMPLETE. Verification evidence: screenshots + eval 
 devin-d3790f631f184a44862d36d5fb5f39e4.
 
 sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
-==================================================================================
-youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
-with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
-working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
-readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
-planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
-search, watch, playback. This closes the alpha-critical YouTube cluster.
-
-sec1zt36 — post-document.all regression sweep (negative results + one environmental)
-====================================================================================
-- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
-- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
-- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
-  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
-  chase engine causes.
