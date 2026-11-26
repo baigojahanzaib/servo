@@ -3756,7 +3756,6 @@ Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 ne
 
 ## matrix-sweep-rounds-7-9 (2026-11-27) — core CSS comprehensively solid
 - css-position 7/7 (sticky pinning verified incl. scroll behavior), grid-advanced 7/7 (template areas/spanning/auto-placement/fr/minmax), css-values 10/10 (calc/clamp/minmax/custom-props incl runtime setProperty). PRs #245/#246/#247. PATTERN ESTABLISHED: WPT fail-density in the spec map is edge-subtest noise, core mechanisms solid. Matrix CSS coverage approaching saturation — next high-value targets are non-CSS: websockets (772 fail expectations in map, completely untested in matrix), streams, shadow-dom deep. WebSocket needs ws server in matrix harness — moderate complexity, high value.
-||||||| parent of 6358e59b685 (memory: sec1zt124 retention backward-seek verified-failing — four defects isolated)
 ## sec1zt124 — retention backward-seek VERIFIED-FAILING on real YouTube (2026-11-27) — four concrete defects isolated
 Retention implementation (engine 60a01938a43) compile-clean and pushed, but live verification FAILS the primary criterion: backward seek 16s→2s freezes at 0.15s 10+s with paused=false (starvation signature), reproduced twice. No rust panics. Negative results mandatory-indexed:
 - Symptom: re-feed pushes error `result=Err(Flushing) level=0` → check: refeed-vs-flush timing in sourcebuffer refeed_retained vs gstreamer player seek_reset — the pipeline is STILL FLUSHING when retained fragments are re-pushed. handle_seek refeeds synchronously but the pipeline reset runs on the detached thread (sec1zt82 design) — the two paths race. FIX DIRECTION: defer refeed until flush-stop completes, or gate refeed pushes on the appsrc being back in non-flushing state.
@@ -3768,3 +3767,6 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 - PRE-EXISTING unrelated: initial playback starts then freezes (~1.7s/8.5s) despite 60s buffer + readyState 4 until v.play() nudge — separate engine defect, present before any seek.
 - Evidence: /tmp/yt-seek-test.log, /tmp/yt-seek-test2.log on the linux VM; recording in the session artifacts.
 - DO NOT open the PR until a clean single backward seek survives.
+
+## matrix-rounds-10-12 (2026-11-27)
+- websockets 4/4 (harness embeds dependency-free RFC6455 echo server on 8472 — close handshake needs server close-echo), focus-events 10/10, drag-drop 3/6 honest absence (no DragEvent.webidl in servo at all, draggable commented out — engine-scale, sites feature-detect safely). PRs #248/#249/#250.
