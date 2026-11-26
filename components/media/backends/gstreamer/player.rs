@@ -587,7 +587,6 @@ static LEAKED_PLAYERS: std::sync::atomic::AtomicUsize = std::sync::atomic::Atomi
 /// exactly as safe as the original drop-time dispose. Fixes the permanent
 /// per-video retention measured at ~140MB per navigate-away (sec1zt86).
 struct PendingDispose {
-    inner: Arc<Mutex<PlayerInner>>,
     player: gstreamer_play::Play,
     queued_at: std::time::Instant,
 }
@@ -596,9 +595,8 @@ static PENDING_DISPOSE: std::sync::LazyLock<Mutex<Vec<PendingDispose>>> =
     std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 static REAPER_SPAWNED: std::sync::Once = std::sync::Once::new();
 
-fn queue_deferred_dispose(inner: Arc<Mutex<PlayerInner>>, player: gstreamer_play::Play) {
+fn queue_deferred_dispose(player: gstreamer_play::Play) {
     PENDING_DISPOSE.lock().unwrap().push(PendingDispose {
-        inner,
         player,
         queued_at: std::time::Instant::now(),
     });
@@ -610,11 +608,11 @@ fn queue_deferred_dispose(inner: Arc<Mutex<PlayerInner>>, player: gstreamer_play
                 let mut pending = PENDING_DISPOSE.lock().unwrap();
                 let mut still_pending = Vec::new();
                 for entry in pending.drain(..) {
-                    let inner_refs = Arc::strong_count(&entry.inner);
                     let play_refs = entry.player.ref_count();
-                    // Same invariant as the drop-time check, shifted by exactly
-                    // the queue's own references: count 1 means only we hold it.
-                    if inner_refs == 1 && play_refs == 1 {
+                    // count 1 means only the queue's own clone references the
+                    // object — the exact drop-time invariant, shifted by the
+                    // queue's reference.
+                    if play_refs == 1 {
                         eprintln!("[playerleak] deferred dispose firing after {:?}",
                             entry.queued_at.elapsed());
                         // SAFETY: identical to the drop-time dispose — nobody
@@ -622,7 +620,6 @@ fn queue_deferred_dispose(inner: Arc<Mutex<PlayerInner>>, player: gstreamer_play
                         unsafe {
                             entry.player.run_dispose();
                         }
-                        drop(entry.inner);
                     } else {
                         still_pending.push(entry);
                     }
@@ -1390,7 +1387,12 @@ impl Drop for GStreamerPlayer {
                 // Do NOT dispose now — but do not leak permanently either:
                 // the blocking refs are transient in-flight bus messages, so
                 // queue for deferred dispose once they drain (sec1zt86).
-                queue_deferred_dispose(inner, player);
+                // Only the player is queued: inner contains the signal adapter
+                // which itself holds a strong glib ref on the play object —
+                // queuing inner would pin the object through our own queue and
+                // the refcount would never drain (sec1zt87 mechanism).
+                drop(inner);
+                queue_deferred_dispose(player);
                 return;
             }
             unsafe {
