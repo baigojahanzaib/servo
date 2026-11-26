@@ -1890,3 +1890,9 @@ Protocol: signed-in reddit, SERVO_MEMDUMP timed dumps, deep scroll 8-24 x 1000-1
 What the numbers mean: image decoded-byte mass is now BOUNDED FLAT across infinite scroll — the single-copy-at-a-time invariant holds: visible+protected images cost decoded bytes, everything else costs only encoded bytes (10-20x smaller) until scrolled back. The residual encoded retention (~tens of MB scaling with distinct images seen) is the documented insurance cost. Remaining documented residuals: synchronous re-decode on scroll path (unmeasured jank risk, proper async is the rejected-cheap-path lesson of sec1zs), registry entry accumulation (KB-scale), DOM text-node mass 272MB (next category — untouched).
 
 Mission structure as built: stage 1 byte-swap machinery (sole-owner residency, Drop-balanced accounting), stage 2 eviction unit + geometric verdict + scroll-driven re-upload, stage 3 async REJECTED with evidence (sync is the design), stage 4 dual-margin hysteresis + 256MB backstop budget + default-on in feather shell (feather#140 merged).
+
+## requestIdleCallback implementation (2026-11-26, feather-engine 402c303cf)
+
+Symptom: youtube blank white after rIC landed (was grey skeleton before) → UNRESOLVED whether progress (hydration advanced past skeleton into broken real-content render) or regression — bisect by reverting rIC locally and comparing. Mechanism note: IdleCallbackTick no-op frame callback keeps the rAF pump alive while any idle callback is pending; recursive idle re-registration (common site pattern) = continuous rAF-rate ticking = CPU cost — not spec-true idle detection, documented v1 approximation.
+
+Lesson: generated webidl callbacks invoke via `callback.Call__(cx, args..., ExceptionHandling::Report)` NOT `.call()`; dictionary fields without defaults generate as Option<T>; methods need cx param only when codegen decides (compile errors tell); CrossProcessInstant needs #[no_trace] in dom structs; double returns need Finite<f64> wrap.
