@@ -3719,3 +3719,7 @@ Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 ne
 - cookieStore DIAGNOSED: exposes fine but roundtrip returns null after set — real behavioral bug in write/persist path, stays reverted. cookiestore-diag branch has the pref flip for the next investigator.
 - Gamepad merged #235, backdrop-filter merged #234, baseline merged #233.
 - OPEN USER ITEM: x.com click-glitch — needs deeper repro; matrix expansion vs spec-compliance cross-ref open.
+
+## x-click-glitch-mechanism-verified (2026-11-27)
+- PR #238: shadow click-activation probes green — anchor activation + listener delivery inside shadow roots both correct post-shadow-input-fix. The clickable-text glitch class is mechanism-verified fixed. USER RE-TEST NEEDED on live authenticated x.com — prediction: fixed. If user reports still broken, the residual is NOT shadow-retargeting — next suspects: hit-test z-index class or selection-drag interference.
+- Matrix state: shadow-input 7/7. Total probe count now 185.
