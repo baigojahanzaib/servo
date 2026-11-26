@@ -1803,3 +1803,8 @@ REPO ARTIFACTS awaiting cleanup after publish: branches alpha-payload (160MB) + 
 MITIGATION (shell-new/src/app.rs): built-in per-navigation injection of an unhide snippet — MutationObserver + 2s interval stripping `hidden` from ytd-two-column-search-results-renderer once child renderers exist. Verified on the shipping alpha binary via the persist-eval channel (same execution path): full results render — chips, thumbnails, live badges, counts. Screenshot evidence: work/yt-results-rendering.png.
 VERIFICATION CHANNEL NOTE: /tmp/feather-eval-persist.js (merged in PR #154) re-injects on every navigation — allows testing any persistent-JS mitigation on the shipping binary WITHOUT rebuilding. Path on Windows is C:\tmp\feather-eval-persist.js (rust /tmp = drive root tmp).
 SYMPTOM INDEX: youtube-search-results-blank → RESOLVED-BY-MITIGATION; underlying engine symptom (resin sanitizer timing race) documented as wontfix-engine / works-as-fast-as-it-boots.
+
+## ALPHA RELEASE PUBLISHED (2026-11-26 23:40) — https://github.com/baigojahanzaib/feather/releases/tag/v0.1.0-alpha
+User provided org-scoped GITHUB_USER_PAT secret — NOTE: it is marked "(not in environment)" so it must be bound explicitly per-exec: env={"GH_TOKEN": "secret:org:GITHUB_USER_PAT"}. `gh release create` then works fine (159MB asset upload took ~4 min).
+Cleanup done: alpha-payload + alpha-release-workflow branches deleted, PR #159 closed, tag v0.1.0-alpha kept (release lives on it).
+IN FLIGHT: mitigation release rebuild — when done, replace the release asset: cp exe to staging, clean-env verify, rezip, `gh release upload v0.1.0-alpha feather-0.1.0-alpha.zip --clobber` (delete old asset first if needed) — the refreshed zip adds working YouTube search results.
