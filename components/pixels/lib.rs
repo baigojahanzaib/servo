@@ -320,6 +320,20 @@ pub struct SharedRasterImage {
     pub is_opaque: bool,
 }
 
+/// Decoded-byte residency for image-memory eviction. Interior-mutable inside the
+/// shared RasterImage so every pin holder observes eviction through the same allocation
+/// (the arc-swap-at-cache-level design cannot work — see FEATHER_MEMORY).
+/// Global resident decoded-byte counter across all pipelines — the enforcement
+/// budget must be global because heavy-site memory distributes across many small
+/// iframe pipelines, each individually under any per-pipeline limit.
+pub static GLOBAL_RESIDENT_DECODED_BYTES: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
+pub enum DecodedBytes {
+    Resident(Arc<Vec<u8>>),
+    Evicted,
+}
+
 #[derive(Clone, MallocSizeOf)]
 pub struct RasterImage {
     pub metadata: ImageMetadata,
@@ -327,8 +341,17 @@ pub struct RasterImage {
     pub id: Option<ImageKey>,
     pub cors_status: CorsStatus,
     pub load_time: Option<CrossProcessInstant>,
+    /// Interior-mutable decoded residency — shared across clones so eviction is
+    /// visible to every pin holder through the same logical image.
+    #[ignore_malloc_size_of = "residency mirrors bytes; counting both double-counts"]
+    pub decoded_residency: std::sync::Arc<std::sync::RwLock<DecodedBytes>>,
     #[conditional_malloc_size_of]
     pub bytes: Arc<Vec<u8>>,
+    /// Encoded source bytes retained for re-decode after decoded-byte eviction
+    /// (image memory eviction: decoded bytes are ~10-20x larger, so retaining
+    /// the source is cheap insurance for re-materialization).
+    #[conditional_malloc_size_of]
+    pub encoded_bytes: Option<Arc<Vec<u8>>>,
     pub frames: Vec<ImageFrame>,
     /// Whether or not all of the frames of this image are opaque.
     pub is_opaque: bool,
@@ -422,9 +445,61 @@ impl RasterImage {
             size.cast(),
             format,
             alpha_mode,
-            self.bytes.clone(),
+            self.materialize_decoded(),
             self.frames[0].byte_range.clone(),
         )
+    }
+
+    /// Materialize the decoded byte buffer, re-decoding from the retained encoded
+    /// source if it was evicted. This is the ONLY correct way to read decoded bytes
+    /// once image-memory eviction is active. Synchronous v1: re-decode happens on
+    /// the calling thread (async predictive re-decode is a later refinement).
+    pub fn materialize_decoded(&self) -> Arc<Vec<u8>> {
+        {
+            let guard = self.decoded_residency.read().unwrap();
+            if let DecodedBytes::Resident(ref bytes) = *guard {
+                return bytes.clone();
+            }
+        }
+        let mut guard = self.decoded_residency.write().unwrap();
+        // Re-check after upgrading: another thread may have materialized first.
+        if let DecodedBytes::Resident(ref bytes) = *guard {
+            return bytes.clone();
+        }
+        let encoded = self
+            .encoded_bytes
+            .as_ref()
+            .expect("Evicted image without retained encoded bytes");
+        let redecoded = load_from_memory(encoded, self.cors_status)
+            .expect("Re-decode of previously-decoded image failed");
+        let bytes = redecoded.bytes.clone();
+        GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+        *guard = DecodedBytes::Resident(bytes.clone());
+        bytes
+    }
+
+    /// Evict decoded bytes if this is a static image with retained encoded bytes.
+    /// Returns the number of bytes freed. Animated images are never evicted (v1).
+    pub fn evict_decoded(&self) -> usize {
+        if self.frames.len() != 1 || self.encoded_bytes.is_none() {
+            return 0;
+        }
+        let mut guard = self.decoded_residency.write().unwrap();
+        match std::mem::replace(&mut *guard, DecodedBytes::Evicted) {
+            DecodedBytes::Resident(bytes) => {
+                GLOBAL_RESIDENT_DECODED_BYTES.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+                bytes.len()
+            },
+            DecodedBytes::Evicted => 0,
+        }
+    }
+
+    /// Resident decoded byte count, 0 if evicted — used by the eviction budget.
+    pub fn resident_decoded_len(&self) -> usize {
+        match &*self.decoded_residency.read().unwrap() {
+            DecodedBytes::Resident(bytes) => bytes.len(),
+            DecodedBytes::Evicted => 0,
+        }
     }
 
     pub fn frame_data(&self, index: usize) -> Option<&ImageFrame> {
@@ -447,16 +522,17 @@ impl RasterImage {
         let (format, data, should_animate) = match self.format {
             PixelFormat::BGRA8 => (
                 WebRenderImageFormat::BGRA8,
-                GenericSharedMemory::from_arc_vec(self.bytes.clone()),
+                GenericSharedMemory::from_arc_vec(self.materialize_decoded()),
                 self.should_animate(),
             ),
             PixelFormat::RGBA8 => (
                 WebRenderImageFormat::RGBA8,
-                GenericSharedMemory::from_arc_vec(self.bytes.clone()),
+                GenericSharedMemory::from_arc_vec(self.materialize_decoded()),
                 self.should_animate(),
             ),
             PixelFormat::RGB8 => {
-                let frame_bytes = &self.bytes[frame.byte_range.clone()];
+                let decoded = self.materialize_decoded();
+            let frame_bytes = &decoded[frame.byte_range.clone()];
                 let mut bytes = Vec::with_capacity(frame_bytes.len() / 3 * 4);
                 for rgb in frame_bytes.chunks(3) {
                     bytes.extend_from_slice(&[rgb[2], rgb[1], rgb[0], 0xff]);
@@ -526,7 +602,7 @@ impl RasterImage {
             format: self.format,
             id: self.id,
             cors_status: self.cors_status,
-            bytes: Arc::new(GenericSharedMemory::from_arc_vec(self.bytes.clone())),
+            bytes: Arc::new(GenericSharedMemory::from_arc_vec(self.materialize_decoded())),
             frames: self.frames.clone(),
             is_opaque: self.is_opaque,
         })
@@ -569,11 +645,21 @@ pub fn load_from_memory(buffer: &[u8], cors_status: CorsStatus) -> Option<Raster
                 return None;
             };
 
-            if image_decoder.is_animated() {
+            let mut image = if image_decoder.is_animated() {
                 decoding::decode_animated_image(cors_status, image_decoder.animated_decoder())
             } else {
                 decoding::decode_static_image(cors_status, image_decoder.decoder())
+            };
+            if let Some(ref mut image) = image {
+                image.encoded_bytes = Some(Arc::new(buffer.to_vec()));
+                if std::env::var("FEATHER_IMGMEM").is_ok() {
+                    eprintln!("IMGMEM probe: decoded +{}KB", image.bytes.len() / 1024);
+                }
+                GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(image.bytes.len(), std::sync::atomic::Ordering::Relaxed);
+                *image.decoded_residency.write().unwrap() =
+                    DecodedBytes::Resident(image.bytes.clone());
             }
+            image
         },
     }
 }

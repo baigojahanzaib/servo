@@ -291,6 +291,8 @@ pub(crate) fn decode_static_image(
         format: PixelFormat::RGBA8,
         frames: vec![frame],
         bytes: Arc::new(rgba.into_vec()),
+        encoded_bytes: None,
+        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(crate::DecodedBytes::Evicted)),
         id: None,
         cors_status,
         load_time: None,
@@ -376,6 +378,8 @@ where
         id: None,
         format: PixelFormat::RGBA8,
         bytes: Arc::new(bytes),
+        encoded_bytes: None,
+        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(crate::DecodedBytes::Evicted)),
         is_opaque,
         loop_count: Some(loop_count),
     })

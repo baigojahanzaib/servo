@@ -171,7 +171,7 @@ impl Document {
                 frame.width,
                 frame.height,
                 Arc::new(GenericSharedMemory::from_arc_vec(
-                    raster_image.bytes.clone(),
+                    raster_image.materialize_decoded(),
                 )),
                 raster_image.frames[0].byte_range.clone(),
                 format,

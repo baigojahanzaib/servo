@@ -1749,3 +1749,11 @@ LEAK COST MEASURED: 7-13 leaked players per 8-scroll reddit session (mean ~11) �
 Calibration: healthy progressive-mp4 teardown does NOT trip the leak path (0 leaks) — the threshold distinguishes correctly.
 
 Symptom index — symptom: SIGSEGV in Script#3 during/after scrolling video-heavy feeds, preceded by gst object-finalized assertions → check: GStreamerPlayer::drop disposal race (CONFIRMED cause class — fixed by intentional-leak mitigation), scroll input handling (ruled out), [playerleak] counter in stderr (diagnostic: nonzero count means the hazardous condition occurred and was survived).
+
+## sec1zm — image-memory stage 1: byte-swap machinery resurrected onto current feather-engine (2026-11-26)
+
+Applied the imgmem-wip machinery (284-line diff, 4 files) cleanly onto current feather-engine: encoded_bytes retention at decode, DecodedBytes interior-mutable residency (Resident/Evicted behind RwLock, shared across all pin holders through the same allocation), materialize_decoded() accessor (re-decodes synchronously from encoded source when evicted; re-checks after write-lock upgrade), evict_decoded() (static images only, frames.len()==1), global resident-byte counter, env-gated enforcement (FEATHER_IMGMEM=1, 384MB budget — default OFF so behavior-neutral). RasterImage keeps its original bytes field for initialization; residency shares the same allocation (no duplication).
+
+Stage-1 verification gates PASSED: compile-clean; visual correctness on image-heavy sites (reddit feed + r/pics — photos/avatars/banners decode and paint correctly); memreport rows flow unchanged (image rows same order of magnitude as baseline modulo content variance). KNOWN COST: encoded_bytes retention is unconditional — every decoded image now also retains its encoded source (~10-20x smaller; est. +15-30MB on reddit-class pages). This is the design's intentional insurance payment, not a regression.
+
+CRITICAL REMINDER for stage 2 (restated so it can't be lost): byte eviction alone frees ZERO for any painted image in single-process servo — WR's CachedImageData::Raw holds a clone of the same Arc allocation (verified sec1zj). The stage-2 eviction unit must be (decoded residency + WR key deletion) together, with re-decode + re-upload on re-visibility. The byte-swap layer is necessary-but-insufficient scaffolding.
