@@ -26,6 +26,9 @@ mod imp {
     pub struct MseTrack {
         pub appsrc: gstreamer_app::AppSrc,
         pub eos: bool,
+        /// Set by seek_reset: the next push must re-sequence the stream in-band
+        /// (stream-start/caps/segment) before the first post-seek buffer.
+        pub needs_resequence: bool,
     }
 
     pub struct ServoMse {
@@ -60,6 +63,29 @@ mod imp {
             ghost.set_target(appsrc.static_pad("src").as_ref()).unwrap();
             ghost.set_active(true).unwrap();
             obj.add_pad(&ghost).expect("Could not add track pad");
+            {
+                let idc = id;
+                ghost.add_probe(gstreamer::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
+                    if let Some(gstreamer::PadProbeData::Event(ref ev)) = info.data {
+                        if ev.type_() == gstreamer::EventType::StreamStart {
+                            if let Some(s) = ev.structure() {
+                                eprintln!("[mse] STREAMSTART track={} struct={}", idc, s.to_string());
+                            }
+                        }
+                    }
+                    gstreamer::PadProbeReturn::Ok
+                });
+                let n = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+                ghost.add_probe(gstreamer::PadProbeType::BUFFER, move |_, info| {
+                    if let Some(gstreamer::PadProbeData::Buffer(ref b)) = info.data {
+                        let c = n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if c % 20 == 0 || c < 3 {
+                            eprintln!("[mse] FLOW track={} n={} bytes={} pts={:?}", idc, c, b.size(), b.pts());
+                        }
+                    }
+                    gstreamer::PadProbeReturn::Ok
+                });
+            }
 
             appsrc.set_caps(None::<&gstreamer::Caps>);
             appsrc.set_max_bytes(MAX_SRC_QUEUE_SIZE);
@@ -69,8 +95,25 @@ mod imp {
 
             // Sync state only after the pad chain exists end-to-end, so the
             // src pad activation can actually start the streaming task.
-            let _ = appsrc.sync_state_with_parent();
-            tracks.insert(id, MseTrack { appsrc, eos: false });
+            let sr = appsrc.sync_state_with_parent();
+            let (_, cur, _) = appsrc.state(gstreamer::ClockTime::ZERO);
+            eprintln!("[mse] recreated appsrc sync={:?} state={:?}", sr, cur);
+            {
+                let a2 = appsrc.clone();
+                std::thread::spawn(move || {
+                    for w in [1u64, 2, 4] {
+                        std::thread::sleep(std::time::Duration::from_secs(w));
+                        let (_, st, _) = a2.state(gstreamer::ClockTime::ZERO);
+                        let pad = a2.static_pad("src");
+                        let (linked, peer) = match pad {
+                            Some(ref p) => (p.is_linked(), p.peer().map(|x| format!("{}:{}", x.parent_element().map(|e| e.name().to_string()).unwrap_or_default(), x.name()))),
+                            None => (false, None),
+                        };
+                        eprintln!("[mse] recreated appsrc +{}s level={} state={:?} linked={} peer={:?}", w, a2.current_level_bytes(), st, linked, peer);
+                    }
+                });
+            }
+            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false });
         }
 
         pub fn push_buffer(
@@ -95,10 +138,30 @@ mod imp {
                     self.obj().no_more_pads();
                 }
             }
-            let tracks = self.tracks.lock().unwrap();
-            let Some(ref t) = tracks.get(&track) else {
+            let mut tracks = self.tracks.lock().unwrap();
+            let Some(t) = tracks.get_mut(&track) else {
                 return Err(gstreamer::FlowError::Error);
             };
+            if t.needs_resequence {
+                t.needs_resequence = false;
+                if let Some(srcpad) = t.appsrc.static_pad("src") {
+                    let stream_id = format!("servomse-{track}-reseq");
+                    let r1 = srcpad.push_event(
+                        gstreamer::event::StreamStart::builder(&stream_id).build(),
+                    );
+                    // No caps event: track caps are ANY (typefind re-detects
+                    // on the new stream-start), and gst_event_new_caps rejects
+                    // non-fixed caps with a null-event crash (event.rs:149).
+                    let r2 = true;
+                    let segment =
+                        gstreamer::FormattedSegment::<gstreamer::format::Bytes>::new();
+                    let r3 = srcpad.push_event(gstreamer::event::Segment::new(&segment));
+                    eprintln!(
+                        "[mse] resequence inject track={} streamstart={} caps={} segment={}",
+                        track, r1, r2, r3
+                    );
+                }
+            }
             let size = data.len() as u64;
             // Quota enforcement: appsrc accepts pushed buffers unconditionally
             // (max-bytes only drives the need/enough-data signals), so without
@@ -114,7 +177,9 @@ mod imp {
                 return Err(gstreamer::FlowError::Error);
             }
             let buffer = gstreamer::Buffer::from_slice(data);
-            t.appsrc.push_buffer(buffer)
+            let r = t.appsrc.push_buffer(buffer);
+            eprintln!("[mse] push track={} size={} result={:?} level={}", track, size, r, t.appsrc.current_level_bytes());
+            r
         }
 
         /// EOS is per-stream in gstreamer but MSE endOfStream ends the whole
@@ -134,20 +199,37 @@ mod imp {
         /// §1q), this design avoids injection entirely. Validated in the isolated
         /// gst harness: playback resumes cleanly with continuous position.
         pub fn seek_reset(&self) {
+            eprintln!("[mse] seek_reset enter");
             // Hold the tracks lock for the whole reset: pushes arriving
             // mid-reset would otherwise land in a dying appsrc (or a removed
             // track) and be silently lost, permanently starving the demuxer —
             // the post-seek resume-stall race. Blocking pushes until the new
             // appsrcs are in place makes the handover lossless.
             let mut tracks = self.tracks.lock().unwrap();
-            for pad in self.obj().src_pads() {
-                let _ = pad.push_event(gstreamer::event::FlushStart::new());
-                let _ = pad.push_event(gstreamer::event::FlushStop::new(true));
-                
+            if std::env::var("SERVO_MSE_NOFLUSH").is_err() {
+                for pad in self.obj().src_pads() {
+                    let _ = pad.push_event(gstreamer::event::FlushStart::new());
+                    let _ = pad.push_event(gstreamer::event::FlushStop::new(true));
+                }
             }
-            let ids: Vec<u64> = tracks.keys().copied().collect();
-            for id in ids {
-                self.reset_track_locked(&mut tracks, id);
+            // In-band re-sequencing design (sec1zt75): do NOT recreate the
+            // appsrcs — recreation reliably dies in a live playbin3 pipeline
+            // (first post-seek push returns not-linked within milliseconds).
+            // Instead mark every track for re-sequencing: the next push_buffer
+            // injects stream-start/caps/segment on the appsrc src pad at a
+            // moment when the streaming task is guaranteed idle (no post-seek
+            // data has been pushed yet), which is the one injection timing
+            // that cannot race the stream — the §1q wedge does not apply.
+            if std::env::var("SERVO_MSE_RECREATE").is_ok() {
+                let ids: Vec<u64> = tracks.keys().copied().collect();
+                for id in ids {
+                    self.reset_track_locked(&mut tracks, id);
+                }
+            } else {
+                for t in tracks.values_mut() {
+                    t.needs_resequence = true;
+                }
+                eprintln!("[mse] seek_reset: tracks marked for in-band resequence");
             }
         }
 
@@ -166,6 +248,7 @@ mod imp {
                 return;
             };
             let _ = ghost.set_target(None::<&gstreamer::Pad>);
+            let _ = old.appsrc.set_state(gstreamer::State::Null);
             let _ = obj.remove(&old.appsrc);
             drop(old);
 
@@ -173,15 +256,31 @@ mod imp {
                 .build()
                 .map(|elem| elem.downcast::<gstreamer_app::AppSrc>().unwrap())
                 .expect("Could not create appsrc element");
-            obj.add(&appsrc).expect("Could not add appsrc to servomse bin");
+            // Link BEFORE adding to the bin: gst_bin_add immediately starts the
+            // state transition in a running pipeline, and the appsrc streaming
+            // task dies with not-linked if it starts before the pad chain exists.
             ghost.set_target(appsrc.static_pad("src").as_ref()).unwrap();
+            // The messy teardown of the old appsrc (removed while PLAYING) can
+            // leave the ghost's proxy chain deactivated — downstream pushes then
+            // return not-linked even though the peer exists. Force reactivation.
+            let _ = ghost.set_active(false);
+            let _ = ghost.set_active(true);
+            obj.add(&appsrc).expect("Could not add appsrc to servomse bin");
+            eprintln!("[mse] reset_track {} recreated, ghost peer: {:?}", id, ghost.peer().map(|p| format!("{}:{}", p.parent_element().map(|e| e.name().to_string()).unwrap_or_default(), p.name())));
+            let idc = id;
+            ghost.add_probe(gstreamer::PadProbeType::BUFFER, move |_, info| {
+                if let Some(gstreamer::PadProbeData::Buffer(ref b)) = info.data {
+                    eprintln!("[mse] OUT track={} bytes={} pts={:?}", idc, b.size(), b.pts());
+                }
+                gstreamer::PadProbeReturn::Ok
+            });
             appsrc.set_caps(None::<&gstreamer::Caps>);
             appsrc.set_max_bytes(MAX_SRC_QUEUE_SIZE);
             appsrc.set_block(false);
             appsrc.set_format(gstreamer::Format::Bytes);
             appsrc.set_stream_type(gstreamer_app::AppStreamType::Stream);
             let _ = appsrc.sync_state_with_parent();
-            tracks.insert(id, MseTrack { appsrc, eos: false });
+            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false });
         }
     }
 
