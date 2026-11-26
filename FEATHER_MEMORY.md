@@ -2629,3 +2629,7 @@ Sites re-tested after the document.all fix on the stable build: YouTube results+
 ## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
 
 ## New defect (post-alpha matrix): gmail.com marketing page renders fully, but clicking "Sign in" does NOT navigate (link likely target=_blank to accounts.google.com — popup/new-tab handling or link-activation defect candidate; needs repro with a minimal target=_blank test page). Filed for next investigation round.
+
+## target=_blank defect CONFIRMED (post-alpha matrix): minimal repro /tmp/vtest/blank1.html — normal link navigates ✓ but target=_blank click is a dead end: no new tab, no navigation, no visible feedback. Shell-new doesn't handle auxiliary browsing-context creation (embedder create-webview message). This explains gmail Sign-in non-navigation (target=_blank to accounts.google.com). Impact class: HIGH — oauth flows, external links, sign-in redirects across the real web. Fix site: shell-new embedder message handler for auxiliary context requests — should open a new tab.
+
+Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
