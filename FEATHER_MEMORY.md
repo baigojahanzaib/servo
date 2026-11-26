@@ -3743,3 +3743,7 @@ Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 ne
 ## writing-modes-ENGINE-SCALE (2026-11-27) — pref experiment negative, reverted
 - writing-mode parses correctly but computed is forced horizontal-tb — vertical layout unimplemented in servo layout engine, NOT a pref-gate quick win. Pref reverted deliberately (half-enabled worse than absent: CSS.supports lies). text-orientation has its own pref (layout.css.writing-mode.text-orientation.enabled) — same architectural situation. PR #241 + matrix round 6. css-conditional 6/6 green. :has() unsupported.
 - css-conditional spec area fully verified — @supports/@media/CSS.supports all correct.
+
+## ellipsis-scrollwidth-bug (2026-11-27) — upstreamable, precisely isolated
+- scrollWidth clamps to clientWidth when text-overflow:ellipsis applies (80 vs correct 433 control). Servo measures scroll overflow from the ellipsized text run not original content. Breaks truncation-detection tooltips everywhere. PR #243 matrix harness. NEXT: fix in layout ellipsis truncation — scope: measure pre-truncation width. FUNDING-MODEL candidate.
+- git lesson reconfirmed: squash-merges invalidate local commit hashes — always `git rebase origin/main` before pushing branches that raced merges; verify with merge-base --is-ancestor.
