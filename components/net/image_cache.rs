@@ -567,6 +567,13 @@ struct ImageCacheStore {
     /// Main struct to handle the cache of `WebRenderImageKey` and
     /// images that do not have a key yet.
     key_cache: KeyCache,
+
+    /// WebRender keys whose image data was deleted as part of the image-memory
+    /// eviction unit (decoded bytes + WR key together, FEATHER_IMGMEM). The next
+    /// cache read of such an image re-uploads it — reusing the same key, so the
+    /// permanent `raster_image.id` association stays valid and no mutation of
+    /// the shared image object is needed.
+    evicted_upload_keys: std::collections::HashSet<WebRenderImageKey>,
 }
 
 impl ImageCacheStore {
@@ -814,25 +821,41 @@ impl ImageCacheStore {
         if !*ENABLED {
             return;
         }
-        const RESIDENT_BYTE_BUDGET: usize = 384 * 1024 * 1024;
+        static RESIDENT_BYTE_BUDGET: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
+            std::env::var("FEATHER_IMGMEM_BUDGET_MB")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .unwrap_or(384)
+                * 1024 * 1024
+        });
         let mut resident_total =
             pixels::GLOBAL_RESIDENT_DECODED_BYTES.load(std::sync::atomic::Ordering::Relaxed);
         if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
             eprintln!("IMGMEM probe: enforcement entered, global resident={}MB", resident_total / (1024*1024));
         }
-        if resident_total <= RESIDENT_BYTE_BUDGET {
+        if resident_total <= *RESIDENT_BYTE_BUDGET {
             return;
         }
         // Coldest-first: iterate the LRU from the front.
         let keys: Vec<ImageKey> = self.completed_loads_lru.iter().cloned().collect();
         for key in keys {
-            if resident_total <= RESIDENT_BYTE_BUDGET {
+            if resident_total <= *RESIDENT_BYTE_BUDGET {
                 break;
             }
             if let Some(load) = self.completed_loads.get(&key) {
                 if let ImageResponse::Loaded(Image::Raster(image), _) = &load.image_response {
                     let freed = image.evict_decoded();
                     if freed > 0 {
+                        // Eviction unit: the WR key must die with the bytes — in
+                        // single-process mode WR holds a clone of the same Arc, so
+                        // byte eviction alone frees nothing for any painted image.
+                        if let Some(upload_key) = image.id {
+                            self.paint_api.update_images(
+                                self.webview_id.into(),
+                                vec![ImageUpdate::DeleteImage(upload_key)].into(),
+                            );
+                            self.evicted_upload_keys.insert(upload_key);
+                        }
                         debug!("IMGMEM evicted {freed} decoded bytes for {key:?}");
                         resident_total = resident_total.saturating_sub(freed);
                     }
@@ -918,6 +941,29 @@ impl ImageCacheStore {
                 ImageResponse::FailedToLoadOrDecode | ImageResponse::MetadataLoaded(_) => Err(()),
             }
         });
+        // Re-upload-on-read: if this image's WR key was deleted by the
+        // image-memory eviction unit, re-materialize the decoded bytes
+        // (re-decoding from the retained encoded source if necessary) and
+        // re-add the same key. Display lists referencing the key become
+        // correct again from the next rebuild.
+        if let Some(Ok((Image::Raster(ref raster_image), _))) = result {
+            if let Some(upload_key) = raster_image.id &&
+                self.evicted_upload_keys.contains(&upload_key)
+            {
+                let (descriptor, ipc_shared_memory, should_be_cached) =
+                    raster_image.webrender_image_descriptor_and_data_for_frame(0);
+                self.paint_api.add_image(
+                    upload_key,
+                    descriptor,
+                    SerializableImageData::Raw(ipc_shared_memory),
+                    should_be_cached,
+                );
+                self.evicted_upload_keys.remove(&upload_key);
+                if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
+                    eprintln!("IMGMEM re-uploaded image key {upload_key:?} on cache read");
+                }
+            }
+        }
         if matches!(result, Some(Ok(_))) {
             self.remove_from_lru(&key);
             self.completed_loads_lru.push_back(key);
@@ -1005,6 +1051,7 @@ impl ImageCacheFactory for ImageCacheFactoryImpl {
                 pipeline_id,
                 webview_id,
                 key_cache: KeyCache::new(),
+            evicted_upload_keys: std::collections::HashSet::new(),
                 svg_rasterization_task_store: SvgRasterizationTaskStore::default(),
             })),
             svg_id_image_id_map: Arc::new(Mutex::new(FxHashMap::default())),
