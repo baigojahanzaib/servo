@@ -3695,3 +3695,10 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 
 ## cookiestore-scoped (2026-11-26) — NOT a stub, real diagnosis needed
 - cookiestore.rs is 986 lines with full Get/Set/Delete/GetAll implementations — the roundtrip failure is a real behavioral bug, not an absence. Next step: enable dom_cookiestore_enabled in shell, run platform-apis matrix page, capture WHICH operation fails (set? get? promise resolution?). Probe detail in tests/scenarios/pages/platform-apis.html. If small: another upstreamable fix; if architectural: stays reverted.
+
+## sec1zt119 — MSE backward-seek: pipeline-reset design + the retention verdict
+- BREAKTHROUGH: pipeline state-cycle (Ready->Playing) on MSE seek makes decodebin3 re-plumb fresh — the reselection death of sec1zt84 bypassed. MUST run on a detached thread: synchronous set_state on feather's UI thread deadlocks the entire browser (streaming-thread join wedge — verified live, watchdog stall).
+- Verified post-reset: seek completes, position correct at target, zero stalls, buffered ranges cleared (handle_seek wiring confirmed present and working).
+- REMAINING root cause, precise: per MSE spec appended data PERSISTS across seeks, so spec-correct players (YouTube) track appends internally and never re-fetch after a backward seek — zero media GETs observed post-seek. Servo dropping the data is the spec violation; the page is correct.
+- THE FIX (designed, not yet implemented): fragment RETENTION in script SourceBuffer — infrastructure already exists (webm_indexer timecodes, scan_fmp4_timecodes, init_cache, per-fragment buffered indexing). Cache (timerange, bytes) per fragment, honor remove() eviction, and on seek proactively re-feed retained fragments covering the seek target into the resequenced stream. Timing caveat: appsrc rejects pushes while pipeline is mid-reset — re-feed needs retry/delay after reset completion.
+- Symptom index: 'mse post-seek total starvation, zero pushes, zero media GETs, buf=[] correct' → check: page is spec-correct, engine retention missing — do NOT iterate on page-side or pipeline-side anymore.
