@@ -1989,6 +1989,16 @@ Post-everything measurement (planar video + seek-ack fix + MSE quota, feather de
 Remaining open engineering item, deliberately not attempted: playerleak deferred-dispose-retry. Risk assessment: the dragons-condition refcount semantics are subtle (glib clone counting unverified), a wrong implementation resurrects the use-after-finalize crash class (alpha-critical) — risk-adjusted ROI poor vs the few-MB leak cost. Documented for a future careful session.
 ||||||| parent of d27770055 (memory: youtube hidden-attribute root cause chain)
 ||||||| parent of 4860cfd90 (memory: youtube final unhide chain + replacement mechanism + tooling patterns)
+
+## YouTube boot instability — OOM + define_properties panic (2026-11-26, macOS lane, round 3)
+
+Symptom: YouTube boot succeeds fully sometimes (video plays end-to-end), wedges mid-boot other times (stuck hidden, partial chrome), crashes outright occasionally ("Servo crashed! Send failed (Disconnected)") → check: SpiderMonkey memory pressure during boot (PRIME SUSPECT — live evidence: `uncaught exception: out of memory` in youtube main module + simultaneous script-thread panic), js_mem_max (ruled out as cause — unset/-1 = no configured cap), RSS system starvation (unverified — 1GB at crash time, needs profiling).
+
+CONFIRMED ENGINE DEFECT regardless of memory: `define_guarded_properties` in script_bindings/interface.rs unwraps `define_properties` — when SM allocation fails (OOM), JS_DefineProperties errors, the unwrap PANICS, the script thread dies, the whole pipeline crashes. The panic converts a recoverable page-level OOM into a fatal pipeline crash. Signature: `panicked at interface.rs:434 called Result::unwrap() on an Err value: ()`.
+
+Unifying theory for the YouTube hidden-attribute stall: boot corruption from memory pressure explains the run-to-run variance — full boot (video test), stuck-hidden boot (most common), crash boot. The final unhide step may be a victim of corruption rather than a missing primitive. Ruled out for the unhide this round: yt-navigate event chain (all events fire correctly on both watch AND search navs — start/player-updated/finish/page-data-updated), scheduler.postTask (unused by YouTube entirely), Trusted Types, CE machinery.
+
+Meaningful functionality baseline established: watch→watch SPA navigation flawless, miniplayer works, autoplay chain works, video playback correct post-planar-fix (F3 confirmed fixed end-to-end on real YouTube MSE).
 ||||||| parent of 0d6c6745b5d (memory: sec1zt3 — gst pipeline mass is the RSS-dominant frontier)
 
 ## sec1zt3 — THE NEXT MEMORY FRONTIER: gst decode-pipeline mass is RSS-dominant and reporter-invisible (2026-11-26)
@@ -2026,3 +2036,4 @@ Decisive test: identical r/pics 15×1500px deep-scroll with MALLOC_ARENA_MAX=2 e
 ## sec1zt8 — residual forensics post-arena-cap: the giant mmap is NOT arenas (2026-11-26)
 
 Post-cap measurement (MALLOC_ARENA_MAX=2, r/pics scrolled, RSS 4.5GB): a **single 2.6GB contiguous anonymous rw-p mmap** persists plus [heap] 173MB and several 100-250MB mmaps. Since arenas are now capped, the giant contiguous mmap CANNOT be glibc thread arenas — revised attribution: most likely **jemalloc's own extent regions** (jemalloc mmaps large contiguous chunks; heap-mapped was ~2GB in the uncapped measurement, consistent scale) — meaning the residual giant-mmap mass IS inside jemalloc accounting after all, and the real question becomes the sec1zt4 second gap: jemalloc-heap-allocated 1.68GB vs sum-of-category-rows — i.e. LIVE-but-unaccounted allocation inside the Rust heap, not retention. Suspects for unaccounted live jemalloc mass: (a) mozjs GC/JS objects measured only partially by gc-heap rows; (b) layout/script structures outside the reporter tree; (c) WR internal structures. RESUMPTION: compare jemalloc-heap-allocated vs heap-mapped and category-sum at matched timestamps; if allocated≈1.7GB ≈ giant mmap, the frontier is 'unaccounted live rust heap' — use heaptrack or jemalloc prof (MALLOC_CONF=prof:true) for definitive attribution. The arena-cap fix (feather#153 merged) already removed 3.2GB; the residual ~4.5GB decomposes as ~2GB jemalloc (partially unaccounted) + [heap]+glibc ~0.7GB + remainder TBD.
+||||||| parent of a49fec672 (memory: youtube boot instability — OOM + define_properties panic, unifying theory)
