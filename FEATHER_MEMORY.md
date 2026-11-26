@@ -2495,3 +2495,36 @@ keys on, probe that primitive directly. HIGHEST-VALUE TARGETS: servo's TrustedTy
 
 Symptom index: framework sanitizeDOMValue diverges ONLY for undefined input → check Trusted Types
 object identity/unwrap detection (isUnwrappable) and TT type-tag primitives in servo.
+
+## sec1zt31 — ROOT CAUSE FINAL: servo's document.all strict-equals undefined — breaks resin's branch
+
+DEFINITIVE A/B primitive probe:
+```
+                    SERVO      CHROME     spec-correct
+typeof document.all   undefined  undefined  undefined   ✓ both
+!document.all         true       true       true        ✓ both
+document.all == undefined  true  true       true        ✓ both (loose)
+document.all === undefined TRUE  FALSE      FALSE       ✗ SERVO WRONG
+```
+Servo's document.all behaves as if it literally IS undefined (passes typeof/falsy/loose by coincidence)
+instead of a real object with the [[IsHTMLDDA]] internal slot. Strict equality object-vs-undefined must
+ALWAYS be false per spec — servo returns true, proving document.all is not a proper object.
+
+MECHANISM CHAIN (complete, end to end):
+  resin inner sanitizer: vNk returns `(J,D,d,Q) => Q || Q===document.all ? W(J,D,d)(Q) : Q`
+  - chrome: undefined input → `undefined || (undefined===document.all→FALSE)` → falsy → PASSTHROUGH
+    → sanitizeDOMValue(undefined) returns undefined → hidden write falsy → results render.
+  - servo: undefined input → `undefined || (undefined===document.all→TRUE!)` → truthy → sanitizer
+    processes it → returns $_ = INNOCUOUS_STRING (TrustedHTML object, truthy) → tc.hidden = object
+    → truthy → RESULTS INVISIBLE FOREVER.
+YouTube invisible-results root cause = servo's document.all is not a real IsHTMLDDA object.
+
+ENGINE FIX: implement HTMLAllCollection correctly — a real object with [[IsHTMLDDA]] internal slot
+making typeof→"undefined", ToBoolean→false, loose==null/undefined→true, but identity/strict-equality
+as a normal object. Check components/script/dom/htmlallcollection (or wherever document.all is
+implemented) — likely currently returns undefined or a hacked value instead of the spec object.
+Verification gate: `document.all === undefined` must be false; YouTube search results render.
+
+Symptom index: ANY framework branch keying on `x === document.all` misfires in servo → check
+document.all implementation (IsHTMLDDA object identity). Indexed by mechanism: strict-equality
+with undefined incorrectly true for document.all.
