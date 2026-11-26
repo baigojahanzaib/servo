@@ -981,6 +981,21 @@ impl PaintTraversalHandler for DisplayListBuilder<'_> {
                 );
             }
 
+            if *pixels::IMGMEM_ENABLED {
+                // Initial verdict against an unscrolled viewport with the
+                // re-upload margin applied; scroll updates refine it later.
+                let viewport_h = self.paint_info.viewport_details.size.height;
+                let margin = viewport_h;
+                let near = rect.max.y > -margin && rect.min.y < viewport_h + margin;
+                pixels::IMAGE_GEOMETRY.write().unwrap().insert(
+                    image_key,
+                    pixels::ImageGeometryRecord {
+                        content_rect: [rect.min.x, rect.min.y, rect.max.x, rect.max.y],
+                        near_viewport: near,
+                    },
+                );
+            }
+
             if self
                 .paint_timing_handler
                 .check_if_paintable(rect, state.accumulated_opacity)

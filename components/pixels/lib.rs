@@ -363,6 +363,26 @@ pub enum DecodedBytes {
     Evicted,
 }
 
+/// Geometric visibility record for one image key (image-memory eviction stage 2b).
+/// Written by layout at display-list-build time and on scroll-offset updates;
+/// read by the net image cache at eviction time. Coordinates are CSS pixels in
+/// the scrolled content space of the root pipeline (v1 approximation: nested
+/// scrollers and transforms are not accounted — feed-style root scrolling is exact).
+pub struct ImageGeometryRecord {
+    /// [min_x, min_y, max_x, max_y] in content space.
+    pub content_rect: [f32; 4],
+    /// Layout-maintained verdict: intersects viewport +/- re-upload margin.
+    pub near_viewport: bool,
+}
+
+pub static IMAGE_GEOMETRY: std::sync::LazyLock<
+    std::sync::RwLock<std::collections::HashMap<ImageKey, ImageGeometryRecord>>,
+> = std::sync::LazyLock::new(|| std::sync::RwLock::new(std::collections::HashMap::new()));
+
+/// True when FEATHER_IMGMEM eviction machinery is active — read once.
+pub static IMGMEM_ENABLED: std::sync::LazyLock<bool> =
+    std::sync::LazyLock::new(|| std::env::var("FEATHER_IMGMEM").is_ok());
+
 #[derive(Clone)]
 pub struct RasterImage {
     pub metadata: ImageMetadata,

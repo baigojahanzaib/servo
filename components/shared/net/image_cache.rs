@@ -264,6 +264,11 @@ pub trait ImageCache: Sync + Send {
     /// Removes the rasterized image from the image_cache, identified by the id of the SVG
     fn evict_rasterized_image(&self, svg_id: &Uuid);
 
+    /// Re-upload images whose WebRender keys were deleted by memory eviction and
+    /// which have scrolled back near the viewport (FEATHER_IMGMEM stage 2b).
+    /// No-op for caches without eviction support.
+    fn reupload_evicted_images(&self, _keys: Vec<ImageKey>) {}
+
     /// Removes the completed image from the image_cache, identified by url, origin, and cors
     fn evict_completed_image(
         &self,

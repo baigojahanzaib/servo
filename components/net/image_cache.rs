@@ -844,6 +844,20 @@ impl ImageCacheStore {
             }
             if let Some(load) = self.completed_loads.get(&key) {
                 if let ImageResponse::Loaded(Image::Raster(image), _) = &load.image_response {
+                    // Geometric eviction verdict (stage 2b): never evict images
+                    // layout reports as near the viewport — evicting them is what
+                    // caused the black-rectangle corruption on visible content.
+                    if let Some(upload_key) = image.id {
+                        let near = pixels::IMAGE_GEOMETRY
+                            .read()
+                            .unwrap()
+                            .get(&upload_key)
+                            .map(|record| record.near_viewport)
+                            .unwrap_or(false);
+                        if near {
+                            continue;
+                        }
+                    }
                     let freed = image.evict_decoded();
                     if freed > 0 {
                         // Eviction unit: the WR key must die with the bytes — in
@@ -863,6 +877,30 @@ impl ImageCacheStore {
                     }
                 }
             }
+        }
+    }
+
+    /// Re-upload an image whose WR key was deleted by the memory eviction unit,
+    /// re-materializing decoded bytes from the retained encoded source if needed.
+    /// Reuses the same key so display-list references become valid again.
+    fn reupload_if_evicted(&mut self, raster_image: &std::sync::Arc<pixels::RasterImage>) {
+        let Some(upload_key) = raster_image.id else {
+            return;
+        };
+        if !self.evicted_upload_keys.contains(&upload_key) {
+            return;
+        }
+        let (descriptor, ipc_shared_memory, should_be_cached) =
+            raster_image.webrender_image_descriptor_and_data_for_frame(0);
+        self.paint_api.add_image(
+            upload_key,
+            descriptor,
+            SerializableImageData::Raw(ipc_shared_memory),
+            should_be_cached,
+        );
+        self.evicted_upload_keys.remove(&upload_key);
+        if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
+            eprintln!("IMGMEM re-uploaded image key {upload_key:?}");
         }
     }
 
@@ -949,22 +987,7 @@ impl ImageCacheStore {
         // re-add the same key. Display lists referencing the key become
         // correct again from the next rebuild.
         if let Some(Ok((Image::Raster(ref raster_image), _))) = result {
-            if let Some(upload_key) = raster_image.id &&
-                self.evicted_upload_keys.contains(&upload_key)
-            {
-                let (descriptor, ipc_shared_memory, should_be_cached) =
-                    raster_image.webrender_image_descriptor_and_data_for_frame(0);
-                self.paint_api.add_image(
-                    upload_key,
-                    descriptor,
-                    SerializableImageData::Raw(ipc_shared_memory),
-                    should_be_cached,
-                );
-                self.evicted_upload_keys.remove(&upload_key);
-                if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
-                    eprintln!("IMGMEM re-uploaded image key {upload_key:?} on cache read");
-                }
-            }
+            self.reupload_if_evicted(raster_image);
         }
         if matches!(result, Some(Ok(_))) {
             self.remove_from_lru(&key);
@@ -1084,6 +1107,41 @@ pub struct ImageCacheImpl {
 }
 
 impl ImageCache for ImageCacheImpl {
+    /// Stage 2b scroll-driven re-upload: layout reports evicted keys that
+    /// scrolled back near the viewport; re-materialize and re-add each.
+    fn reupload_evicted_images(&self, keys: Vec<WebRenderImageKey>) {
+        if keys.is_empty() {
+            return;
+        }
+        let mut store = self.store.lock();
+        if store.evicted_upload_keys.is_empty() {
+            return;
+        }
+        // Reverse index: WR key -> raster image, built once per scroll batch
+        // rather than scanning all completed loads per key.
+        let mut reverse: std::collections::HashMap<WebRenderImageKey, std::sync::Arc<pixels::RasterImage>> =
+            std::collections::HashMap::new();
+        for load in store.completed_loads.values() {
+            if let ImageResponse::Loaded(Image::Raster(image), _) = &load.image_response {
+                if let Some(id) = image.id {
+                    if store.evicted_upload_keys.contains(&id) {
+                        reverse.insert(id, image.clone());
+                    }
+                }
+            }
+        }
+        let mut reuploaded = 0usize;
+        for key in keys {
+            if let Some(image) = reverse.get(&key).cloned() {
+                store.reupload_if_evicted(&image);
+                reuploaded += 1;
+            }
+        }
+        if reuploaded > 0 && std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
+            eprintln!("IMGMEM scroll-triggered re-upload batch: {reuploaded} images");
+        }
+    }
+
     fn memory_reports(&self, prefix: &str, ops: &mut MallocSizeOfOps) -> Vec<Report> {
         let store_size = self.store.lock().size_of(ops);
         let fontdb_size = self.usvg_options.conditional_size_of(ops);

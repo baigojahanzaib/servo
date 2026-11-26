@@ -781,6 +781,39 @@ impl Layout for LayoutThread {
             .scroll_tree
             .set_all_scroll_offsets(scroll_states);
 
+        if *pixels::IMGMEM_ENABLED {
+            // Dominant-scroller approximation: the maximum vertical scroll offset
+            // across scroll nodes positions the viewport in content space.
+            let scroll_y = scroll_states
+                .values()
+                .map(|offset| offset.y)
+                .fold(0.0f32, f32::max);
+            let viewport_h = stacking_context_tree
+                .paint_info
+                .viewport_details
+                .size
+                .height;
+            // Hysteresis: re-upload margin (1x viewport) is tighter than the
+            // eviction margin (2x) so edge images don't oscillate.
+            let margin = viewport_h;
+            let image_cache = self.image_cache.clone();
+            let mut reupload_keys = Vec::new();
+            {
+                let mut registry = pixels::IMAGE_GEOMETRY.write().unwrap();
+                for (key, record) in registry.iter_mut() {
+                    let near = record.content_rect[3] > scroll_y - margin &&
+                        record.content_rect[1] < scroll_y + viewport_h + margin;
+                    if near && !record.near_viewport {
+                        reupload_keys.push(*key);
+                    }
+                    record.near_viewport = near;
+                }
+            }
+            if !reupload_keys.is_empty() {
+                image_cache.reupload_evicted_images(reupload_keys);
+            }
+        }
+
         // Accessibility node bounds are relative to the viewport origin, so a renderer scroll
         // makes every one of them stale without any reflow occurring. Requesting an accessibility
         // update schedules a rendering update and prevents that update's reflow from being skipped,
@@ -1743,6 +1776,37 @@ impl LayoutThread {
                 // Ensure the scroll updates are applied in the accessibility tree and sent to the
                 // embedder, even if there are no other changes which affect the accessibility tree.
                 self.set_force_accessibility_update_if_active();
+            }
+
+            if *pixels::IMGMEM_ENABLED {
+                let scroll_y = stacking_context_tree
+                    .paint_info
+                    .scroll_tree
+                    .scroll_offsets()
+                    .values()
+                    .map(|offset| offset.y)
+                    .fold(0.0f32, f32::max);
+                let viewport_h = stacking_context_tree
+                    .paint_info
+                    .viewport_details
+                    .size
+                    .height;
+                let margin = viewport_h;
+                let mut reupload_keys = Vec::new();
+                {
+                    let mut registry = pixels::IMAGE_GEOMETRY.write().unwrap();
+                    for (key, record) in registry.iter_mut() {
+                        let near = record.content_rect[3] > scroll_y - margin &&
+                            record.content_rect[1] < scroll_y + viewport_h + margin;
+                        if near && !record.near_viewport {
+                            reupload_keys.push(*key);
+                        }
+                        record.near_viewport = near;
+                    }
+                }
+                if !reupload_keys.is_empty() {
+                    self.image_cache.reupload_evicted_images(reupload_keys);
+                }
             }
             true
         } else {
