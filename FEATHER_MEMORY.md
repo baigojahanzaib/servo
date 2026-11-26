@@ -3174,3 +3174,12 @@ NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskadem
 **THE HONEST VERDICT**: the flush+recreate design is dead as implemented; the path forward is EITHER (a) cracking re-preroll directly with gst-debug pipeline graphs (GST_DEBUG bin DOT dumps — GST_DEBUG_DUMP_DOT_DIR — never tried! much better than blind probes), or (b) the full timestamp-rewriting redesign per sec1zt70. Recommend (a) first: one afternoon with dot-graph pipeline inspection beats guessing. The instrumentation infrastructure is all in place (10s media-crate rebuilds, working repro /tmp/elltest/mseseekA.html served at :8899, session-restore contamination rule in sec1zt71).
 
 **Tree state**: mse_source.rs + player.rs carry debug instrumentation (eprintlns, FLOW probes, SERVO_MSE_NORECREATE/NOFLUSH env gates, the experimental flushing-seek block in player.rs MSE seek branch). NOTHING committed to feather-engine — all local, strip-or-keep decision deferred. The flushing-seek experiment in player.rs is the only piece worth considering for keeping (improves position reporting) — but it also surfaced MEDIA_ERR_DECODE once, so it is NOT clean; do not land without understanding the decode error.
+
+
+## sec1zt73 — seek closeout addendum: pause/play negative, race-flakiness everywhere, dot-graph is the next tool (2026-11-26, linux)
+
+- pause/play cycle after flushing seek: NO effect (frames frozen) — negative result.
+- Decode error (err 3) is itself racy — appears in some runs, not others, same build same steps. Position readings likewise inconsistent run-to-run (0.0 vs exact target). The whole post-seek pipeline state is nondeterministic — strong sign of event-ordering races in flush/reset/re-feed sequencing rather than a single deterministic bug.
+- The one consistent improvement: flushing time seek makes currentTime land exactly on target in the runs that don't race — mechanistically correct piece (running-time rebase).
+- NEXT TOOL (decided): GST_DEBUG_DUMP_DOT_DIR pipeline graphs pre/post seek in the ENGINE — shows element states, pad links, and preroll state definitively instead of blind probes. Alternatively stepping back: this hunt has consumed multiple sessions (1q→1t→1zc-1zg→zt69-73); recommend re-prioritizing against other compat work unless media-seek is a launch blocker. YouTube seek is degraded-but-not-crashing: playback continues pre-seek content or the player recovers via reload — user-visible severity is moderate not critical.
+- open_external_url new-tab fix shipped meanwhile: feather#193.
