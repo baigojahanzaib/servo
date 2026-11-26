@@ -409,6 +409,24 @@ impl GenericLayoutDataTrait for DOMLayoutData {
         self
     }
 
+        fn primary_box_content_size(&self) -> euclid::default::Size2D<Option<app_units::Au>> {
+        let inner = self.0.borrow();
+        inner
+            .with_fragments(|fragments| {
+                fragments.first().map_or(euclid::default::Size2D::new(None, None), |fragment| {
+                    use crate::fragment_tree::Fragment;
+                    match fragment {
+                        Fragment::Box(box_fragment) | Fragment::Float(box_fragment) => {
+                            let size = box_fragment.content_rect().size;
+                            euclid::default::Size2D::new(Some(size.width), Some(size.height))
+                        },
+                        _ => euclid::default::Size2D::new(None, None),
+                    }
+                })
+            })
+            .unwrap_or(euclid::default::Size2D::new(None, None))
+    }
+
     fn set_text_run_selection(
         &self,
         new_range: Option<RangeAny<Utf32CodeUnits>>,
