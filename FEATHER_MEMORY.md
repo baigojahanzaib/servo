@@ -2824,3 +2824,13 @@ first-composite ordering, webview must be show()n before its frames composite.
 Behavioral side effect: hide() throttles background script + discards decoded images (memory win,
 but background media pauses — documented in PR).
 ||||||| parent of 74926cca4 (memory: alpha gate final validation — YouTube fully unassisted)
+||||||| parent of f2d7203ae5b (memory: aux-paint residual negative — visibility contention was the whole cause)
+
+sec1zt41 — aux-tab paint residual: NEGATIVE (contradicts f593a5d9cba lane note)
+The "aux-adopted tabs never paint even after cycling" residual does NOT reproduce with the
+show/hide discipline in place: target=_blank to wikipedia/Dog opened aux tab painting FULL correct
+content immediately (infobox photos included on first paint), and three-way tab cycling
+(Cat↔Gmail↔Dog) composites correct content in every direction. The aux-paint failures the other
+lane saw were visibility contention, not a create-request builder registration defect — the
+new_for_create_request path needs no compositor fix. Minor observed artifact: images in a hidden-then-reshown
+tab take a moment to re-decode (hide() discards decoded surfaces by design) — text/layout correct instantly.
