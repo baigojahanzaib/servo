@@ -415,7 +415,12 @@ pub(crate) fn define_guarded_methods<D: DomTypes>(
     for guard in methods {
         if let Some(specs) = guard.expose::<D>(cx, obj, global) {
             unsafe {
-                define_methods(cx, obj, specs).unwrap();
+                // Same memory-pressure defect class as define_guarded_properties:
+                // a failed allocation inside JS_DefineFunctions must degrade
+                // the page, not panic the script thread.
+                if define_methods(cx, obj, specs).is_err() {
+                    crate::utils::report_define_properties_failure(cx);
+                }
             }
         }
     }
@@ -431,7 +436,16 @@ pub(crate) fn define_guarded_properties<D: DomTypes>(
     for guard in properties {
         if let Some(specs) = guard.expose::<D>(cx, obj, global) {
             unsafe {
-                define_properties(cx, obj, specs).unwrap();
+                // Property definition can fail under SpiderMonkey memory
+                // pressure (allocation failure inside JS_DefineProperties).
+                // Panicking here kills the script thread and the whole
+                // pipeline — converting a recoverable page-level OOM into a
+                // fatal browser crash (observed on YouTube boot). Instead,
+                // clear the pending exception and leave the interface
+                // partially defined: the page degrades, the browser survives.
+                if define_properties(cx, obj, specs).is_err() {
+                    crate::utils::report_define_properties_failure(cx);
+                }
             }
         }
     }

@@ -903,3 +903,16 @@ pub fn to_frozen_array<T: ToJSValConvertible>(
     rooted!(&in(cx) let obj = rval.to_object());
     unsafe { JS_FreezeObject(cx, obj.handle()) };
 }
+
+/// Handle a failed `define_properties` under SpiderMonkey memory pressure:
+/// log loudly and clear the pending exception so the interface is left
+/// partially defined instead of panicking the script thread (which takes
+/// down the whole pipeline — observed as fatal YouTube boot crashes).
+pub(crate) unsafe fn report_define_properties_failure(cx: &mut js::context::JSContext) {
+    use js::rust::wrappers2::JS_ClearPendingException;
+    log::warn!(
+        "[interface] define_properties failed (memory pressure?) — \
+         interface left partially defined, page may degrade"
+    );
+    JS_ClearPendingException(cx);
+}
