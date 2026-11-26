@@ -2851,3 +2851,14 @@ theorized — target=_blank to accounts.google.com/AccountChooser. Clicking it (
 opens the aux tab which lands on accounts.google.com/v3/signin/identifier correctly. The original
 gmail sign-in non-navigation defect is fully closed end-to-end — no caveat remaining. Confirms the
 target=_blank class was the whole cause.
+
+sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
+=============================================================================
+Symptom (previously indexed unresolved): servo "client error (Connect)" for localhost python
+http.server despite curl 200, net log TLS InvalidMessage(InvalidContentType).
+Retest on current feather-engine head: http://localhost:8931/blank1.html typed EXPLICITLY with
+scheme loads and renders correctly in feather shell. The defect does not reproduce. Likely fixed
+en route by shell PR #45 (schemaless localhost/IP literals default to http — the original failure
+was almost certainly schemeless typing defaulting to HTTPS against a plain-http server, exactly as
+the TLS InvalidMessage error suggested). Lesson confirmed: always type explicit http:// for local
+servers; the InvalidContentType symptom means "TLS handshake attempted against plain HTTP".
