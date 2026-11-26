@@ -2751,3 +2751,5 @@ sec1zt36 — post-document.all regression sweep (negative results + one environm
 sec1zt37 — document.all named-getter verified: document.all['id'] returns exact element (identity
 match confirmed on github.com, live length 2782). Spec surface complete except legacy call-form.
 ||||||| parent of 7967b23d6 (memory: aux verification detail — opens correct, compositing staleness is shared-FBO class)
+
+## TESTING GOTCHA (solved mystery): schemeless omnibox input (e.g. `127.0.0.1:8931/x`) is HTTPS-upgraded — net log shows `GET https://127.0.0.1:8931/...` and the server log shows TLS ClientHello bytes hitting the plain-HTTP server ("Bad request syntax" 400). This is correct modern browser behavior (https-first), NOT a regression. Local test pages MUST be typed with explicit `http://` scheme. Symptom-index: "local test server connect error, curl works" → check scheme in net log first.
