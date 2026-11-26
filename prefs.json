@@ -1,0 +1,6 @@
+{
+  "dom_indexeddb_enabled": true,
+  "dom_webgl2_enabled": true,
+  "dom_web_animations_enabled": true,
+  "dom_intersection_observer_enabled": true
+}

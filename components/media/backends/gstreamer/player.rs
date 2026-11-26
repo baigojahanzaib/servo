@@ -1036,7 +1036,11 @@ impl GStreamerPlayer {
 
                                     servosrc_.set_seek_done();
                                     if let Some(ack_channel) = ack_channel {
-                                        ack_channel.send(()).unwrap();
+                                        // The receiver is dropped when the player
+                                        // is torn down while the seek is still in
+                                        // flight — a missing ack is benign (nobody
+                                        // is waiting), panicking is not.
+                                        let _ = ack_channel.send(());
                                     }
                                     ret
                                 })
