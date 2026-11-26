@@ -464,7 +464,16 @@ impl<'dom> style::dom::TElement for ServoDangerousStyleElement<'dom> {
     }
 
     fn query_container_size(&self, _display: &Display) -> Size2D<Option<app_units::Au>> {
-        todo!();
+        // The content-area size of the primary box from the most recent layout
+        // pass. During the first pass no box exists yet and both axes are None,
+        // so size queries evaluate as unknown/false; the layout thread schedules
+        // a follow-up pass once boxes exist (see layout_impl container-query
+        // restyle loop).
+        self.as_node()
+            .node
+            .layout_data()
+            .map(|data| data.primary_box_content_size())
+            .unwrap_or(Size2D::new(None, None))
     }
 
     fn has_selector_flags(&self, flags: ElementSelectorFlags) -> bool {

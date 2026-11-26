@@ -1154,6 +1154,51 @@ impl LayoutThread {
             webview_id = tracing::field::display(self.webview_id),
         )
     )]
+
+    /// Collect the sizes of all size-containment containers in the tree, as of
+    /// the most recently completed layout pass. Container size queries are
+    /// evaluated during style resolution using these persisted sizes, so the
+    /// result of one layout pass feeds the query evaluation of the next; the
+    /// container-query restyle loop in `handle_reflow` iterates this to a
+    /// fixed point.
+    /// Collect the sizes of all size-containment containers in the tree, as of
+    /// the most recently completed layout pass. Container size queries are
+    /// evaluated during style resolution using these persisted sizes, so the
+    /// result of one layout pass feeds the query evaluation of the next; the
+    /// container-query restyle loop in `handle_reflow` iterates this to a
+    /// fixed point.
+    fn collect_container_sizes(
+        node: ServoLayoutNode,
+        out: &mut Vec<(OpaqueNode, euclid::default::Size2D<Option<Au>>)>,
+    ) {
+        use style::dom::TElement as _;
+        if let Some(element) = node.as_element() {
+            // Safety: this runs inside the layout thread's exclusive access
+            // window, same as the style traversal itself.
+            let dangerous = unsafe { element.dangerous_style_element() };
+            let is_size_container = dangerous
+                .borrow_data()
+                .map(|data| {
+                    data.styles
+                        .primary()
+                        .get_box()
+                        .get_container_type()
+                        .is_size_container_type()
+                })
+                .unwrap_or(false);
+            if is_size_container {
+                let size = node
+                    .layout_data()
+                    .map(|data| data.primary_box_content_size())
+                    .unwrap_or(euclid::default::Size2D::new(None, None));
+                out.push((node.opaque(), size));
+            }
+        }
+        for child in node.flat_tree_children() {
+            Self::collect_container_sizes(child, out);
+        }
+    }
+
     fn handle_reflow(&mut self, mut reflow_request: ReflowRequest) -> Option<ReflowResult> {
         self.maybe_print_reflow_event(&reflow_request);
 
@@ -1195,14 +1240,57 @@ impl LayoutThread {
                 .map(|accessibility| std::mem::take(&mut accessibility.damage)),
         );
 
-        let (mut reflow_phases_run, iframe_sizes, changed_web_fonts) = self
-            .restyle_and_build_trees(
+        // Container query convergence loop: size queries are evaluated during
+        // style resolution against box sizes persisted by the *previous* layout
+        // pass. Whenever those sizes changed (or boxes did not exist yet), mark
+        // the subtree dirty and run one more restyle+layout pass so that queries
+        // re-evaluate against fresh sizes. Bounded to a few iterations; static
+        // content converges in two passes (first pass has no sizes at all).
+        let (mut reflow_phases_run, iframe_sizes, changed_web_fonts) = {
+            let mut result = self.restyle_and_build_trees(
                 &mut reflow_request,
                 document,
                 root_element,
                 &image_resolver,
                 accessibility_damage.as_mut(),
             );
+            let mut previous_container_sizes: Vec<(OpaqueNode, euclid::default::Size2D<Option<Au>>)> =
+                Vec::new();
+            let mut iteration = 0;
+            loop {
+                let mut container_sizes = Vec::new();
+                Self::collect_container_sizes(root_element.as_node(), &mut container_sizes);
+                if container_sizes.is_empty() ||
+                    container_sizes == previous_container_sizes ||
+                    iteration >= 4
+                {
+                    break;
+                }
+                previous_container_sizes = container_sizes;
+                iteration += 1;
+                if iteration > 1 {
+                    // Re-running because container sizes keep changing; log so
+                    // oscillating layouts are visible in diagnostics.
+                    debug!(
+                        "layout: container-query restyle iteration {}",
+                        iteration
+                    );
+                }
+                let dangerous_root_element = unsafe { root_element.dangerous_style_element() };
+                if let Some(mut data) = dangerous_root_element.mutate_data() {
+                    data.hint.insert(RestyleHint::restyle_subtree());
+                }
+                self.need_new_display_list.set(true);
+                result = self.restyle_and_build_trees(
+                    &mut reflow_request,
+                    document,
+                    root_element,
+                    &image_resolver,
+                    accessibility_damage.as_mut(),
+                );
+            }
+            result
+        };
 
         if self.build_stacking_context_tree_for_reflow(&reflow_request) {
             reflow_phases_run.insert(ReflowPhasesRun::BuiltStackingContextTree);

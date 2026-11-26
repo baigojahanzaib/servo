@@ -3450,3 +3450,70 @@ servo's stylo build compile with the gates removed (are there gecko-only deps in
 evaluation path). Files: stylo/style/stylesheets/{rule_parser,container_rule}.rs,
 style/matching.rs — pin path ~/.cargo/git/checkouts/stylo-*/0ab78ce.
 
+
+sec1zt97 — container queries PHASE 1 DONE + phase-2 design (2026-11-26, linux lane):
+Parse+cssom verified live (commit b3d32c90bc7): stylo vendored into servo/vendor/stylo (the
+git-patch dance: [patch] only honored at WORKSPACE ROOT — servo/Cargo.toml patch is IGNORED
+when building feather-ui because shell-new is the root; patch must live in BOTH — shell-new's
+points at ../../repos/servo/vendor/stylo — symptom-indexed gotcha). stylo crates use
+workspace-inheritance which breaks standalone resolution — flattened in vendor. The parse gate
+was exactly one line (rule_parser.rs `"container" if cfg!(feature = "gecko")`); the rest of the
+machinery compiled unmodified. Integration crashes fixed: cssrule.rs unimplemented arm +
+as_specific unreachable — symptom: adding a new stylo rule variant → must touch BOTH matches
+in cssrule.rs plus downcast chain. CSSContainerRule DOM object ships with
+containerName/containerQuery (spec css-conditional-5).
+PHASE 2 DESIGN (the evaluation, not yet implemented): the single integration point is
+`query_container_size` on ServoDangerousStyleElement (layout_dom/servo_dangerous_style_element
+.rs:466 — currently todo!()). Stylo calls it during rule matching via
+ContainerCondition::find_container → valid_container_info. Everything else is already shared-
+code complete (matching.rs restyle hints compile in servo today). The architectural problem:
+style resolution runs BEFORE boxes exist in servo's traversal, so current-pass sizes are
+unavailable. Gecko solves it with layout-interleaving; servo needs the simpler two-pass
+approximation: (a) implement query_container_size to read the element's persisted layout box
+size from the PREVIOUS layout pass (layout data box slot — investigate LayoutData/box_slot on
+the layout-dom element), returning None-size on first pass; (b) when any container query was
+consulted during a pass, record it and schedule a restyle+reflow so pass 2 evaluates against
+pass-1 sizes — converges for static content, correctness caveat for oscillating layouts
+documented; (c) invalidation on container resize comes free via the existing restyle since
+queries re-evaluate every pass. Volume estimate: the trait method + plumbing ~small, the
+restyle-scheduling hook is the unknown — look at how layout-2020 incremental restyle is
+triggered today (needed regardless). Files: layout_dom/servo_dangerous_style_element.rs,
+components/layout/flow construction entry, stylo container_rule.rs traverse_container.
+- xclick-2 (2026-11-26): click-DRAG text selection on x.com signup page renders highlight — multiline selection highlight appears to track drag x-position per line rather than wrapping full-width on the first line (uncertain if defect — needs comparison against Chrome). No dramatic glitch reproduced unauthenticated: clicks, modals, inputs, selection all functional. The user's "clicking text items glitches" remains unreproduced — most likely requires the authenticated timeline. RECOMMEND: ask user for a screen recording of the glitch or x.com test credentials.
+
+## favicon-pipeline-2 — SOLVED: persistence, origin-keyed (2026-11-26, PR #209)
+- Verdict chain: servo engine pipeline complete and WORKING for loaded tabs (fetch 200s, decode, deliver, texture upload, paint hit — all traced live). Letters were exclusively lazy-restored tabs that never load.
+- TRAP DOCUMENTED: session.json stores tabs as BARE URL STRINGS — no ids. Tab ids are reassigned at restore. Any per-tab-id persistence is broken by design; key by ORIGIN.
+- Fix shipped: favicons.bin FAV2 format, origin-keyed, 32px downscale, RGB8→RGBA normalize, 5s throttled writes. Verified live: github octocats visible on restored lazy tabs.
+- FEATHER_FAVICON_DEBUG env tracing lives in shell-new (writeback + paint-miss).
+- Gotcha: the debug paint-miss print fires per-frame-per-tab — a few minutes of logging = GIGABYTES (filled /tmp once). Use briefly.
+
+## matrix-expansion-1 — round-2 results + hit-test open question (2026-11-26)
+- Expanded 13→17 scenario classes, 61→88 probes. Grid 81/88. New green classes: history-api 5/5, keyboard-input 5/5, transforms-animations 5/5, fetch-xhr 8/8.
+- OPEN QUESTION: elementFromPoint hit-test FAIL on overlapping z-indexed elements — returns an unnamed ancestor, not the top element. elementFromPoint IS implemented in servo (documentorshadowroot.rs). Probe uses viewport coords incl. default 8px body margin — math says the point should still land in the overlap, so a real hit-test defect is plausible but unproven. Needs minimal repro: elementFromPoint at various coords on a z-indexed stack, compare vs Chrome. If real: mechanism suspect is servo's hit-test not respecting z-order/point-in-fragment — CHECK compositing hit_test pipeline.
+- Probes self-report element tag/id now for future runs.
+
+## sec1zt98 — container queries: WORKING end-to-end (phase 2 complete, verified both directions) [2026-11-26 linux lane]
+
+**State: container queries are functional in servo on feather-engine.** Parse + cssom (phase 1, sec1zt97) + evaluation bridge (phase 2, this entry). Verified live A/B: `@container srp (min-width: 300px)` on a 500px `container-type: inline-size` host → inner rule APPLIES (green, width applied, screenshot-verified); same rule with `min-width: 600px` → correctly does NOT apply (red). Both directions correct on first paint.
+
+**The three pieces of the phase-2 bridge** (commit ad7cd1fc419):
+1. `query_container_size` (servo_dangerous_style_element.rs) reads the element's primary-box content size from the MOST RECENT layout pass — new `GenericLayoutDataTrait::primary_box_content_size` (shared/layout/lib.rs) implemented for layout's DOMLayoutData via fragment tree (Box/Float fragment content_rect; None when no box yet).
+2. Convergence loop in layout_impl.rs handle_reflow: after restyle_and_build_trees, `collect_container_sizes` walks the flat tree collecting (opaque, size) for every element whose computed container-type is a size container type; if the vector changed since last pass, insert `RestyleHint::restyle_subtree()` on root + force display list + run another restyle+layout. Bounded at 4 iterations; static content converges in 2 (first pass has NO boxes → all queries unknown → second pass evaluates against real sizes).
+3. **The missing piece nobody scoped: the properties themselves are runtime-pref-gated in stylo** — `[container-name]`/`[container-type]` in longhands.toml carry `servo_pref = "layout.css.container-queries.enabled"` and servo defaults it FALSE. Without the pref the declarations parse-drop as UnknownProperty ("Unsupported property declaration" in console) even though all machinery exists. Feather enables it in shell-new engine prefs (PR in flight).
+
+**Symptom index**:
+- Symptom: "Unsupported property declaration: 'container-type', UnknownProperty" in console despite stylo supporting it → check: servo pref `layout_css_container_queries_enabled` (components/config/prefs.rs default false) — stylo longhands servo_pref gates are runtime, not compile-time.
+- Symptom: container query never matches even with correct sizes → check: whether RestyleHint::recascade vs restyle matters — query evaluation happens during RULE MATCHING, so recascade_subtree is INSUFFICIENT (only re-cascades already-matched rules); must be restyle_subtree (re-matching).
+- Symptom: query matches/doesn't match on first paint but never updates → check: the convergence loop only re-evaluates when a REFLOW happens; resize/mutation driven invalidation comes free since sizes change → loop triggers. Oscillating layouts terminate at the 4-iteration bound (documented caveat, matches sec1zt97 design).
+
+**Verification addendum** (same day, post-PR): unnamed `@container (min-width: ..)` (nearest-ancestor resolution) verified working; dynamic invalidation verified — JS mutation of container width flips query results live (green→red on shrink); heavy non-container pages (YouTube watch) show zero spurious restyle iterations and zero panics.
+
+**Verification gaps honestly noted**: live google.co.uk SERP test BLOCKED — the IP is now captcha-walled on co.uk too as of 2026-11-26T20:40 (was unblocked earlier same day — wall state decays with traffic volume, per-IP behavioral). serp.html capture is the wall shell, useless as repro. Resize-invalidation untested. Style-type container queries (non-size) out of scope. Units (cqw etc) untested.
+
+## hittest-verdict — elementFromPoint is CORRECT in servo (2026-11-26)
+- Minimal repro verdict: overlap-hits-top PASS, underzone-hits-under PASS, flat PASS, offzone→html PASS. z-index ordering respected in hit-testing. NOT a defect.
+- The matrix layout-stacking failure was probe SELF-INTERFERENCE: probe() appends result divs into #probes in normal flow → grows it → pushes test content down → hit-test struck a probe div (detail "DIV#/probe pass" was the smoking gun: className "probe pass").
+- HARNESS-LEVEL FIX in _probe.js: #probes now position:absolute;left:-9999px;pointer-events:none. ALL pages inherit the protection. Lesson for future probes: any self-checking harness that writes into the DOM must not reflow test content.
+- Matrix harness reusable-driver pattern: importlib load matrix.py as module, m.serve() + m.run_one_page(feather_bin, env_with_devtools_9222, url) — single-page iteration ~12s.
+

@@ -107,6 +107,16 @@ pub trait GenericLayoutDataTrait: Any + MallocSizeOfTrait + Send + Sync + 'stati
     /// Get the text rendered by this node, if it is a `CharacterData` node and produces
     /// a `TextRun` in the box tree.
     fn rendered_text(&self, range: RangeAny<Utf32CodeUnits>) -> Option<String>;
+
+    /// The content-area size of this element's primary box as of the most recent
+    /// layout pass, for container size query evaluation. Either axis is `None`
+    /// when no box exists yet or the axis is not yet determined. Servo's style
+    /// resolution runs before box construction, so during any given pass this
+    /// is the size from the *previous* pass; convergence is handled by the
+    /// container-query restyle loop in the layout thread.
+    fn primary_box_content_size(&self) -> euclid::default::Size2D<Option<app_units::Au>> {
+        euclid::default::Size2D::new(None, None)
+    }
 }
 
 pub trait LayoutDataTrait: GenericLayoutDataTrait + Default {}
