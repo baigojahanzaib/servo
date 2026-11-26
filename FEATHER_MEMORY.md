@@ -3631,3 +3631,8 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 
 ## sec1zt112 — github segfault heisenbug statistics (2026-11-26)
 - Crash rates: 2/4 bare runs, 0/3 under gdb, 0/4 second batch bare — timing-sensitive race, gdb-hidden. No panic message — hard segfault. Webgl adjacent (mona .glb + GL-point-sprites warning precede death in crashing runs). Do NOT burn cycles on gdb repro — needs rr (not installed) or systematic core capture (core_pattern experiments inconclusive). STATUS: open, timeboxed. If it recurs in dogfooding: capture which thread dies via `/proc/pid/task` monitoring or add canary eprintlns in webgl thread command processing.
+
+## webfonts-fully-green + check() verified (2026-11-26)
+- FontFaceSet.check() implementation VERIFIED through matrix: document-fonts-api green. parse-error→false, all-matched-loaded semantics. FOURTH upstreamable engine fix in the fork (document.all, shadow-input, devtools-teardown, fontfaceset-check).
+- font-loads probe deep truth: original failure was test-infrastructure — no font file existed on the matrix server. With WPT's Ahem.ttf served, the ENTIRE webfont pipeline proven working: @font-face parse, fetch, decode, font matching, metrics application (canvas measureText 240px Ahem vs 126.9px serif — exact 6×40 square-glyph math). webfonts class 3/3.
+- Matrix infrastructure lesson: probes depending on served binary assets need the assets committed in pages/ — Ahem.ttf (21KB, WPT-licensed) now vendored in tests/scenarios/pages/fonts/.
