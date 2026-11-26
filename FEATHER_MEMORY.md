@@ -3248,3 +3248,13 @@ Evidence chain (each layer verified by error progression):
 **The engine fix mission**: implement Cache.match/put/delete/matchAll/add + backend PutEntry/MatchEntry/DeleteEntry storage-thread ops + persistence. Confirmed mechanism-level value: Cache API is used blind (no feature detection) by wasm asset loaders — libdiscore-class failure hits every wasm-bindgen app using cache storage.
 
 **Instrumentation harness (reusable)**: /tmp/feather-eval-persist.js — error+rejection+console capture with __errs/__logs globals, injected once per URL via the shell persist hook; navigate away+back to re-inject after reload. Cache polyfill included (validation-only).
+
+## sec1zt79 — Cache API IMPLEMENTED (match/put/delete) — compile-clean, pushed adf65bf76d1
+Mechanism findings worth indexing:
+- **Codegen cx-inclusion rule (the missing root rule): `cx`/`realm` methods are declared PER-INTERFACE in `components/script_bindings/codegen/Bindings.conf` under `'cx': [...]`** — the type-driven path (`typeNeedsCx`) is an upstream stub that always returns Context.No. If a trait signature lacks cx that your implementation needs, add the method name to the interface's cx list in Bindings.conf. Symptom: 'trait method has 3 params but impl needs 4 / no cx in generated trait' → check: Bindings.conf cx array.
+- Keyword-collision scheme: `CGDictionary.makeMemberName` (trailing underscore) is applied to method names at CGAbstractMethod init and jitinfo ops; the two reference sites that were missing it (spec-table accessors, CGMethodPromiseWrapper) are now fixed — upstream-worthy.
+- Trait sig shapes for optional args: `Option<RequestOrUSVString>`, and interface args arrive as `Option<&D::Response>` (references — use DomRoot::from_ref).
+- USVString is `pub struct USVString(pub String)` — `.0` extracts; also derefs to str.
+- Response::Status()/StatusText() take NO cx; `body()` comes from trait `crate::fetch::body::BodyMixin`.
+- Closure-capture gotcha: a closure moving a non-Copy callback into a message becomes FnOnce — clone the callback inside instead when the closure must be shared via Rc<dyn Fn>.
+Verification: pending live test (cachetest.html harness exists in /tmp/elltest). Requires dom_serviceworker_enabled=true in the shell prefs (gates `caches` on WindowOrWorkerGlobalScope; SecureContext also required — https/localhost only).
