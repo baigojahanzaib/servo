@@ -3402,3 +3402,19 @@ TLS. If TLS is the trigger regardless, options are boringssl/openssl passthrough
 accepting the wall. Symptom index: site captcha-walls servo but not curl same-IP → check in
 order: UA string (exonerated), header set inc. accept-language/sec-fetch (exonerated — servo
 sends both), TLS ClientHello fingerprint (prime suspect), request-burst behavioral pattern.
+
+sec1zt94 — google SERP layout investigation LIVE + major unlock (2026-11-26, linux lane):
+UNLOCK: google.co.uk is NOT captcha-walled (google.com is) — real SERP boots in feather with
+center_col present. Use google.co.uk for all google-property layout work.
+DEFECT REPRODUCES as user reported: center_col renders full-width (1242px wide at left:16,
+margin-left:0, max-width:none) instead of the constrained indented column chrome shows.
+ESTABLISHED FACTS: (1) 46 stylesheets load and parse — thousands of rules present, css is NOT
+failing to load/parse wholesale. (2) ZERO rules target #center_col by id in modern google css —
+the column constraint is class/structure-keyed. (3) servo has NO :has() support — matches()
+throws SyntaxError — but the SERP css contains zero :has rules at scan depth, so :has is not
+THIS defect's mechanism (still a major compat gap for other sites). (4) basic min-width media
+queries work. NOTE the deep-scan probe undercounted (603 leaves vs 7703 top-level) — scan logic
+suspect, redo carefully. NEXT: ground-truth A/B — load google.co.uk/search?q=test in the devin
+chromium via playwright (CDP localhost:29229), dump center_col/parent-chain computed styles +
+matched rules, diff against servo's computed values. The first divergent computed property up
+the chain localizes the broken mechanism.
