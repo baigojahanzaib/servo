@@ -3670,3 +3670,13 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 ## backdrop-filter-scoped (2026-11-26) — gap is NOT "unimplemented"
 - Correction to earlier assumption: backdrop-filter IS plumbed end-to-end in servo — components/layout/display_list/mod.rs build_backdrop_filter pushes to webrender's push_backdrop_filter; style_ext.rs reads effects.backdrop_filter. Regular `filter` computed values serialize fine in the matrix (blur passes). THE GAP is narrowly scoped: either the longhand fails to PARSE (silently dropped) or computed-style SERIALIZATION for the backdrop-filter longhand is broken/missing. Test: inline `style="backdrop-filter:blur(4px)"` computes to empty. Next step: check stylo's property registration — is backdrop-filter servo-enabled in the exact stylo rev servo pins (verify which stylo source actually builds: fork-vendored vs git rev 0ab78ce — check workspace [patch]). SMALL upstreamable candidate once localized. Matrix: css-filters page, backdrop-filter-computed probe.
 - stylo confusion resolved partially: Cargo.toml pins git rev 0ab78ce95162eca027c874b505b505ef17a85ac8 for stylo/selectors/servo_arc — if a vendored fork copy exists it must come through [patch] in the workspace root — VERIFY before any stylo-level work.
+||||||| parent of 9d36e775803 (sec1zt117 timeout-kills-webview negative on linux, 3 variants)
+
+## sec1zt117 — timeout-kills-webview: NEGATIVE on Linux, three variants (Windows-only?)
+- Windows report: any timed-out load kills all subsequent loads (top engine bug).
+- Linux repro attempts, all NEGATIVE (subsequent loads work fine):
+  1. abort-during-hang: load 127.0.0.1:8898/hang (never responds), navigate away same-tab mid-hang → target loads 200.
+  2. connect-timeout in-flight: navigate to 10.255.255.1 (non-routable), navigate away BEFORE timeout fires → works.
+  3. connect-timeout completed: wait 25s for the hyper connect timeout (network_connection_timeout pref) to actually fire, THEN navigate → works.
+- Implication: either Windows-platform-specific (different network stack behavior, IPC, or timer threading) or a different sequence/scope (all-webviews? error-page interactions? reload-same-url?). NOTE: no response-timeout exists in servo net — only CONNECT timeout (hyper, pref-driven). A hanging RESPONSE never times out at all in-engine; 'timed out' on Windows may be a shell-level watchdog concept instead.
+- Bisect guidance for Windows lane: test variant 3 first (letting the timeout complete) — if the error-page display itself is what poisons the webview, check the constellation load-error path + whether the pipeline's script event loop wedges on the error document.
