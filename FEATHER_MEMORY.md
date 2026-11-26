@@ -3183,3 +3183,22 @@ NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskadem
 - The one consistent improvement: flushing time seek makes currentTime land exactly on target in the runs that don't race — mechanistically correct piece (running-time rebase).
 - NEXT TOOL (decided): GST_DEBUG_DUMP_DOT_DIR pipeline graphs pre/post seek in the ENGINE — shows element states, pad links, and preroll state definitively instead of blind probes. Alternatively stepping back: this hunt has consumed multiple sessions (1q→1t→1zc-1zg→zt69-73); recommend re-prioritizing against other compat work unless media-seek is a launch blocker. YouTube seek is degraded-but-not-crashing: playback continues pre-seek content or the player recovers via reload — user-visible severity is moderate not critical.
 - open_external_url new-tab fix shipped meanwhile: feather#193.
+
+
+## sec1zt74 — seek hunt: dot-graph forensics, the exact failure point, fixes tried, the one remaining theory (2026-11-26, linux)
+
+**GST_DEBUG_DUMP_DOT_DIR works in feather** — pipeline graphs dump automatically on state changes AND ON ERROR. This is the correct instrument (not blind probes).
+
+**What the graphs + linkage probes establish DEFINITIVELY**:
+1. At every seek, the pipeline posts `appsrc<N>: streaming stopped, reason not-linked (-1)` from gst_base_src_loop, then transitions NULL — the frozen playback is a DEAD pipeline, not a stalled one.
+2. The pad topology in the error-state graph is IDENTICAL to the working startup graph — full chain appsrc.src → proxypad → ghost src_0 → decodebin sink → typefind → demux. `is_linked` verified TRUE with correct peer at +1/+2/+4s post-recreation. So the not-linked is NOT a persistent topology defect.
+3. Startup recreation SUCCEEDS (a recreation happens during initial preroll every run — that appsrc reaches Playing, flows data, playback works). Seek-time recreation FAILS in the same pipeline minutes later. The delta: pipeline fully live/playing vs prerolling.
+4. The error fires within MILLISECONDS of the recreation+first re-feed push — consistent with the streaming task's first event/buffer push returning not-linked as a FLOW RETURN (gstbasesrc reports flow returns with that exact message — it is not only the is_linked check). Most likely transient: downstream pads momentarily flushing/inactive while the flush events or decodebin3 stream-reconfiguration are still in flight.
+
+**Fixes tried, all insufficient** (each verified by rebuild+repro): link-before-add ordering (ghost target set before obj.add); ghost set_active(false)+set_active(true) reactivation; NULL-state before removing old appsrc; pause/play cycle after flush; flushing time seek on the pipeline (SIDE EFFECT though: makes currentTime land exactly on target — keep this piece); dropping the recreation entirely (NORECREATE — data flows but downstream still never presents).
+
+**THE REMAINING THEORY (untested, strongest)**: the re-feed push arrives on the script thread within milliseconds of the recreation completing on the player thread, while the new appsrc's state transition (and decodebin3's reaction to the second stream-start with a NEW random stream-id) is still in flight. The correct fix is likely to make the recreated stream REUSE THE ORIGINAL stream-id so decodebin3 treats it as the same stream — stream-id is carried in the stream-start event which appsrc generates internally; controlling it requires either intercepting the stream-start event with a pad probe and rewriting the id to the original, or probing gst version behavior. ALTERNATIVELY the entire recreate design should be replaced with in-band timestamp rewriting per sec1zt70 — the evidence now strongly suggests no amount of recreation fiddling will produce robust behavior in playbin3/decodebin3.
+
+**Recommended next move if this hunt continues**: intercept stream-start with a pad probe on the recreated appsrc src pad; log the stream-id pre/post recreation vs the original; if they differ, rewrite to the original id and test. One focused experiment, ~1h. If insufficient, commit to the timestamp-rewriting redesign or re-prioritize — cumulative cost of this hunt is very high and YouTube seek is degraded-not-crashing (moderate severity).
+
+**Verification infrastructure that works** (reusable): /tmp/elltest/mseseekA.html (:8899), pixel-diff frame verification mandatory, 10s media-crate rebuilds, GST_DEBUG_DUMP_DOT_DIR dumps, session.json must be moved aside per run.
