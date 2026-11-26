@@ -2837,3 +2837,5 @@ lane saw were visibility contention, not a create-request builder registration d
 new_for_create_request path needs no compositor fix. Minor observed artifact: images in a hidden-then-reshown
 tab take a moment to re-decode (hide() discards decoded surfaces by design) — text/layout correct instantly.
 ||||||| parent of 993ab15c1 (memory: watch page validated end-to-end)
+
+## Post-fix breadth matrix (endgame-24, all-in-one build): github.com/login renders complete form ✓, x.com SPA onboarding fully interactive-looking with sso buttons + email field ✓, youtube search+watch+chat ✓, old.reddit ✓ (earlier), wikipedia/cnn no regressions ✓. The compositing visibility fix + document.all together cleared most of the pre-alpha ledger's rendering-defect rows; remaining defect classes: attestation/botwall, background-media throttling, window.open RefCell panic.
