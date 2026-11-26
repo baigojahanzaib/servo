@@ -3261,3 +3261,8 @@ Verification: pending live test (cachetest.html harness exists in /tmp/elltest).
 
 ## sec1zt80 — Cache API LIVE-VERIFIED — every harness test passes
 cachetest.html results in feather (servo engine): open ok; all four methods present; put ok; **tee semantics correct** (caller's response body still readable after put); match roundtrips body+status+custom headers exactly; match-miss undefined; keys correct; delete true + post-delete match undefined. The wasm-bindgen cache-storage prerequisite class is now implemented end-to-end. Caveats: memory-only backend (per-session), exact-url matching, no options validation, requires dom_serviceworker_enabled=true + SecureContext.
+
+## sec1zt81 — DISCORD LOGIN BOOT FIXED — Cache API was the whole defect
+Live verification, real implementation (polyfill REMOVED — see gotcha below): discord.com/login boots fully — Welcome-back form, email+password inputs, QR code with embedded logo, background artwork, ZERO JS errors. The wasm 'unreachable' panic from sec1zt77/78 does NOT occur with the real implementation — it was the polyfill's semantic divergence all along (the documented open question, now answered). Mechanism-level win: all wasm-bindgen cache-storage users (Figma-adjacent tooling class) unblocked.
+**GOTCHA — verification hygiene: the persist-eval polyfill SHADOWS the real implementation.** Any persist-injected API shim must be removed before validating a real engine implementation, or the test validates the shim. sec1zt77's 'deeper layer' was an artifact of this.
+Required config: dom_serviceworker_enabled=true (shell pref) — gates `caches` exposure. Risk note: this also activates service-worker registration machinery on sites that use it; regression surface to watch.
