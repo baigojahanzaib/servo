@@ -3338,3 +3338,5 @@ only. Next step if resumed: instrument yt-core-image custom element reactions, o
 YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
 fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
 observer-root geometry on youtube specifically is the lead).
+||||||| parent of a527049da (memory: harness progress)
+- matrix-harness-2 (2026-11-26): hang FIXED — root cause was location.href navigation never replying to evaluateJS + blocking recv; now fire-and-forget + socket timeouts + reconnects, harness completes all 13 pages end-to-end. REMAINING narrowed bug: evaluateJS results never arrive even on stable pages (every collection times out; listTabs/getTarget verified working). Next: manually probe evaluateJS reply format against a live instance — compare with /tmp/dt.py session transcripts; possibly reply key differs or consoleActor resolution picks a worker actor.
