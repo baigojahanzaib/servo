@@ -3712,3 +3712,10 @@ Evidence chain (2026-11-27):
 5. The 'sgs undefined' puzzle is a red herring: sgs is never defined in the shell in ANY browser (the window.sgs&&ussv&&sp guard falls to the ma() path by design); obfuscated pow script executes without error in servo when tested directly.
 CONCLUSION: google SERP modernity = recognized-browser UA name token. The verification-chain failure may still matter for other things, but lite mode is primarily UA-keyed. RECOMMENDED PATH: firefox-flavor UA for google properties + fix the StyleThread cascade stack overflow (real crash-class defect) + parse support for modern css features the serp uses (:has() complex inner, @starting-style). No impersonation-wall cost: firefox UA verified unwalled.
 Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 never clears' → check: UA name token not a recognized modern browser. 'stylethread stack overflow on modern google serp' → check: servo cascade recursion depth vs deep DOM — real crash defect, see below.
+
+## late-session-shell-wins (2026-11-27)
+- PR #236 merged: progress strip hysteresis (350ms sustained-idle before clearing load flag) — user-reported flicker. Mechanism: servo load_status flaps per-frame within one navigation; strip toggled off/on.
+- PR #237 open: update check — rustls+webpki-roots background GitHub-release version check, quiet toolbar glyph. Design doc docs/wiki/AUTOUPDATE.md. NOTE: cargo check (debug profile) fills disk fast — NEVER run plain cargo check in shell-new, use release builds only. Disk critical ~4GB free, purge deps duplicates before builds.
+- cookieStore DIAGNOSED: exposes fine but roundtrip returns null after set — real behavioral bug in write/persist path, stays reverted. cookiestore-diag branch has the pref flip for the next investigator.
+- Gamepad merged #235, backdrop-filter merged #234, baseline merged #233.
+- OPEN USER ITEM: x.com click-glitch — needs deeper repro; matrix expansion vs spec-compliance cross-ref open.
