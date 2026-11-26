@@ -2718,6 +2718,8 @@ The document.all mission is COMPLETE. Verification evidence: screenshots + eval 
 devin-d3790f631f184a44862d36d5fb5f39e4.
 
 sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
+
+## Aux-webview verification detail (post-PR156): target=_blank real-link clicks DO open a new tab with correct navigation (verified: injected anchor on example.com → new active tab, omnibox example.org). But the new tab's CONTENT stays stale (shows opener's pixels) — force-repaint at adoption (feather branch aux-paint-fix) is correct but insufficient. Root mechanism: shell never hides inactive webviews and only repaints on servo frame signals — static pages stop producing frames, so ANY tab switch to a static page is potentially stale (same class as the documented F1 paint-invalidation defect, shared-FBO limitation noted in app.rs composite()). The proper fix is in the compositing invalidation layer, not aux-specific. window.open() JS path still blocked by the upstream RefCell-borrow panic in the aux document load; real-link clicks avoid that path entirely.
 ||||||| parent of 54bbe9043a5 (memory: document.all named-getter verification)
 youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
 with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
@@ -2748,3 +2750,4 @@ sec1zt36 — post-document.all regression sweep (negative results + one environm
 
 sec1zt37 — document.all named-getter verified: document.all['id'] returns exact element (identity
 match confirmed on github.com, live length 2782). Spec surface complete except legacy call-form.
+||||||| parent of 7967b23d6 (memory: aux verification detail — opens correct, compositing staleness is shared-FBO class)
