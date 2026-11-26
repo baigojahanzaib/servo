@@ -1778,3 +1778,14 @@ Implemented (env-gated FEATHER_IMGMEM=1, default off): eviction unit now deletes
 Verification: compile-clean; forced eviction on r/pics (20MB budget) — evictions fire, 6 re-uploads observed in one scroll cycle, zero crashes, 236 imgs present. BUT the visual gate exposed the predicted gap exactly: visible post image renders BLACK after eviction cycle — because re-upload only triggers on cache READ, and painted images are never re-read (layout resolves keys once at display-list-build time; scrolling does not rebuild). Keys are baked into display lists; the re-uploaded data never reaches already-built lists' visible images unless a reflow happens.
 
 CONSEQUENCE (design validation, not surprise): the step ordering in sec1zn is MANDATORY — eviction must not target visible images, which requires the geometric viewport verdict (step b) BEFORE eviction is safe to enable for real. The black-flash is not a bug in 2a; it is 2a operating exactly as designed without its prerequisite. Stage 2b (geometric verdict, shared with cv-wip) is the next implementation and is the true core of stage 2. Mechanical pieces confirmed working and retained: eviction-unit atomics, re-decode re-upload path, same-key reuse (validates that WR accepts re-adding a deleted key — was an open question).
+||||||| parent of 2a9a2cd88 (memory: energy bakeoff symptom index — video gap, idle win, vm power-sensor negative)
+
+## Energy bakeoff (2026-11-26, macOS VM) — symptom index entries
+
+Symptom: high battery drain / CPU in video playback vs other browsers → check: swgl compositing of video frames (per-frame full repaint, readback+raster+upload — cannot amortize on changing content; prime suspect, confirmed dominant), gst vtdec decode path (status: ruled out — hardware decode already active, vtdec in samples), vp9 software decode (minor, ~7pp). Measured: video 720p feather 448 ms/s vs chrome 234 vs safari 86 — the single largest measured energy gap; closing requires GPU-side compositing (see scoping doc, weeks-scale).
+
+Symptom: energy measurement on macOS VMs → check: powermetrics cpu_power sampler (status: ruled out — no pmgr IO registry entry on VirtualMac2,1, physically impossible), powermetrics tasks sampler (works: per-process CPU ms/s + package-idle wakeups are the rigorous proxy ingredients; relative deltas meaningful, watts are not).
+
+Symptom: browser idle battery drain → check: paint-gating + Metal present path (status: verified fixed — feather idle measures 0.1 CPU ms/s and ZERO package-idle wakeups vs chrome 12.0/3.6 safari 5.0/15.7; an idle feather genuinely does nothing).
+
+Harness: feather repo shell/tools/ebench/ (measure.sh parse.py runall.sh) — reruns the full 12-cell matrix in ~65min on any mac.
