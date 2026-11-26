@@ -2965,3 +2965,16 @@ tab reloads (constellation auto-refresh), other tab unaffected. Env-gate for the
 FEATHER_TESTUTILS=1 enables dom_servo_helpers_enabled. NOTE for the tester: ServoTestUtils requires BOTH
 the testbinding cargo feature AND the pref; interface is a namespace (ServoTestUtils.crashHard()), method
 is crashHard() not panic().
+
+sec1zt53 — CRASH ISOLATION VERIFIED END-TO-END: script panic costs one tab, browser survives
+=============================================================================================
+Live test on feather main (FEATHER_TESTUTILS=1, wikipedia Cat tab): ServoTestUtils.panic() fired in
+the script thread — full recovery chain observed in log order: (1) hook emits error! with location,
+(2) [tab-crash] delegate notification fires, (3) constellation "creating replacement pipeline for
+crash page", (4) process alive, eval still functional in the recovered tab (URL preserved, servo's
+crash page replaces content chrome-style), ctrl+t new tab works post-crash. The user's strategic
+requirement — crashes must never kill the whole browser — is now true for the entire script-thread
+panic class. HARNESS LESSON: ServoTestUtils.crashHard() is a null-write SIGSEGV not a panic — instant
+death with zero log output, unrecoverable by ANY unwind-based mechanism (that's the stage-3 process-
+isolation territory). Use panic() for unwind-recovery tests. Residual gaps per scoping doc: WR/
+compositor singletons (never-bugs), media threads (degrade-not-notify), crash-banner UX polish.
