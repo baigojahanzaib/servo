@@ -1601,15 +1601,19 @@ async fn http_network_or_cache_fetch(
         // embedding shell mirrors this list into its JS-surface shim so the
         // two never disagree.
         let ua = {
+            // Domain-suffix matching: an entry matches the host exactly or as a
+            // dot-boundary suffix. The default is the google SEARCH host only —
+            // evidence: /search walls under chrome impersonation but docs/sheets/
+            // accounts never did, and the honest UA costs unsupported-browser
+            // banners on UA-sniffing subapps, so the narrowest effective list wins.
             let hosts = std::env::var("FEATHER_HONEST_UA_HOSTS")
-                .unwrap_or_else(|_| ".google.".to_string());
+                .unwrap_or_else(|_| "www.google.com,google.com".to_string());
             let host = http_request.current_url().host_str().unwrap_or_default().to_string();
-            let honest = host.as_str() == "google.com" ||
-                hosts
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|h| !h.is_empty())
-                    .any(|h| host.contains(h));
+            let honest = hosts
+                .split(',')
+                .map(str::trim)
+                .filter(|h| !h.is_empty())
+                .any(|h| host.as_str() == h || host.ends_with(&format!(".{h}")));
             if honest {
                 std::env::var("FEATHER_HONEST_UA").unwrap_or_else(|_| {
                     "Feather/1.0 (X11; Linux x86_64) Servo/1.0".to_string()
