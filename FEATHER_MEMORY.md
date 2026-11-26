@@ -3413,3 +3413,32 @@ weeks — the abstraction is upstream-complete. PRECURSOR QUESTION worth checkin
 servo's stylo build compile with the gates removed (are there gecko-only deps inside the
 evaluation path). Files: stylo/style/stylesheets/{rule_parser,container_rule}.rs,
 style/matching.rs — pin path ~/.cargo/git/checkouts/stylo-*/0ab78ce.
+
+sec1zt97 — container queries PHASE 1 DONE + phase-2 design (2026-11-26, linux lane):
+Parse+cssom verified live (commit b3d32c90bc7): stylo vendored into servo/vendor/stylo (the
+git-patch dance: [patch] only honored at WORKSPACE ROOT — servo/Cargo.toml patch is IGNORED
+when building feather-ui because shell-new is the root; patch must live in BOTH — shell-new's
+points at ../../repos/servo/vendor/stylo — symptom-indexed gotcha). stylo crates use
+workspace-inheritance which breaks standalone resolution — flattened in vendor. The parse gate
+was exactly one line (rule_parser.rs `"container" if cfg!(feature = "gecko")`); the rest of the
+machinery compiled unmodified. Integration crashes fixed: cssrule.rs unimplemented arm +
+as_specific unreachable — symptom: adding a new stylo rule variant → must touch BOTH matches
+in cssrule.rs plus downcast chain. CSSContainerRule DOM object ships with
+containerName/containerQuery (spec css-conditional-5).
+PHASE 2 DESIGN (the evaluation, not yet implemented): the single integration point is
+`query_container_size` on ServoDangerousStyleElement (layout_dom/servo_dangerous_style_element
+.rs:466 — currently todo!()). Stylo calls it during rule matching via
+ContainerCondition::find_container → valid_container_info. Everything else is already shared-
+code complete (matching.rs restyle hints compile in servo today). The architectural problem:
+style resolution runs BEFORE boxes exist in servo's traversal, so current-pass sizes are
+unavailable. Gecko solves it with layout-interleaving; servo needs the simpler two-pass
+approximation: (a) implement query_container_size to read the element's persisted layout box
+size from the PREVIOUS layout pass (layout data box slot — investigate LayoutData/box_slot on
+the layout-dom element), returning None-size on first pass; (b) when any container query was
+consulted during a pass, record it and schedule a restyle+reflow so pass 2 evaluates against
+pass-1 sizes — converges for static content, correctness caveat for oscillating layouts
+documented; (c) invalidation on container resize comes free via the existing restyle since
+queries re-evaluate every pass. Volume estimate: the trait method + plumbing ~small, the
+restyle-scheduling hook is the unknown — look at how layout-2020 incremental restyle is
+triggered today (needed regardless). Files: layout_dom/servo_dangerous_style_element.rs,
+components/layout/flow construction entry, stylo container_rule.rs traverse_container.
