@@ -1337,6 +1337,76 @@ where
     }
 
     #[servo_tracing::instrument(skip_all)]
+    /// Supersede the pending top-level navigation of a webview whose browsing
+    /// context has never materialized because the in-flight load never
+    /// activated (a hanging load neither completes nor errors — there is no
+    /// navigation timeout). Cancels the stuck pending pipeline(s) and creates
+    /// a replacement pipeline plus pending change, carrying the original
+    /// browsing-context creation info forward — the context has not been
+    /// constructed yet, so activation would otherwise fail with
+    /// "No NewBrowsingContextInfo for browsing context".
+    /// Returns false when there is no such pending change — meaning the
+    /// browsing context is genuinely unknown.
+    fn supersede_unactivated_top_level_load(
+        &mut self,
+        webview_id: WebViewId,
+        browsing_context_id: BrowsingContextId,
+        load_data: LoadData,
+    ) -> bool {
+        let Some(webview) = self.webviews.get_mut(&webview_id) else {
+            return false;
+        };
+        let mut superseded =
+            webview.remove_pending_changes_for_browsing_context_id(browsing_context_id);
+        if superseded.is_empty() {
+            return false;
+        }
+        let mut new_browsing_context_info = None;
+        let mut viewport_details = None;
+        for change in superseded.iter_mut() {
+            if new_browsing_context_info.is_none() {
+                new_browsing_context_info = change.new_browsing_context_info.take();
+            }
+            if viewport_details.is_none() {
+                viewport_details = Some(change.viewport_details);
+            }
+        }
+        let viewport_details = viewport_details.unwrap_or_default();
+        let is_private = new_browsing_context_info
+            .as_ref()
+            .map(|info| info.is_private)
+            .unwrap_or(false);
+        let pipelines_to_close: Vec<PipelineId> = superseded
+            .iter()
+            .map(|change| change.new_pipeline_id)
+            .collect();
+        let new_pipeline_id = PipelineId::new();
+        webview.add_pending_change(SessionHistoryChange {
+            webview_id,
+            browsing_context_id,
+            new_pipeline_id,
+            replace: None,
+            new_browsing_context_info,
+            viewport_details,
+        });
+        self.new_pipeline(
+            new_pipeline_id,
+            browsing_context_id,
+            webview_id,
+            None,
+            None,
+            viewport_details,
+            load_data,
+            is_private,
+            TargetSnapshotParams::default(),
+            None,
+        );
+        for pipeline_id in pipelines_to_close {
+            self.close_pipeline(pipeline_id, DiscardBrowsingContext::No);
+        }
+        true
+    }
+
     fn handle_request_from_embedder(&mut self, message: EmbedderToConstellationMessage) {
         trace_msg_from_embedder!(message, "{message:?}");
         match message {
@@ -1360,6 +1430,21 @@ where
                 let pipeline_id = match self.browsing_contexts.get(&ctx_id) {
                     Some(ctx) => ctx.pipeline_id,
                     None => {
+                        // The browsing context may not exist yet because the
+                        // webview's in-flight navigation never activated — e.g.
+                        // a load that hangs forever without completing or
+                        // erroring. Per the spec the latest navigation wins:
+                        // cancel the stuck pending change and replace it with
+                        // this load. Silently dropping wedged the webview
+                        // permanently — every subsequent navigation hit this
+                        // lookup and died, so one hanging page killed the tab.
+                        if self.supersede_unactivated_top_level_load(
+                            webview_id,
+                            ctx_id,
+                            load_data,
+                        ) {
+                            return;
+                        }
                         return warn!("{}: LoadUrl for unknown browsing context", webview_id);
                     },
                 };
