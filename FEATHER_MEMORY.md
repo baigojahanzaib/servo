@@ -3535,3 +3535,8 @@ Decisive discrimination evidence: google.co.uk homepage loads and renders PERFEC
 - SVG pipeline otherwise complete: exact-mime content-type detection (image/svg+xml incl suffix) in decode_bytes_sync, usvg parse → VectorImageData, ASYNC rasterization in image_cache rasterize_vector_image (thread pool, resvg::render into tiny_skia pixmap, RGBA8, panic-caught). The gap is ONLY the canvas-source bridge: canvas needs synchronous pixels, rasterization is async — that's the implementation complexity.
 - UPSTREAM CANDIDATE (moderate complexity): sync-or-cached rasterization path for vector images as canvas sources. Affects icon-into-canvas, chart export, image editors — real mechanism class.
 - resvg panics are catch_unwind-silenced — completion listeners never fire after a panic, so an svg that panics resvg renders as nothing forever. Second upstream-hardening candidate.
+
+## devtools-hardening-verified (2026-11-26)
+- worker.rs cleanup unwrap fix VERIFIED: 3 boot+teardown cycles produced ZERO new crash logs (baseline: every boot crashed once, 59 accumulated). First servo-fork engine fix validated through the matrix harness itself — the harness is now a crash-regression tool, not just a feature matrix.
+- svg naturalWidth probe verdict: PASSES (200x200) — parse+intrinsic size fine; failure is purely the vector-canvas-source bridge as root-caused. svg page now 6/7 with the remaining red honestly isolated.
+- Matrix-driver note: crash counting protocol — count logs/crash-*.log before and after any harness run; delta must be zero.
