@@ -19,6 +19,11 @@ use servo::{
 };
 use url::Url;
 
+thread_local! {
+    static MEMDUMP_START: std::time::Instant = std::time::Instant::now();
+    static MEMDUMP_FIRED: std::cell::Cell<bool> = std::cell::Cell::new(false);
+}
+
 use crate::egl::host_trait::HostTrait;
 use crate::prefs::ServoShellPreferences;
 use crate::running_app_state::{RunningAppState, UserInterfaceCommand};
@@ -127,36 +132,55 @@ impl PlatformWindow for EmbeddedPlatformWindow {
         let load_status_changed = Some(new_load_status) != self.current_load_status.get();
         if load_status_changed {
             self.host.notify_load_status_changed(new_load_status);
-            if state.servoshell_preferences.memory_output &&
-                matches!(new_load_status, LoadStatus::Complete | LoadStatus::Stopped)
-            {
-                #[cfg(all(feature = "tracing", feature = "tracing-hitrace"))]
-                {
-                    let (callback, receiver) =
-                        servo_base::generic_channel::GenericCallback::new_blocking()
-                            .expect("Could not create channel");
-                    state.servo().create_memory_report(callback);
-                    std::thread::spawn(move || {
-                        let result = receiver.recv().expect("Could not get memory report");
-                        let reports = result
-                            .results
-                            .first()
-                            .expect("We should have some memory report");
-                        let search_string = String::from("resident-according-to-smaps");
-                        let sum = reports
-                            .reports
-                            .iter()
-                            .filter(|report| report.path.contains(&search_string))
-                            .map(|report| report.size)
-                            .sum::<usize>();
-                        hitrace::trace_metric_str(
-                            "servo_memory_profiling:resident-according-to-smaps/sum",
-                            sum as i64,
-                        );
-                    });
-                }
-            }
         }
+
+            // Timed fallback trigger: SERVO_MEMDUMP_AFTER=<secs> fires the
+            // dump once even when LoadStatus::Complete never arrives
+            // (never-finish-loading sites like reddit).
+            let timed_fire = std::env::var("SERVO_MEMDUMP_AFTER")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .is_some_and(|secs| {
+                    let fired = MEMDUMP_FIRED.with(|f| f.get());
+                    if !fired && MEMDUMP_START.with(|t| t.elapsed().as_secs()) >= secs {
+                        MEMDUMP_FIRED.with(|f| f.set(true));
+                        true
+                    } else {
+                        false
+                    }
+                });
+            if (state.servoshell_preferences.memory_output &&
+                matches!(new_load_status, LoadStatus::Complete | LoadStatus::Stopped)) ||
+                timed_fire
+            {
+                let (callback, receiver) =
+                    servo_base::generic_channel::GenericCallback::new_blocking()
+                        .expect("Could not create channel");
+                state.servo().create_memory_report(callback);
+                std::thread::spawn(move || {
+                    if let Ok(result) = receiver.recv() {
+                        let mut rows: Vec<(String, usize)> = result
+                            .results
+                            .iter()
+                            .flat_map(|r| r.reports.iter())
+                            .map(|r| (r.path.join("/"), r.size))
+                            .collect();
+                        rows.sort_by(|a, b| b.1.cmp(&a.1));
+                        let total: usize = rows.iter().map(|r| r.1).sum();
+                        eprintln!(
+                            "[memreport] === {} rows, total {:.1}MB ===",
+                            rows.len(),
+                            total as f64 / 1_048_576.0
+                        );
+                        for (path, size) in rows.iter().take(120) {
+                            eprintln!("[memreport] {:>10.2}MB  {}", *size as f64 / 1_048_576.0, path);
+                        }
+                        eprintln!("[memreport] === end ===");
+                    } else {
+                        eprintln!("[memreport] no result — collector failed");
+                    }
+                });
+            }
 
         title_changed || url_changed || back_forward_changed || load_status_changed
     }

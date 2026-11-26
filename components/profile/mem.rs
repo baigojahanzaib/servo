@@ -137,14 +137,29 @@ impl Profiler {
     fn collect_reports(&self) -> HashMap<u32, Vec<Report>> {
         let mut result = HashMap::new();
 
-        for reporter in self.reporters.values() {
+        // Fire every reporter before waiting on any, so they measure in
+        // parallel, then bound each reply wait: a wedged reporter (e.g. a
+        // script thread serialised behind heavy IPC load, or a layout
+        // measurement that hangs on some document shapes) must not take the
+        // whole report down with it. Parallel-fire + per-reporter timeout
+        // collector.
+        let mut pending = Vec::new();
+        for (name, reporter) in self.reporters.iter() {
             let (chan, port) = generic_channel::channel().unwrap();
             reporter.collect_reports(ReportsChan(chan));
-            if let Ok(mut reports) = port.recv() {
-                result
-                    .entry(reports.pid)
-                    .or_insert(vec![])
-                    .append(&mut reports.reports);
+            pending.push((name.clone(), port));
+        }
+        for (name, port) in pending {
+            match port.try_recv_timeout(std::time::Duration::from_secs(20)) {
+                Ok(mut reports) => {
+                    result
+                        .entry(reports.pid)
+                        .or_insert(vec![])
+                        .append(&mut reports.reports);
+                },
+                Err(error) => {
+                    eprintln!("[memreport] reporter '{name}' timed out or failed");
+                },
             }
         }
         result

@@ -1170,6 +1170,63 @@ impl Servo {
             prefs::add_observer(Box::new(constellation_proxy.clone()));
         }
 
+        // Debug instrumentation: SERVO_MEMDUMP_AFTER=<secs> fires a full
+        // memory report on a timer (first at <secs>, then every 60s), printing
+        // category rows to stderr. Shell-independent — never-finish-loading
+        // sites like reddit never produce LoadStatus::Complete for shell-side
+        // triggers. Engine-side measurement mission tooling.
+        if let Some(secs) = std::env::var("SERVO_MEMDUMP_AFTER")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+        {
+            let proxy = constellation_proxy.clone();
+            std::thread::Builder::new()
+                .name("MemdumpTimer".into())
+                .spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(secs));
+                    loop {
+                        if let Ok((callback, receiver)) =
+                            servo_base::generic_channel::GenericCallback::new_blocking()
+                        {
+                            proxy.send(
+                                servo_constellation_traits::EmbedderToConstellationMessage::CreateMemoryReport(
+                                    callback,
+                                ),
+                            );
+                            std::thread::spawn(move || {
+                                if let Ok(result) = receiver.recv() {
+                                    let mut rows: Vec<(String, usize)> = result
+                                        .results
+                                        .iter()
+                                        .flat_map(|r| r.reports.iter())
+                                        .map(|r| (r.path.join("/"), r.size))
+                                        .collect();
+                                    rows.sort_by(|a, b| b.1.cmp(&a.1));
+                                    let total: usize = rows.iter().map(|r| r.1).sum();
+                                    eprintln!(
+                                        "[memreport] === {} rows, total {:.1}MB ===",
+                                        rows.len(),
+                                        total as f64 / 1_048_576.0
+                                    );
+                                    for (path, size) in rows.iter().take(150) {
+                                        eprintln!(
+                                            "[memreport] {:>10.2}MB  {}",
+                                            *size as f64 / 1_048_576.0,
+                                            path
+                                        );
+                                    }
+                                    eprintln!("[memreport] === end ===");
+                                } else {
+                                    eprintln!("[memreport] no result — collector failed");
+                                }
+                            });
+                        }
+                        std::thread::sleep(std::time::Duration::from_secs(60));
+                    }
+                })
+                .expect("memdump timer thread");
+        }
+
         Servo(Rc::new(ServoInner {
             delegate: RefCell::new(Rc::new(DefaultServoDelegate)),
             paint,

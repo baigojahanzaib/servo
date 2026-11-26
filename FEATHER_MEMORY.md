@@ -1634,3 +1634,32 @@ Debug-instrumentation recipe (reusable): eprintln in mse_source push_buffer + pa
 **Probe recipes (reusable): (1) JS wrap SourceBuffer.prototype.appendBuffer/abort counting calls+bytes+errors on window — distinguishes page-side feeding vs engine-side consumption; (2) eprintln push counting + pad probes on servomse ghost pads — decisive lossless-handover metric is buffers-out vs pushes-in; (3) probes must be installed inside seek_reset since pads don't exist earlier. Startup flakiness note: youtube watch pages sometimes serve ads (dur<60) — gate probes on dur>60 with retry+nudging play().**
 
 Honest mission assessment: single-seek sometimes works end-to-end now (correct position, advancing playback); multi-seek does not. The remaining stall is multi-layered race-flakiness centered on the flush+recreate design's interaction with decodebin3 — resolving it may require replacing the design with timestamp-rewriting append pipelines (WebKit-style), est. 1-2d expert gst work, outcome uncertain.
+
+## sec1zh — Reddit heap attribution: the category table IS measured (Linux, working instrument) (2026-11-26)
+
+**Instrument (now working on Linux, pushed)**: parallel+timeout memory-report collector in components/profile/mem.rs (fires all reporters before waiting, 20s per-reporter bound — a wedged reporter no longer takes down the report) + engine-side timer trigger: `SERVO_MEMDUMP_AFTER=<secs>` env — thread inside servo fires reports independent of shell event loops and LoadStatus (reddit never reaches Complete), repeats every 60s. Servoshell also gained unconditional --memory-output full-row dumps (upstream was hitrace-only).
+
+**THE TABLE — idle reddit tab, signed-out, settled ~45s+, RSS 1162MB, stable across 3 dumps 2min apart:**
+
+| MB | category |
+|---|---|
+| 342 | webrender/images — WR-side decoded+uploaded surfaces |
+| 309 | net image-cache — CPU decoded copies, main pipeline ALONE |
+| 272 | DOM text nodes (reddit shreddit DOM) |
+| 78 | JS malloc-heap, all realms summed |
+| 51 | layout trees (box-tree 48 + stylist + stacking-ctx) |
+| 49 | JS gc-heap used, all realms |
+| 34 | JS non-heap |
+| 29 | net memory-cache (raw undecoded resources) |
+| 28 | DOM other+element+attr nodes |
+| ~2 | webrender display-list/other |
+
+Cross-check rows: jemalloc-heap-allocated 777 / active 798 / mapped 885; smaps anonymous 829 of which js-gc-heap 78 (SM's own mmap, outside jemalloc). Resident 1162. Attributed total slightly exceeds resident due to overlap between measurement axes — directionally correct per category.
+
+**THE HEADLINE FINDING: images own >55% of the tab — and the same decoded bytes are effectively held TWICE (342 WR-side + 309 net-cache CPU-side ≈ 651MB combined).** Second-order finding: **the net image-cache per-pipeline cap (MAX_COMPLETED_LOAD_BYTES=128MB) is measurably violated — 309MB in ONE pipeline's cache.** Either the cap doesn't count the same bytes the reporter does, eviction never triggers (pinned-in-use images can't evict?), or LRU is broken. THIS is the highest-leverage concrete memory bug now identified: fixing the cap enforcement alone should bound the CPU copy at 128MB; the deeper fix (single-copy ownership — cache shells with paint-time re-decode, already documented as weeks-scale) attacks both copies at once.
+
+**Corrections of record**: (1) the earlier note "dropping the cap 128→16MB left scroll growth unchanged" is consistent ONLY if the cap is non-functional — reframe: those experiments measured nothing because the cap never binds. (2) Windows lane's 2.8GB vs our 1162MB — different content/scroll depth, same structure; table ratios are what transfer.
+
+**Symptom index — symptom: single idle reddit tab RSS >1GB → check: net image_cache enforcement (prime suspect — cap measurably violated, 309/128MB), double-ownership of decoded surfaces net-cache vs webrender (confirmed structural, 2x copies), DOM text-node mass on shreddit (confirmed 272MB — content-visibility addresses layout not DOM), JS heaps (ruled out as dominant — only ~160MB all realms), layout trees (ruled out — 51MB).**
+
+**Measurement caveats**: measurement-race crash (MessagePort concurrency) NOT hit in 3+ consecutive reddit dumps on Linux — treat as rare. vsize/total-row sums are hierarchical double-counting — never sum all rows; attribute per leaf categories. The url() rows key by document — reddit shows google-recaptcha webworker (29MB malloc + 20MB non-heap!) and accounts.google.com iframes as separate realms — third-party JS is ~90MB of the JS total.
