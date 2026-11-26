@@ -2219,7 +2219,6 @@ Live probe on stuck search page: `ytd-search` element `.data` is FULLY POPULATED
 ## sec1zt17 — final narrowing: data FULLY BOUND, disconnect is data-arrival → attribute-flip (2026-11-26)
 
 Live probe on stuck search page: `ytd-search` element `.data` is FULLY POPULATED with the real response (responseContext, estimatedResults, contents, trackingParams, header, topbar, onResponseReceivedCommands, targetId) — response processing works end-to-end, binding system alive (ytd-search carries __dataReady/__dataEnabled/__dataPending family — so the Polymer-ish data system IS in use on search elements, partially retracting the modern-framework correction: masthead lacks it but search has it). rIC regression check: CPU cost of the starvation fix negligible (3 ticks/5s on settled page — loop drains correctly, no spin). YET hidden persists. **The complete evidence chain: response arrives (200) → data binds to element (verified populated) → scheduler queues drain (all empty) → but the hidden-flip write never executes.** Remaining suspect space is now tiny: the element-internal logic that translates data-arrival into clearing hidden — either (a) a priority-8 commit job that gets CANCELED by a subsequent navigation/page-change (resetNavigationState cancels onPageChangeJobId — servo-specific double-navigation timing could hit this; queues empty is consistent with cancellation), or (b) the computeHideContents-equivalent binding for search never re-evaluates because the property-effects cascade breaks silently. Probe next: whether a second yt-navigate-start fires AFTER the data-bearing one in servo (double-navigate cancel race — the precise servo-ordering theory). Instrument via webdriver-injected listener post-load then trigger in-page search refinement navigation.
->>>>>>> 8af493c268c (memory: sec1zt17 — data bound, flip never writes, cancel-race suspect)
 
 ## sec1zt18 — investigation halt state + tooling unlock needed (2026-11-26)
 
@@ -2261,7 +2260,6 @@ FULL CONTRACT: ytd-search actionMap registers "yt-show-search-contents-command"�
 **NEXT DECISIVE EXPERIMENT (documented for continuation)**: install IO spy wrapper (pattern in session — wraps window.IntersectionObserver, logs created/callbacks/observes counts) then trigger a TRUE SPA navigation — NOT form.submit (causes full navigation, wipes spy — negative result recorded) — use YouTube internal router: click a visible anchor/link or use the masthead logo SPA behavior. Compare IO fire behavior servo vs expectation during the replacement render. Alternative cheaper static route: fetch youtube's kevlar/kevlarlib bundle and read initVisibilityObserver_ implementation — determine exactly what trigger completes renderer init and what attribute-write clears hidden (the write site question from sec1zt15 is still technically open — the write may BE inside the lazy-init completion).
 
 **Correction to earlier narrowing**: the question is no longer "why doesn't the flip write execute" in the abstract — it is specifically "why doesn't YouTube's visibility-observer-based lazy init complete on the replacement tree". Data binding works (ytd-search.data fully populated), upgrade works, CE reactions work, IO primitive works, scheduler drains. The defect is in the interaction between IO-driven lazy init and servo's IO implementation details OR in whatever event/step YouTube uses to begin that init.
->>>>>>> 7cd7d0d5673 (memory: sec1zt19 — devtools unlock, upgrade myth busted, IO-lazy-init prime suspect)
 
 ## sec1zt20 — IO spec-compliance verified; investigation consolidated for continuation (2026-11-26)
 
@@ -2297,7 +2295,6 @@ Direct call ys.onYtShowSearchContentsCommand() → hidden=false, hc=false, layou
 **New defect surfaced — eval-wedge on fresh loads**: after location.href full navigation to youtube home, devtools evaluateJS persistently throws 'Location relevant Document is not same origin-domain with entry settings object' for 30+s across fresh devtools connections — servo document/script state wedges after full navigation in a way it does not after SPA nav. Transient version of this error is normal during navigation, but persistent-for-30s+ suggests either navigation never completing or a script-thread wedge. UNVERIFIED whether page renders visually during the wedge (no screenshot taken). This wedge also blocked the fresh-load-vs-SPA discriminator experiment. **This is itself a serious servo defect candidate affecting all full navigations — possibly the SAME mechanism that breaks initial-load search unhide**: if the initial-load document state is wedged in some subtle way (not fully wedged — most JS runs — but some spec check failing), framework codepaths touching affected state would throw silently. Direction for continuation: reproduce eval-wedge minimally (any full navigation to a simple page?) and find the spec check in servo script/dom — grep for 'same origin-domain' or the spec step in location/document access.
 
 **Instrument survival negative**: attribute-write spy on Element.prototype does NOT survive full navigation (obviously) and the SPA-nav spy capture was pre-empted by the wipe — but the spy install methodology is sound for future SPA-only captures: wrap removeAttribute/setAttribute/hidden-property-setter BEFORE clicking in-page links.
->>>>>>> e6a2db59b14 (memory: sec1zt22 — home unhide works, search-specific defect + eval-wedge finding)
 ||||||| parent of fdd3b1eab (memory: endgame — full render proven, only command-executor trigger missing)
 
 ## Console visibility live — boot nearly clean, one real error (2026-11-26 final)
@@ -2315,7 +2312,6 @@ CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a docu
 ## sec1zt23 — REFRAMED: location-object wedge + failed navigation — a servo navigation-state defect (2026-11-26)
 
 CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a document-wide wedge — pure JS evals fine, document.title/documentElement/body all accessible post-error. It is specifically **the Location object access that throws**. AND: after `location.href='https://example.com/'` the page NEVER NAVIGATED — title still 'YouTube', body still youtube's 47 children, minutes later. **Servo defect: location.href assignment during a complex page state can silently fail to navigate AND leaves the Location object itself throwing spec errors on subsequent access.** Mechanism hypothesis: navigation starts (transitions the document's incumbent/settings state) but never completes or aborts, leaving Location's relevant-document check permanently failing. IMPACT ON YOUTUBE THEORY: YouTube's SPA framework constantly reads/writes location/history during response processing — if servo location state wedges during the boot sequence's navigation transitions, framework code touching location throws silently (K() swallows), aborting response completion before the unhide write. **This is now the prime mechanism suspect.** Next steps: (1) minimal repro — does location.href wedge reproduce on simple pages or only youtube-complex ones; (2) grep servo script/dom/location.rs for the relevant-document check and audit navigation-transition state handling; (3) test whether history.pushState (what YouTube SPA actually uses) also wedges. NOTE prior data point consistent: clicking filter chips didn't navigate either (sec1zt18) — possibly the same defect, not 'page already wedged'.
->>>>>>> 58815dfeb23 (memory: sec1zt23 — location wedge + failed navigation, prime mechanism suspect)
 ||||||| parent of d092a9361 (memory: RO exonerated; unhandledrejection scope; UA-flag probe alternative)
 
 ## CORRECTION: unhandledrejection IS fully implemented in servo upstream (2026-11-26)
@@ -2333,7 +2329,6 @@ Definitive discrimination test: page with inline script accessing location.hostn
 ## sec1zt24 — CORRECTION: location wedge is devtools-eval artifact, page JS unaffected — location theory DEAD (2026-11-26)
 
 Definitive discrimination test: page with inline script accessing location.hostname + history.pushState + location.pathname — title shows LOC-OK:127.0.0.1|PS-OK:/spa-path — **real page JavaScript location access works perfectly, incl. pushState SPA pattern**. The persistent 'same origin-domain' throw is specific to devtools evaluateJS: entry settings object for devtools eval is not the page global, so the spec check correctly throws FOR THE EVAL ONLY. sec1zt23's 'prime mechanism suspect' is RETRACTED — it was instrumentation artifact. (Side findings that stand: location.href full navigation DOES work on simple pages — iana.org nav succeeded; and devtools eval of location.* will always throw — workaround: read location indirectly via document.URL or a page-side mirror.) ALSO: the servo FIXME in location.rs document_if_same_origin is real but only affects not-fully-active edge cases, NOT the youtube defect. BACK TO EVIDENCE: home unhide works (SPA-navigated), search unhide fails (initial loads). The open discriminator is initial-load vs SPA-nav for the SEARCH page specifically.
->>>>>>> fa21179f982 (memory: sec1zt24 — location theory retracted, devtools artifact)
 ||||||| parent of 403c3881c (memory: nav events fire; command never dispatches; response-diff test + shim option as the fork)
 
 ## hideContents origin refined (2026-11-26 endgame-2)
@@ -2361,7 +2356,6 @@ STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds
 ## sec1zt25 — full mechanism chain decoded: the yt-show-search-contents-command action never fires (2026-11-26)
 
 STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds `hidden="[[data.hideContents]]"` on ytd-two-column-search-results-renderer. The ONLY write that clears it: `onYtShowSearchContentsCommand(){this.set("data.hideContents",!1)}` registered via `actionMap={"yt-show-search-contents-command":"onYtShowSearchContentsCommand"}` in the YtActionHandlerBehavior — actions flow as `yt-action` DOM events carrying detail.actionName, routed by the _.jL singleton router. LIVE VERIFIED on stuck servo page: handler IS registered (typeof function), manual `ys.set('data.hideContents', false)` unhides + full render 7960px — binding chain perfect. Response data (1.66MB) contains NO showSearchContents anywhere (568 other Command refs) and NO hideContents key — the action trigger is purely client-side, fired when response processing completes. BOOT CAPTURE (dispatchEvent spy installed T+7.2s mid-boot): yt-action events DO fire (yt-open-video-preview-action, yt-forward-redux-action-to-live-chat-iframe x8) but yt-show-search-contents-command NEVER fires. The action-routing infrastructure works; the specific trigger never executes. The 'yt-show-search-contents-command' string appears exactly ONCE in ytbase.js (the registration) — so the firing site is either in another jsbin (search controller bundle — bins loaded incl. webcomponents-sd, scheduler, spf, network — full bin list not yet grepped) or constructed dynamically. NEXT: grep all loaded bins for the firing logic, OR compare against Chrome capture of the same event stream to see exact expected firing time/context. Hypothesis space narrowed to: some completion condition in the search response-processing controller never becomes true in servo (e.g. all-renderers-stamped signal, an idle callback, a specific promise chain, or visibility-of-something gate).
->>>>>>> d64c64ac09a (memory: sec1zt25 — mechanism fully decoded, trigger never fires)
 ||||||| parent of aa4392968 (memory: reframe — the erroneous hide may be the bug, not a missing unhide)
 
 ## Chrome comparison — DECISIVE END STATE (endgame-7 FINAL)
@@ -2383,7 +2377,6 @@ CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDo
 ## sec1zt26 — BREAKTHROUGH: chrome ground truth — yt-navigate-finish/yt-page-data-updated never fire in servo (2026-11-26)
 
 CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDocument — TRUE pre-boot injection, the capability devtools-eval lacks): on a WORKING chrome render of the same youtube search (hidden:false, h:7143): **yt-show-search-contents-command NEVER FIRES IN CHROME EITHER** — the action-based unhide theory is DEAD; that's a legacy/unused path. The events that DO fire in chrome: yt-page-data-fetched:1, yt-page-data-updated:1, yt-navigate-finish:1, yt-update-title:1, yt-renderidom-finished:9, yt-rendererstamper-finished:22. **SERVO CAPTURE COMPARISON: yt-navigate-finish, yt-page-data-fetched, yt-page-data-updated, yt-update-title ALL ABSENT in servo** — the navigation/response-processing completion events never fire. yt-rendererstamper-finished and yt-renderidom-finished DO fire in servo — so rendering machinery runs, but the navigation-completion layer never completes. REVISED MECHANISM UNDERSTANDING: hidden is not cleared by an explicit command — in chrome the post-response re-render naturally stamps the replacement without hidden because data.hideContents is falsy in the response (binding `hidden=\"[[data.hideContents]]\"` evaluates false). The servo replacement being stamped WITH hidden means either the binding evaluated against navigation-in-progress state (hideContentsForNavigation-equivalent stuck true because nav completion never happens) or the servo replacement is not the proper client re-render at all. THE QUESTION IS NOW FULLY PRECISE: why doesn't YouTube's navigation-completion machinery (yt-navigate-finish emission) run in servo? yt-navigate-start comparison pending (was in the chrome stream? not captured — check). Servo navigation machinery suspects: popstate/history events, the navigatefinish trigger waiting on some resource/signal, or the response-processing promise chain breaking. NOTE for future captures: chrome CDP addScriptToEvaluateOnNewDocument is the gold-standard pre-boot injection; use it as ground truth for ANY event-stream question.
->>>>>>> 07805d5dda8 (memory: sec1zt26 — breakthrough: nav-completion events absent in servo)
 ||||||| parent of 306713457 (memory: shim negative — handler availability varies; honest close)
 
 ## Shim iteration results — ONE iteration from working mitigation (endgame-10 FINAL)
@@ -2409,7 +2402,6 @@ Comprehensive identity-tracked capture (setter patch + MO + polls, one boot): ex
 **TOOLING: servo has --userscripts <dir> BUILT IN** (components/script/dom/userscripts.rs — scripts evaluated when head element parses, TRUE pre-boot injection, no engine work needed). This replaces all the injection hacks — use for all future framework debugging.
 
 **FULL BOOT CAPTURE with userscript injection — reverses the sec1zt26 narrowing**: yt-page-data-fetched FIRES @1928, yt-page-data-updated @2198, yt-navigate-finish @2199, yt-update-title @2162 — the navigation-completion pipeline COMPLETES in servo! AND critically: **HIDDEN-REMOVE on ytd-two-column-search-results-renderer FIRES @1933** — the unhide write DOES execute! Yet final state is hidden:true. Confirmed synthesis with the replacement docs: removal fires on the boot/SSR element, the response-data replacement then arrives stamped WITH hidden, and no second removal fires for the replacement instance. The events all firing means the completion pipeline is NOT the defect. NEW PRECISE QUESTION: in chrome does the replacement element exist at all / does a second removal fire? ANOMALY OBSERVED: every event in servo fires exactly 3x with identical timestamps — either triple-dispatch in youtube logic (servo-specific) or triple-nested spy wrappers (userscript injected 3x?) — discriminate before trusting multiplicities. ALSO NOTE: sec1zt26's 'events absent in servo' was an artifact of post-boot injection (events fire before T+7s when spies could attach) — corrected.
->>>>>>> a0968cd0bd5 (memory: sec1zt27 — userscript unlock, unhide fires, defect is replacement re-stamp)
 ||||||| parent of cab1e7635 (memory: replacement theory dead — single write at T1724, never cleared)
 
 ## YouTube hidden-stall ROOT CAUSE — SOLVED to the single wrong bit (endgame-13, FINAL)
@@ -2432,5 +2424,44 @@ Definitive write-capture with state snapshots (userscript injection): servo sequ
 ## sec1zt28 — ROOT CAUSE CORNERED: binding writes hidden=true for undefined data.hideContents (2026-11-26)
 
 Definitive write-capture with state snapshots (userscript injection): servo sequence: template-parse strips SSR hidden @1973 (state: no data yet), then **propSET hidden=true @1996 while parent ytd-search data EXISTS but hideContents is UNDEFINED**. Chrome comparison for identical capture: remove@1492 then propCLEAR@1498 (false written). **The binding `hidden="[[data.hideContents]]"` evaluates undefined→TRUE in servo vs undefined→FALSE/absent in chrome.** Since the binding framework is identical JS in both browsers, the divergence is in a PRIMITIVE the framework relies on. Leading theory: template binding annotation REGISTRATION fails in servo — the write path was `_setUnmanagedPropertyToNode` (the stamper for UNMANAGED template properties) — i.e. in servo the hidden attribute is treated as unmanaged/static template content and stamped with truthy-string semantics, while in chrome it registers as a managed binding and is excluded from stamping. Suspect primitive areas: servo template parsing producing different attribute representation, or annotation-parse regex/string handling difference, OR custom-element/template lifecycle ordering making the registration miss. NEXT STEP: read the stamper code path in bundle (_parseTemplateNodeAttribute/_setUnmanagedPropertyToNode region, kevlar chunk line ~7473/3644) to determine exactly what makes an attribute managed-vs-unmanaged and probe that primitive in servo. ALSO CONFIRMED ARTIFACT: userscript injects 3x per page (nested wrappers — capture.js:22→capture.js:23 self-chain visible in stacks) — all x3 event duplicates are this artifact, not servo behavior; servo userscript multiplicity itself worth a look (load_script possibly invoked per head mutation).
->>>>>>> 40038cbea4b (memory: sec1zt28 — root cause cornered: undefined→true binding write)
-||||||| parent of 303ceb416 (memory: ROOT CAUSE — single wrong bit, truthy vs falsy binding eval at stamp time)
+
+## sec1zt29 — BREAKTHROUGH: the truthy write value is a Trusted-Types policy object (typeof object, stringifies "zClosurez")
+
+Value-level capture on live servo boot (upgraded spy records typeof+String(v)):
+```
+propSET|object|zClosurez  (t=1931, once effective — x3 artifact)
+```
+The binding evaluates `data.hideContents` (undefined) but the VALUE assigned to `tc.hidden` is an
+OBJECT stringifying to "zClosurez" — truthy — hence hidden=true.
+
+IDENTIFIED in bundle @2458373: the **polymer_resin Trusted Types policy**:
+```js
+var D={createHTML:()=>"zClosurez", createScript:()=>"/*zClosurez*/", createScriptURL:()=>"about:invalid#zClosurez"};
+return typeof trustedTypes!=="undefined" ? trustedTypes.createPolicy("polymer_resin", D) : D
+```
+When trustedTypes exists, createPolicy returns a real TT policy whose createHTML produces TrustedHTML
+objects (typeof object, truthy). The framework's binding write path passes values through a transform
+(C7 in the write chain: `C7&&(W=C7(W,q.target,q.kind,k))`) — the resin sanitizer hook.
+
+CHROME contrast: propCLEAR = the assigned value was FALSY (undefined) — chrome's binding evaluation
+never produces the object for this path, OR the transform passes undefined through untouched.
+SERVO: the object materializes — two candidate primitives:
+  (a) servo's trustedTypes.createPolicy/createHTML implementation returns the object even for
+      undefined/empty input where chrome returns the input unchanged;
+  (b) the binding evaluation in servo feeds a non-undefined sentinel into the transform where
+      chrome feeds undefined (evaluation divergence), and the transform wraps it.
+Either way the failing primitive is IN THE TRUSTED-TYPES/RESIN TRANSFORM PIPELINE, not the data system.
+
+NEXT PROBES (cheap, decisive):
+  1. typeof trustedTypes + trustedTypes.createPolicy behavior in servo vs chrome:
+     `trustedTypes.createPolicy('t',{createHTML:s=>s}).createHTML('x')` — typeof of result;
+     createHTML(undefined) behavior.
+  2. Capture C7's input/output — spy is internal; instead: evaluate `data.hideContents` binding
+     semantics manually in-page: compare `(eval of undefined passthrough)` — if TT wrap of undefined
+     produces object in servo but undefined in chrome → primitive pinned.
+  3. If (a) confirmed: engine fix = match chrome TT semantics (passthrough of non-string input /
+     correct undefined handling in createHTML).
+
+Symptom index: YouTube truthy hidden write (object zClosurez) → check Trusted Types createPolicy/
+createHTML object-materialization semantics (components/script/dom/trustedtypes*), polymer_resin
+policy path in kevlar bundle.
