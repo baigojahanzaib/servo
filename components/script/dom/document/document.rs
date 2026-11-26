@@ -100,6 +100,7 @@ use crate::dom::attr::Attr;
 use crate::dom::beforeunloadevent::BeforeUnloadEvent;
 use crate::dom::bindings::callback::{ExceptionHandling, TracedCallback};
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
+use crate::dom::bindings::codegen::Bindings::IdleDeadlineBinding::IdleRequestCallback;
 use crate::dom::bindings::codegen::Bindings::BeforeUnloadEventBinding::BeforeUnloadEvent_Binding::BeforeUnloadEventMethods;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, DocumentVisibilityState, ElementCreationOptions,
@@ -175,6 +176,7 @@ use crate::dom::focusevent::FocusEvent;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::hashchangeevent::HashChangeEvent;
 use crate::dom::history::History;
+use crate::dom::idledeadline::IdleDeadline;
 use crate::dom::html::htmlanchorelement::HTMLAnchorElement;
 use crate::dom::html::htmlareaelement::HTMLAreaElement;
 use crate::dom::html::htmlbaseelement::HTMLBaseElement;
@@ -522,6 +524,9 @@ pub(crate) struct Document {
     /// <https://html.spec.whatwg.org/multipage/#list-of-animation-frame-callbacks>
     /// List of animation frame callbacks
     animation_frame_list: DomRefCell<VecDeque<(u32, Option<AnimationFrameCallback>)>>,
+    /// <https://w3c.github.io/requestidlecallback/#dfn-list-of-idle-request-callbacks>
+    idle_callback_ident: Cell<u32>,
+    idle_callback_list: DomRefCell<VecDeque<(u32, IdleCallbackEntry)>>,
     /// Whether we're in the process of running animation callbacks.
     ///
     /// Tracking this is not necessary for correctness. Instead, it is an optimization to avoid
@@ -2095,6 +2100,71 @@ impl Document {
                     AnimationState::AnimationCallbacksAbsent,
                 ),
             );
+        }
+
+        self.run_the_idle_callbacks(cx);
+    }
+
+    /// <https://w3c.github.io/requestidlecallback/#dfn-requestidlecallback>
+    ///
+    /// v1 implementation note: idle callbacks piggyback on the animation frame
+    /// tick (an internal no-op frame callback keeps the pump alive while any
+    /// idle callback is pending), so they run right after rAF callbacks each
+    /// frame, at most one frame late. The timeout option is honored when the
+    /// callback fires, not by forcing earlier execution.
+    pub(crate) fn request_idle_callback(
+        &self,
+        callback: TracedCallback<IdleRequestCallback>,
+        timeout: Option<u32>,
+    ) -> u32 {
+        let ident = self.idle_callback_ident.get() + 1;
+        self.idle_callback_ident.set(ident);
+        self.idle_callback_list.borrow_mut().push_back((
+            ident,
+            IdleCallbackEntry {
+                callback,
+                registered_at: CrossProcessInstant::now(),
+                timeout,
+            },
+        ));
+        // Keep the frame pump alive while any idle callback is pending so the
+        // callbacks get a tick to run on even when no page rAF loop exists.
+        self.request_animation_frame(AnimationFrameCallback::IdleCallbackTick);
+        ident
+    }
+
+    pub(crate) fn cancel_idle_callback(&self, ident: u32) {
+        self.idle_callback_list
+            .borrow_mut()
+            .retain(|(handle, _)| *handle != ident);
+    }
+
+    /// Run due idle callbacks after the animation frame callbacks for a tick.
+    fn run_the_idle_callbacks(&self, cx: &mut CurrentRealm) {
+        if self.idle_callback_list.borrow().is_empty() {
+            return;
+        }
+        // Spec: the idle deadline is capped at 50ms from when the batch starts.
+        let deadline = CrossProcessInstant::now() + time::Duration::milliseconds(50);
+        loop {
+            let entry = self.idle_callback_list.borrow_mut().pop_front();
+            let Some((_, entry)) = entry else { break };
+            rooted!(&in(cx) let callback = entry.callback);
+            let did_timeout = entry
+                .timeout
+                .is_some_and(|t| {
+                    (CrossProcessInstant::now() - entry.registered_at).whole_milliseconds() >=
+                        t as i128
+                });
+            let idle_deadline = IdleDeadline::new(cx, &self.global(), deadline, did_timeout);
+            let _ = callback.Call__(cx, &idle_deadline, ExceptionHandling::Report);
+            if CrossProcessInstant::now() >= deadline {
+                break;
+            }
+        }
+        if !self.idle_callback_list.borrow().is_empty() {
+            // More callbacks pending: keep the pump alive for the next tick.
+            self.request_animation_frame(AnimationFrameCallback::IdleCallbackTick);
         }
     }
 
@@ -4486,6 +4556,8 @@ impl Document {
             asap_scripts_set: Default::default(),
             animation_frame_ident: Cell::new(0),
             animation_frame_list: DomRefCell::new(VecDeque::new()),
+            idle_callback_ident: Cell::new(0),
+            idle_callback_list: DomRefCell::new(VecDeque::new()),
             running_animation_callbacks: Cell::new(false),
             loader: DomRefCell::new(doc_loader),
             current_parser: Default::default(),
@@ -7744,6 +7816,18 @@ fn update_with_current_instant(marker: &Cell<Option<CrossProcessInstant>>) {
     }
 }
 
+/// A registered idle callback, per
+/// <https://w3c.github.io/requestidlecallback/#dfn-list-of-idle-request-callbacks>.
+#[derive(JSTraceable, MallocSizeOf)]
+#[cfg_attr(crown, crown::unrooted_must_root_lint::must_root)]
+pub(crate) struct IdleCallbackEntry {
+    callback: TracedCallback<IdleRequestCallback>,
+    #[no_trace]
+    #[ignore_malloc_size_of = "servo_base"]
+    registered_at: CrossProcessInstant,
+    timeout: Option<u32>,
+}
+
 #[derive(JSTraceable, MallocSizeOf)]
 pub(crate) enum AnimationFrameCallback {
     #[cfg(feature = "devtools")]
@@ -7751,6 +7835,9 @@ pub(crate) enum AnimationFrameCallback {
     FrameRequestCallback {
         callback: TracedCallback<FrameRequestCallback>,
     },
+    /// Internal no-op callback that only keeps the frame pump alive so that
+    /// pending idle callbacks get a tick to run on.
+    IdleCallbackTick,
 }
 
 impl js::gc::Rootable for AnimationFrameCallback {}
@@ -7769,6 +7856,7 @@ impl AnimationFrameCallback {
                 // https://github.com/servo/servo/issues/6928
                 let _ = callback.Call__(cx, Finite::wrap(now), ExceptionHandling::Report);
             },
+            AnimationFrameCallback::IdleCallbackTick => {},
         }
     }
 }

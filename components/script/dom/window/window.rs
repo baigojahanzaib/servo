@@ -114,6 +114,7 @@ use webrender_api::units::{DeviceIntSize, DevicePixel, LayoutPixel, LayoutPoint}
 use crate::dom::StatelessWorkletThreadPool;
 use crate::dom::bindings::callback::RootedCallback;
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
+use crate::dom::bindings::codegen::Bindings::IdleDeadlineBinding::{IdleRequestCallback, IdleRequestOptions};
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, NamedPropertyValue,
 };
@@ -1804,6 +1805,21 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-queuemicrotask>
+    fn RequestIdleCallback(
+        &self,
+        callback: RootedCallback<IdleRequestCallback>,
+        options: &IdleRequestOptions,
+    ) -> Fallible<u32> {
+        Ok(self
+            .Document()
+            .request_idle_callback(callback.to_traced(), options.timeout))
+    }
+
+    fn CancelIdleCallback(&self, handle: u32) -> Fallible<()> {
+        self.Document().cancel_idle_callback(handle);
+        Ok(())
+    }
+
     fn QueueMicrotask(&self, cx: &JSContext, callback: RootedCallback<VoidFunction>) {
         ScriptThread::enqueue_microtask(
             cx,
