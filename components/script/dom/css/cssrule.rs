@@ -17,6 +17,7 @@ use super::csskeyframerule::CSSKeyframeRule;
 use super::csskeyframesrule::CSSKeyframesRule;
 use super::csslayerblockrule::CSSLayerBlockRule;
 use super::csslayerstatementrule::CSSLayerStatementRule;
+use super::csscontainerrule::CSSContainerRule;
 use super::cssmediarule::CSSMediaRule;
 use super::cssnamespacerule::CSSNamespaceRule;
 use super::cssnesteddeclarations::CSSNestedDeclarations;
@@ -72,6 +73,8 @@ impl CSSRule {
         } else if let Some(rule) = self.downcast::<CSSImportRule>() {
             rule as &dyn SpecificCSSRule
         } else if let Some(rule) = self.downcast::<CSSSupportsRule>() {
+            rule as &dyn SpecificCSSRule
+        } else if let Some(rule) = self.downcast::<CSSContainerRule>() {
             rule as &dyn SpecificCSSRule
         } else if let Some(rule) = self.downcast::<CSSLayerBlockRule>() {
             rule as &dyn SpecificCSSRule
@@ -153,7 +156,13 @@ impl CSSRule {
                 s,
             )),
             StyleCssRule::Page(_) => unreachable!(),
-            StyleCssRule::Container(_) => unimplemented!(), // TODO
+            StyleCssRule::Container(s) => DomRoot::upcast(CSSContainerRule::new(
+                cx,
+                window,
+                parent_rule,
+                parent_stylesheet,
+                s,
+            )),
             StyleCssRule::Document(_) => unimplemented!(),  // TODO
             StyleCssRule::LayerBlock(s) => DomRoot::upcast(CSSLayerBlockRule::new(
                 cx,
@@ -265,7 +274,11 @@ impl CSSRule {
                 }
             },
             StyleCssRule::Page(_) => unreachable!(),
-            StyleCssRule::Container(_) => unimplemented!(), // TODO
+            StyleCssRule::Container(s) => {
+                if let Some(rule) = self.downcast::<CSSContainerRule>() {
+                    rule.update_rule(s.clone(), guard);
+                }
+            },
             StyleCssRule::Document(_) => unimplemented!(),  // TODO
             StyleCssRule::LayerBlock(s) => {
                 if let Some(rule) = self.downcast::<CSSLayerBlockRule>() {
