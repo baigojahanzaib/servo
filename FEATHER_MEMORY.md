@@ -3574,3 +3574,9 @@ CAPTURED feather's real request headers (localhost capture): anomalies vs Chrome
 - credentials exposed. permissions was already green (query returns real states).
 - GAMEPAD requires cargo feature not pref: webidl has skip-unless CARGO_FEATURE_GAMEPAD — pref alone is a no-op. Before enabling any pref, check the webidl header for skip-unless lines — pref-gates and feature-gates are DIFFERENT levers.
 - Branch note: platform-apis branch carries its own copy of the clipboard pref line (branched pre-#219-merge) — merge conflict with main is trivial/identical content.
+
+## cookiestore-decision — exposed-but-broken worse than absent; REVERTED (2026-11-26)
+- Differential verdict: document.cookie roundtrips fine on the same host — cookie storage sound generally; the CookieStore API path specifically broken (set resolves, get returns null — implementation structurally complete in dom/cookiestore/cookiestore.rs, Get uses GetCookieDataForUrlAsync; the write/read path divergence is unfixed upstream).
+- DECISION PRINCIPLE (matrix-driven): when a feature has a working fallback (sites feature-detect cookieStore and fall back to document.cookie), exposing a broken implementation is strictly worse than absence — absence routes sites to the working path. Reverted the pref; engine-lane investigation candidate with exact file refs.
+- Full 30-class grid: 173/183 with zero unexplained reds. Every failure is environmental (webgl x2 — no GPU on VM), known-large (webrtc), unimplemented-upstream (svg-canvas-source, backdrop-filter, FontFaceSet.check), pref-not-applicable (gamepad cargo feature, webgpu), or documented engine gap (range-geometry, cookiestore).
+- Round-5 greens: workers incl transferable detachment 5/5, custom-elements+slots full lifecycle 9/9, crypto sha256 spec-vector correct 10/10 — the deep mechanism layers are sound.
