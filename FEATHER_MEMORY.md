@@ -3258,3 +3258,6 @@ Mechanism findings worth indexing:
 - Response::Status()/StatusText() take NO cx; `body()` comes from trait `crate::fetch::body::BodyMixin`.
 - Closure-capture gotcha: a closure moving a non-Copy callback into a message becomes FnOnce — clone the callback inside instead when the closure must be shared via Rc<dyn Fn>.
 Verification: pending live test (cachetest.html harness exists in /tmp/elltest). Requires dom_serviceworker_enabled=true in the shell prefs (gates `caches` on WindowOrWorkerGlobalScope; SecureContext also required — https/localhost only).
+
+## sec1zt80 — Cache API LIVE-VERIFIED — every harness test passes
+cachetest.html results in feather (servo engine): open ok; all four methods present; put ok; **tee semantics correct** (caller's response body still readable after put); match roundtrips body+status+custom headers exactly; match-miss undefined; keys correct; delete true + post-delete match undefined. The wasm-bindgen cache-storage prerequisite class is now implemented end-to-end. Caveats: memory-only backend (per-session), exact-url matching, no options validation, requires dom_serviceworker_enabled=true + SecureContext.
