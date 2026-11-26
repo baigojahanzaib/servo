@@ -213,6 +213,19 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // <https://w3c.github.io/media-source/#dom-sourcebuffer-appendbuffer>
         // updating flips synchronously, the append completes in a queued task
         // with updatestart/update/updateend — real player JS loops on these.
+        // Quota enforcement: push into the engine FIRST and bail with
+        // QuotaExceededError when the track buffer is full (the engine rejects
+        // the push) — spec-compliant backpressure; real players respond by
+        // removing buffered ranges. Rejected bytes are never indexed, keeping
+        // the buffered index consistent with what the engine actually holds.
+        if let Some(ref ms) = *self.media_source.borrow() {
+            if !ms.push_appended_data(self.track_id.get(), bytes.clone()) {
+                return Err(Error::QuotaExceeded {
+                    quota: None,
+                    requested: None,
+                });
+            }
+        }
         self.updating.set(true);
         let prev_indexed_tc = self.webm_indexer.borrow().last_timecode();
         let timecodes = self.webm_indexer.borrow_mut().feed(&bytes);
@@ -245,9 +258,6 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
                 1.0
             };
             let _ = ranges.add(*first, last + span);
-        }
-        if let Some(ref ms) = *self.media_source.borrow() {
-            ms.push_appended_data(self.track_id.get(), bytes);
         }
         let this = Trusted::new(self);
         self.global()

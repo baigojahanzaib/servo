@@ -99,10 +99,22 @@ mod imp {
             let Some(ref t) = tracks.get(&track) else {
                 return Err(gstreamer::FlowError::Error);
             };
-            let size = data.len();
+            let size = data.len() as u64;
+            // Quota enforcement: appsrc accepts pushed buffers unconditionally
+            // (max-bytes only drives the need/enough-data signals), so without
+            // this check every byte a page ever appends piles in the queue —
+            // measured 144MB -> 336MB of SourceBuffer-attributed memory in
+            // under a minute of MSE churn (sec1zq). Rejecting the push when the
+            // track is full back-pressures through the chain to appendBuffer,
+            // which throws QuotaExceededError per the MSE spec; real players
+            // respond by evicting buffered ranges. Playing videos drain their
+            // queues constantly and never hit this; paused/never-played videos
+            // (infinite-feed preloads) hit it exactly as intended.
+            if t.appsrc.current_level_bytes() + size > MAX_SRC_QUEUE_SIZE {
+                return Err(gstreamer::FlowError::Error);
+            }
             let buffer = gstreamer::Buffer::from_slice(data);
-            let r = t.appsrc.push_buffer(buffer);
-            r
+            t.appsrc.push_buffer(buffer)
         }
 
         /// EOS is per-stream in gstreamer but MSE endOfStream ends the whole
