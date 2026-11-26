@@ -439,6 +439,9 @@ struct RasterizationTask {
     #[ignore_malloc_size_of = "Fn is difficult to measure"]
     listeners: Vec<(PipelineId, ImageCacheResponseCallback)>,
     result: Option<RasterImage>,
+    /// Pixel bytes as soon as resvg finishes, before the WebRender key-assignment
+    /// round-trip completes. Canvas consumers read this; layout uses `result`.
+    bytes_result: Option<RasterImage>,
 }
 
 /// Used for storing images that do not have a `WebRenderImageKey` yet.
@@ -1440,6 +1443,11 @@ impl ImageCache for ImageCacheImpl {
             match resvg_result {
                 Ok(rasterized_image) => {
                     let mut store = store.lock();
+                    store
+                        .rasterized_vector_images
+                        .entry((image_id, requested_size))
+                        .or_default()
+                        .bytes_result = Some(rasterized_image.clone());
                     store.load_image_with_keycache(PendingKey::Svg((
                         image_id,
                         rasterized_image,
@@ -1466,6 +1474,30 @@ impl ImageCache for ImageCacheImpl {
                 },
             }
         });
+        RasterizationResult::PendingRasterization
+    }
+
+    fn rasterize_vector_image_bytes(
+        &self,
+        image_id: PendingImageId,
+        requested_size: DeviceIntSize,
+        svg_id: Option<Uuid>,
+    ) -> RasterizationResult {
+        // Trigger (or fast-path) the normal rasterization job, then report byte-level
+        // readiness independently of the WebRender key-assignment round-trip.
+        let result = self.rasterize_vector_image(image_id, requested_size, svg_id);
+        if matches!(result, RasterizationResult::InvalidSvgParameters) {
+            return result;
+        }
+        let store = self.store.lock();
+        if let Some(task) = store
+            .rasterized_vector_images
+            .get(&(image_id, requested_size))
+        {
+            if let Some(bytes) = task.bytes_result.as_ref() {
+                return RasterizationResult::Image(bytes.clone());
+            }
+        }
         RasterizationResult::PendingRasterization
     }
 

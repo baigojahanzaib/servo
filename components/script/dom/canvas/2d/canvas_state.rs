@@ -507,8 +507,8 @@ impl CanvasState {
         if size.is_empty() {
             return None;
         }
-        for attempt in 0..2 {
-            match self.image_cache.rasterize_vector_image(
+        for _ in 0..100 {
+            match self.image_cache.rasterize_vector_image_bytes(
                 vector_image.id,
                 size,
                 vector_image.svg_id,
@@ -517,30 +517,9 @@ impl CanvasState {
                     return Some(std::sync::Arc::new(raster));
                 },
                 RasterizationResult::InvalidSvgParameters => return None,
-                RasterizationResult::PendingRasterization if attempt == 0 => {
-                    let (sender, receiver) = std::sync::mpsc::channel();
-                    self.image_cache.add_rasterization_complete_listener(
-                        GlobalScope::entry().pipeline_id(),
-                        vector_image.id,
-                        size,
-                        Box::new(move |message| {
-                            if matches!(
-                                message,
-                                ImageCacheResponseMessage::VectorImageRasterizationComplete(_)
-                            )
-                            {
-                                let _ = sender.send(());
-                            }
-                        }),
-                    );
-                    if receiver
-                        .recv_timeout(std::time::Duration::from_secs(3))
-                        .is_err()
-                    {
-                        return None;
-                    }
+                RasterizationResult::PendingRasterization => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
                 },
-                RasterizationResult::PendingRasterization => return None,
             }
         }
         None
