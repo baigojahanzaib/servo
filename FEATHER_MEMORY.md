@@ -3442,3 +3442,4 @@ queries re-evaluate every pass. Volume estimate: the trait method + plumbing ~sm
 restyle-scheduling hook is the unknown — look at how layout-2020 incremental restyle is
 triggered today (needed regardless). Files: layout_dom/servo_dangerous_style_element.rs,
 components/layout/flow construction entry, stylo container_rule.rs traverse_container.
+- xclick-2 (2026-11-26): click-DRAG text selection on x.com signup page renders highlight — multiline selection highlight appears to track drag x-position per line rather than wrapping full-width on the first line (uncertain if defect — needs comparison against Chrome). No dramatic glitch reproduced unauthenticated: clicks, modals, inputs, selection all functional. The user's "clicking text items glitches" remains unreproduced — most likely requires the authenticated timeline. RECOMMEND: ask user for a screen recording of the glitch or x.com test credentials.
