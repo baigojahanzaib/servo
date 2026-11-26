@@ -33,8 +33,8 @@ use servo_media_traits::{BackendMsg, ClientContextId, MediaInstance};
 use super::BACKEND_BASE_TIME;
 use crate::media_stream::GStreamerMediaStream;
 use crate::media_stream_source::{ServoMediaStreamSrc, register_servo_media_stream_src};
-use crate::render::GStreamerRender;
 use crate::mse_source::{ServoMse, register_servo_mse};
+use crate::render::GStreamerRender;
 use crate::source::{ServoSrc, register_servo_src};
 
 const DEFAULT_MUTED: bool = false;
@@ -45,6 +45,21 @@ const DEFAULT_VOLUME: f64 = 1.0;
 const DEFAULT_TIME_RANGES: Vec<Range<f64>> = vec![];
 
 const MAX_BUFFER_SIZE: i32 = 500 * 1024 * 1024;
+
+/// Run a gstreamer signal-callback body catching any panic before it can
+/// unwind into the calling C thread. Gstreamer invokes these callbacks from
+/// its own internal (C) threads; an unwind crossing those foreign frames is
+/// undefined behaviour, and an uncaught panic kills the thread silently,
+/// leaving the media element in a permanently degraded state. A caught panic
+/// is logged by the panic hook (like every other thread) and the callback
+/// simply does not complete its update — the player degrades gracefully
+/// instead of dying.
+fn run_callback_guarded<F, T>(body: F) -> Option<T>
+where
+    F: FnOnce() -> T,
+{
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)).ok()
+}
 
 fn metadata_from_media_info(media_info: &gstreamer_play::PlayMediaInfo) -> Result<Metadata, ()> {
     let dur = media_info.duration();
@@ -268,18 +283,16 @@ impl PlayerInner {
 
     pub fn end_of_stream(&mut self) -> Result<(), PlayerError> {
         match self.source {
-            Some(ref mut source) => {
-                match source {
-                    PlayerSource::Seekable(source) => source
-                        .push_end_of_stream()
-                        .map(|_| ())
-                        .map_err(|_| PlayerError::EOSFailed),
-                    PlayerSource::Mse(source) => {
-                        source.end_of_stream_all();
-                        Ok(())
-                    },
-                    _ => Ok(()),
-                }
+            Some(ref mut source) => match source {
+                PlayerSource::Seekable(source) => source
+                    .push_end_of_stream()
+                    .map(|_| ())
+                    .map_err(|_| PlayerError::EOSFailed),
+                PlayerSource::Mse(source) => {
+                    source.end_of_stream_all();
+                    Ok(())
+                },
+                _ => Ok(()),
             },
             _ => Ok(()),
         }
@@ -300,9 +313,9 @@ impl PlayerInner {
             self.mse_position_offset.set(time);
             return Ok(());
         }
-        if let Some(ref metadata) = self.last_metadata &&
-            let Some(ref duration) = metadata.duration &&
-            duration < &time::Duration::new(time as u64, 0)
+        if let Some(ref metadata) = self.last_metadata
+            && let Some(ref duration) = metadata.duration
+            && duration < &time::Duration::new(time as u64, 0)
         {
             gstreamer::warning!(self.cat, obj = &self.player, "Trying to seek out of range");
             return Err(PlayerError::SeekOutOfRange);
@@ -380,14 +393,14 @@ impl PlayerInner {
                     start.unwrap()
                 } else {
                     gstreamer::format::Percent::from_percent(0)
-                } / gstreamer::format::Percent::MAX) as f64 *
-                    duration.as_secs_f64();
+                } / gstreamer::format::Percent::MAX) as f64
+                    * duration.as_secs_f64();
                 let end = (if let gstreamer::GenericFormattedValue::Percent(end) = end {
                     end.unwrap()
                 } else {
                     gstreamer::format::Percent::from_percent(0)
-                } / gstreamer::format::Percent::MAX) as f64 *
-                    duration.as_secs_f64();
+                } / gstreamer::format::Percent::MAX) as f64
+                    * duration.as_secs_f64();
                 buffered_ranges.push(Range { start, end });
             }
         }
@@ -397,9 +410,9 @@ impl PlayerInner {
 
     pub fn seekable(&self) -> Vec<Range<f64>> {
         // if the servosrc is seekable, we should return the duration of the media
-        if let Some(metadata) = self.last_metadata.as_ref() &&
-            metadata.is_seekable &&
-            let Some(duration) = metadata.duration
+        if let Some(metadata) = self.last_metadata.as_ref()
+            && metadata.is_seekable
+            && let Some(duration) = metadata.duration
         {
             return vec![Range {
                 start: 0.0,
@@ -486,7 +499,9 @@ impl SeekChannel {
         // for the script side to service the seek (unbounded-IPC wedge class).
         // On timeout the seek is reported as failed and playback continues
         // with whatever data the pipeline already holds.
-        self.recv.try_recv_timeout(std::time::Duration::from_secs(5)).ok()
+        self.recv
+            .try_recv_timeout(std::time::Duration::from_secs(5))
+            .ok()
     }
 }
 
@@ -595,9 +610,9 @@ impl GStreamerPlayer {
         let pipeline = player.pipeline();
 
         // FIXME(#43421): The progressive downloading breaks playback on Android.
-        if !cfg!(target_os = "android") &&
-            self.download_buffering_enabled.load(Ordering::Relaxed) &&
-            ensure_download_directory()
+        if !cfg!(target_os = "android")
+            && self.download_buffering_enabled.load(Ordering::Relaxed)
+            && ensure_download_directory()
         {
             // Set player to perform progressive downloading. This will make the
             // player store the downloaded media in a local temporary file for
@@ -754,153 +769,167 @@ impl GStreamerPlayer {
         let observer = self.observer.clone();
         // Handle `end-of-stream` signal.
         signal_adapter.connect_end_of_stream(move |_| {
-            // At EOS the pipeline stops consuming regardless of any prior
-            // play() call, so mirror that in our bookkeeping. Without this the
-            // paused flag stays false forever and a later replay never forwards
-            // a fresh play() into the pipeline, freezing replay after EOS.
-            if let Some(inner_clone) = weak_inner.upgrade() {
-                inner_clone.lock().unwrap().paused.set(true);
-            }
-            let _ = notify!(observer, PlayerEvent::EndOfStream);
+            run_callback_guarded(|| {
+                // At EOS the pipeline stops consuming regardless of any prior
+                // play() call, so mirror that in our bookkeeping. Without this the
+                // paused flag stays false forever and a later replay never forwards
+                // a fresh play() into the pipeline, freezing replay after EOS.
+                if let Some(inner_clone) = weak_inner.upgrade() {
+                    inner_clone.lock().unwrap().paused.set(true);
+                }
+                let _ = notify!(observer, PlayerEvent::EndOfStream);
+            });
         });
 
         let observer = self.observer.clone();
         // Handle `error` signal
         signal_adapter.connect_error(move |_self, error, _details| {
-            let _ = notify!(observer, PlayerEvent::Error(error.to_string()));
+            run_callback_guarded(|| {
+                let _ = notify!(observer, PlayerEvent::Error(error.to_string()));
+            });
         });
 
         let weak_inner = Arc::downgrade(inner);
         let observer = self.observer.clone();
         // Handle `state-changed` signal.
         signal_adapter.connect_state_changed(move |_, play_state| {
-            let Some(inner_clone) = weak_inner.upgrade() else {
-                return;
-            };
-            inner_clone.lock().unwrap().play_state = play_state;
+            run_callback_guarded(|| {
+                let Some(inner_clone) = weak_inner.upgrade() else {
+                    return;
+                };
+                inner_clone.lock().unwrap().play_state = play_state;
 
-            let state = match play_state {
-                gstreamer_play::PlayState::Buffering => Some(PlaybackState::Buffering),
-                gstreamer_play::PlayState::Stopped => Some(PlaybackState::Stopped),
-                gstreamer_play::PlayState::Paused => Some(PlaybackState::Paused),
-                gstreamer_play::PlayState::Playing => Some(PlaybackState::Playing),
-                _ => None,
-            };
-            if let Some(v) = state {
-                let _ = notify!(observer, PlayerEvent::StateChanged(v));
-            }
+                let state = match play_state {
+                    gstreamer_play::PlayState::Buffering => Some(PlaybackState::Buffering),
+                    gstreamer_play::PlayState::Stopped => Some(PlaybackState::Stopped),
+                    gstreamer_play::PlayState::Paused => Some(PlaybackState::Paused),
+                    gstreamer_play::PlayState::Playing => Some(PlaybackState::Playing),
+                    _ => None,
+                };
+                if let Some(v) = state {
+                    let _ = notify!(observer, PlayerEvent::StateChanged(v));
+                }
+            });
         });
 
         let observer = self.observer.clone();
         let weak_inner_pos = Arc::downgrade(inner);
         // Handle `position-update` signal.
         signal_adapter.connect_position_updated(move |_, position| {
-            if let Some(seconds) = position.map(|p| p.seconds_f64()) {
-                let _ = notify!(observer, PlayerEvent::PositionChanged(seconds));
-            }
+            run_callback_guarded(|| {
+                if let Some(seconds) = position.map(|p| p.seconds_f64()) {
+                    let _ = notify!(observer, PlayerEvent::PositionChanged(seconds));
+                }
+            });
         });
 
         let observer = self.observer.clone();
         // Handle `seek-done` signal.
         signal_adapter.connect_seek_done(move |_, position| {
-            let _ = notify!(observer, PlayerEvent::SeekDone(position.seconds_f64()));
+            run_callback_guarded(|| {
+                let _ = notify!(observer, PlayerEvent::SeekDone(position.seconds_f64()));
+            });
         });
 
         // Handle `media-info-updated` signal.
         let weak_inner = Arc::downgrade(inner);
         let observer = self.observer.clone();
         signal_adapter.connect_media_info_updated(move |_, info| {
-            let Ok(metadata) = metadata_from_media_info(info) else {
-                return;
-            };
+            run_callback_guarded(|| {
+                let Ok(metadata) = metadata_from_media_info(info) else {
+                    return;
+                };
 
-            let Some(inner_clone) = weak_inner.upgrade() else {
-                return;
-            };
-            let mut inner = inner_clone.lock().unwrap();
+                let Some(inner_clone) = weak_inner.upgrade() else {
+                    return;
+                };
+                let mut inner = inner_clone.lock().unwrap();
 
-            if inner.last_metadata.as_ref() == Some(&metadata) {
-                return;
-            }
-
-            // TODO: Workaround to generate expected `paused` state change event.
-            // <https://github.com/servo/servo/issues/40740>
-            let mut send_pause_event = false;
-
-            if inner.last_metadata.is_none() {
-                if metadata.is_seekable && inner.playback_rate.get() != DEFAULT_PLAYBACK_RATE {
-                    // The `paused` state change event will be fired after the
-                    // seek initiated by the playback rate change has
-                    // completed.
-                    inner.player.set_rate(inner.playback_rate.get());
-                } else if inner.play_state == gstreamer_play::PlayState::Paused {
-                    // We need to send the paused event for non seekable push streams.
-                    send_pause_event = true;
+                if inner.last_metadata.as_ref() == Some(&metadata) {
+                    return;
                 }
-            }
 
-            let new_duration = metadata.duration;
-            let duration_changed = new_duration.is_some() &&
-                inner
-                    .last_metadata
-                    .as_ref()
-                    .is_some_and(|last_metadata| last_metadata.duration != new_duration);
+                // TODO: Workaround to generate expected `paused` state change event.
+                // <https://github.com/servo/servo/issues/40740>
+                let mut send_pause_event = false;
 
-            inner.last_metadata = Some(metadata.clone());
-            gstreamer::info!(
-                inner.cat,
-                obj = &inner.player,
-                "Metadata updated: {:?}",
-                metadata
-            );
-            let _ = notify!(observer, PlayerEvent::MetadataUpdated(metadata));
+                if inner.last_metadata.is_none() {
+                    if metadata.is_seekable && inner.playback_rate.get() != DEFAULT_PLAYBACK_RATE {
+                        // The `paused` state change event will be fired after the
+                        // seek initiated by the playback rate change has
+                        // completed.
+                        inner.player.set_rate(inner.playback_rate.get());
+                    } else if inner.play_state == gstreamer_play::PlayState::Paused {
+                        // We need to send the paused event for non seekable push streams.
+                        send_pause_event = true;
+                    }
+                }
 
-            // We need to check this here because there is no guarantee that
-            // duration-changed and media-info-updated come in the same order.
-            // If the latter arrives before the former, it will look like the
-            // new duration was the old one.
-            if duration_changed {
+                let new_duration = metadata.duration;
+                let duration_changed = new_duration.is_some()
+                    && inner
+                        .last_metadata
+                        .as_ref()
+                        .is_some_and(|last_metadata| last_metadata.duration != new_duration);
+
+                inner.last_metadata = Some(metadata.clone());
                 gstreamer::info!(
                     inner.cat,
                     obj = &inner.player,
-                    "Duration changed with metadata: {:?}",
-                    new_duration
+                    "Metadata updated: {:?}",
+                    metadata
                 );
-                let _ = notify!(observer, PlayerEvent::DurationChanged(new_duration));
-            }
+                let _ = notify!(observer, PlayerEvent::MetadataUpdated(metadata));
 
-            if send_pause_event {
-                let _ = notify!(observer, PlayerEvent::StateChanged(PlaybackState::Paused));
-            }
+                // We need to check this here because there is no guarantee that
+                // duration-changed and media-info-updated come in the same order.
+                // If the latter arrives before the former, it will look like the
+                // new duration was the old one.
+                if duration_changed {
+                    gstreamer::info!(
+                        inner.cat,
+                        obj = &inner.player,
+                        "Duration changed with metadata: {:?}",
+                        new_duration
+                    );
+                    let _ = notify!(observer, PlayerEvent::DurationChanged(new_duration));
+                }
+
+                if send_pause_event {
+                    let _ = notify!(observer, PlayerEvent::StateChanged(PlaybackState::Paused));
+                }
+            });
         });
 
         // Handle `duration-changed` signal.
         let weak_inner = Arc::downgrade(inner);
         let observer = self.observer.clone();
         signal_adapter.connect_duration_changed(move |_, duration| {
-            let duration = duration.map(|duration| {
-                time::Duration::new(
-                    duration.seconds(),
-                    (duration.nseconds() % 1_000_000_000) as u32,
-                )
-            });
+            run_callback_guarded(|| {
+                let duration = duration.map(|duration| {
+                    time::Duration::new(
+                        duration.seconds(),
+                        (duration.nseconds() % 1_000_000_000) as u32,
+                    )
+                });
 
-            let Some(inner_clone) = weak_inner.upgrade() else {
-                return;
-            };
-            let mut inner = inner_clone.lock().unwrap();
-            if let Some(ref mut metadata) = inner.last_metadata &&
-                metadata.duration != duration
-            {
-                metadata.duration = duration;
-                gstreamer::info!(
-                    inner.cat,
-                    obj = &inner.player,
-                    "Duration changed: {:?}",
-                    duration
-                );
-                let _ = notify!(observer, PlayerEvent::DurationChanged(duration));
-            }
+                let Some(inner_clone) = weak_inner.upgrade() else {
+                    return;
+                };
+                let mut inner = inner_clone.lock().unwrap();
+                if let Some(ref mut metadata) = inner.last_metadata
+                    && metadata.duration != duration
+                {
+                    metadata.duration = duration;
+                    gstreamer::info!(
+                        inner.cat,
+                        obj = &inner.player,
+                        "Duration changed: {:?}",
+                        duration
+                    );
+                    let _ = notify!(observer, PlayerEvent::DurationChanged(duration));
+                }
+            });
         });
 
         if let Some(video_renderer) = self.video_renderer.clone() {
@@ -912,9 +941,11 @@ impl GStreamerPlayer {
                 let weak_video_renderer = Arc::downgrade(&video_renderer);
 
                 move |sample: gstreamer::Sample| {
-                    let Some(frame) = render.lock().unwrap().get_frame_from_sample(sample) else {
-                        return Err(gstreamer::FlowError::Error);
-                    };
+                    run_callback_guarded(|| {
+                        let Some(frame) = render.lock().unwrap().get_frame_from_sample(sample)
+                        else {
+                            return Err(gstreamer::FlowError::Error);
+                        };
 
                     match weak_video_renderer.upgrade() {
                         Some(video_renderer) => {
@@ -925,8 +956,10 @@ impl GStreamerPlayer {
                         },
                     };
 
-                    let _ = notify!(observer, PlayerEvent::VideoFrameUpdated);
-                    Ok(gstreamer::FlowSuccess::Ok)
+                        let _ = notify!(observer, PlayerEvent::VideoFrameUpdated);
+                        Ok(gstreamer::FlowSuccess::Ok)
+                    })
+                    .unwrap_or(Err(gstreamer::FlowError::Error))
                 }
             };
 
@@ -966,7 +999,8 @@ impl GStreamerPlayer {
             let is_ready_clone = self.is_ready.clone();
             let observer = self.observer.clone();
             pipeline.connect("source-setup", false, move |args| {
-                let source = args[1].get::<gstreamer::Element>().unwrap();
+                return run_callback_guarded(|| {
+                    let source = args[1].get::<gstreamer::Element>().unwrap();
 
                 let inner_clone = weak_inner.upgrade()?;
                 let mut inner = inner_clone.lock().unwrap();
@@ -1073,15 +1107,19 @@ impl GStreamerPlayer {
                     },
                 };
 
-                inner.set_src(source);
+                    inner.set_src(source);
 
-                None
+                    None
+                })
+                .unwrap_or(None)
             });
 
             let error_handler_id =
                 signal_adapter.connect_error(move |signal_adapter, error, _details| {
-                    let _ = notify!(sender_clone, Err(PlayerError::Backend(error.to_string())));
-                    signal_adapter.play().stop();
+                    run_callback_guarded(|| {
+                        let _ = notify!(sender_clone, Err(PlayerError::Backend(error.to_string())));
+                        signal_adapter.play().stop();
+                    });
                 });
 
             inner.player.pause();
@@ -1155,7 +1193,12 @@ impl Player for GStreamerPlayer {
     inner_player_proxy!(set_playback_rate, playback_rate, f64);
     inner_player_proxy_getter!(playback_rate, f64, DEFAULT_PLAYBACK_RATE);
     inner_player_proxy!(push_data, data, Vec<u8>);
-    fn push_data_track(&self, track: u64, total_tracks: u64, data: Vec<u8>) -> Result<(), PlayerError> {
+    fn push_data_track(
+        &self,
+        track: u64,
+        total_tracks: u64,
+        data: Vec<u8>,
+    ) -> Result<(), PlayerError> {
         self.setup()?;
         let inner = self.inner.borrow();
         let mut inner = inner.as_ref().unwrap().lock().unwrap();
