@@ -1885,3 +1885,11 @@ Symptom: sannysoft "plugins is PluginArray" red. Suspect location: userscript in
 - Caption glyphs: zoomed capture shows Segoe MDL2 minimize/maximize/close rendering natively. VERIFIED.
 - No demo pins, no phantom rectangle: confirmed (earlier visual ambiguity was Chrome window overlapping behind, not a Feather artifact).
 Evidence files: work/onboard-check.png, work/caption-zoom.png.
+
+
+## BREAKTHROUGH — document-start userscript injection + shim v5: detection table fully green (19:15 UTC)
+ENGINE FIX (servo fork branch `userscript-docstart`, commit f8cef980c7e — PR creation blocked by tooling because origin=upstream, but branch is pushed to fork and mergeable): userscripts now evaluate SYNCHRONOUSLY at head bind_to_tree instead of add_delayed_task. Verified: parse-time probe sees full shim surface (chrome object, plugins len 5 + correct protos, no webdriver) — injection precedes ALL page scripts in every document incl iframes. Zero panics on probe page + creepjs heavy load + sannysoft.
+SHIM FIX (feather PR #192, branch shim-v5-entry-protos): v4's arr.forEach entry-typing loop never ran — swapping arr's proto to PluginArray.prototype severs Array.prototype, so forEach threw silently. Fixed with indexed loop. FOOTGUN DOCUMENTED: never use array methods on the spoofed plugins array after the prototype swap.
+COMBINED RESULT: bot.sannysoft.com Intoli table FULLY GREEN in Feather including "Plugins is of type PluginArray: passed" (screenshot work/sannysoft-v5.png, embedded in PR #192). Detection suite remaining known-fails: PHANTOM_ETSL rows only (phantomJS-era string tests, low value) — HEADCHR_IFRAME expected fixed by timing (userscripts now run at document-start in iframes) but not yet re-verified visually.
+SYMPTOM INDEX update: "shim lands but detection still fails at parse time" → suspect userscript injection timing (FIXED in userscript-docstart). "instanceof passes but plugins-type test fails" → suspect entry toString/prototype chain, specifically array-method loss after prototype swap (FIXED in shim v5).
+STRATEGIC: this invalidates-assumption for the gmail botguard verdict — every prior shim measurement was post-load. Google sign-in should be RE-TESTED on a build with both fixes. Next alpha refresh should carry them.
