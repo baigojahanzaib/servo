@@ -3301,3 +3301,79 @@ WHAT END-TO-END GPU WOULD TAKE (ordered by leverage):
 3. The present-path composite cost (gui frame stalls, software-GL amplified) is a SEPARATE axis — video frames being CPU-uploaded large textures every frame makes it worse. Any zero-copy work also reduces that.
 USER-VISIBLE IMPACT TODAY: on real-GPU machines video plays but decode is likely CPU (libav/dav1d) — fine for 1080p30 single video, heavy for 4k or multitab video. Power/thermal cost high vs native browsers.
 RECOMMENDATION: treat as the media-track engine project; not a quick shell fix. Logged for roadmap.
+
+## sec1zt82 — MSE backward-seek: in-band resequencing BREAKTHROUGH — first frame presents post-seek
+Replaced appsrc recreation with in-band injection (pushed as media commit). Mechanism: inject stream-start+segment into the appsrc src pad at first post-seek push — streaming task guaranteed idle then, no §1q wedge. VERIFIED: zero panics, decoder re-prerolls, FIRST FRAME PRESENTS AT EXACT SEEK TARGET with correct position display. Symptom index: 'gst_event_new_caps null-ptr crash event.rs:149' → check: caps must be fixed, ANY caps invalid in caps events — omit caps event when caps are ANY (typefind re-detects). 'post-seek freeze with one frame presented' → check: running-time domain mismatch — frames dropped as too-late, NOT a flow problem. REMAINING HALF (well-defined): segment base/offset or clock rebase so media timestamps map into post-seek running time — frames after the first present. Note harness caveat: mseseekA re-appends the whole file from byte 0, so post-seek frames carry early bitstream timestamps — real MSE players append fragments AT the seek position; the correct fix must handle both. All instrumentation is stderr-logged; env vars SERVO_MSE_RECREATE (old path), SERVO_MSE_GSTSEEK, SERVO_MSE_NOFLUSH gate experimental pieces.
+||||||| parent of 574383c67 (memory: matrix harness state + devtools framing contract)
+
+## matrix-harness-1 — scenario matrix landed, harness alpha state (2026-11-26)
+- tests/scenarios/ merged (feather PR #201): 13 mechanism-level probe pages + matrix.py harness + README documenting scenario→mechanism mapping.
+- Devtools framing contract (FIREFOX-style, NOT json-rpc): `{"to": actor, "type": method, ...}` — no id/method/params. One wrongly-framed message KILLS the devtools actor for the whole feather process ("Devtools actor stopped responding") — all later connections fail even correctly-framed ones. Implication: devtools-server robustness is itself a matrix-worthy mechanism gap; a production-quality harness needs the server to survive malformed input and navigation.
+- Harness open item: validate a full automated green run; per-page reconnect logic is in place but unproven end-to-end. matrix.py DevTools class is the reference client.
+
+## sec1zt83 — session closeout state (2026-11-26, linux)
+SHIPPED: Cache API end-to-end (engine adf65bf76d1 + feather#200 pref, merged) — Discord login boots fully, wasm-bindgen cache-storage class fixed. MSE seek: in-band resequencing breakthrough — first frame presents at exact seek target, zero panics; remaining half is running-time mapping (segment base/offset or clock rebase — WebKit-style custom source is the principled answer). NEXT concrete step for seek continuation: examine how matroskademux derives its output segment from input — the injected bytes-format segment may need format-correct base, OR test with a harness that appends fragments AT the seek position like real players (mseseekA re-feeds from byte 0 — possibly an artifact). YouTube live test inconclusive this run (video rs:0 no data — possibly botwall again). Disk 51GB free.
+||||||| parent of eef12fa46 (memory: matrix harness hang state)
+- matrix-harness-1 addendum: core protocol validated live (banner + listTabs work against a running instance). BUT the full automated run hangs somewhere mid-iteration (>5min, no completion; output prints only at end). Suspects: evaluateJS reply never arrives after location.href navigation and socket timeouts interact badly with the retry/deadline loops, OR console actor resolution stalls on certain page states. NEXT SESSION: instrument matrix.py with per-step stderr logging, reproduce, fix. The probe pages themselves are unaffected (manually verifiable).
+
+## sec1zt84 — seek hunt: negative results on stream-id/group-id reuse + TIME segment — architectural verdict CONFIRMED
+Two more mechanism-level iterations, both insufficient: (1) injected stream-start reusing ORIGINAL stream-id + group-id — zero frames still reach sink post-seek; (2) TIME-format segment with correct start/base — same. DECISIVE instrumentation: sink-side sample probe proves zero frames arrive post-resequence — data dies inside decodebin3 re-plumbing, NOT too-late dropping. Symptom index: 'mse post-seek freeze with zero frames at sink' → check: decodebin3 stream reselection internals — do NOT iterate further on event injection; the fix is owning the stream lifecycle in a custom source (WebKitMediaSrc design), multi-day expert work. FINAL VERDICT: seek hunt closed at architectural boundary; injection design kept as interim (strict improvement: no death/panics, first frame presents at target). Pivot to compat tail per ROI.
+
+## sec1zt85 — Google Maps boot stall: NON-REPRO (2026-11-26, linux)
+google.com/maps boots fully in feather: complete vector map render (roads/labels/traffic layer), search box, sign-in, zero JS errors, 4 canvases live. Whatever caused the reported stall is fixed by the recent engine work (document.all/cache-api/text-overflow candidates) or was environmental. If it recurs, capture: does the canvas paint tiles (webgl organic validation per memory line 1522 passes), is the stall interaction-specific (pan/zoom) rather than boot.
+||||||| parent of 9c95ef620 (memory: xclick repro negative)
+
+## xclick-1 — x.com clickable-text glitch repro attempt (2026-11-26, honest negative)
+- Round-3-remainder hunt: "clicking text items glitches" on x.com. REPRO ATTEMPT NEGATIVE on the signup flow: clicking "Continue with phone" opens the modal correctly; clicking the phone input and typing works perfectly (text formats, Continue activates). Neither buttons nor text inputs glitch in the unauthenticated flow.
+- IMPLICATION: the user's glitch is likely in the AUTHENTICATED timeline context (tweet text, links in posts) or is text-SELECTION/drag behavior, not plain clicking. Next repro needs either x.com login credentials, or user clarification on exactly which text items (links? plain text? selection?). Cheap hypothesis to test first: click-DRAG text selection rendering in servo (selection highlight painting) — testable unauthenticated on any text-heavy page.
+
+## favicon-pipeline-1 — letter fallbacks persist despite wired pipeline (2026-11-26)
+- VERIFIED NEGATIVE: tab strip still shows letter fallbacks for all tabs incl. freshly-loaded x.com (zoomed screenshot evidence) — the round-3 favicon pipeline does not produce icons in practice.
+- ENGINE SIDE IS COMPLETE: servo has a full favicon implementation — components/script/dom/document/favicon.rs fetches link-rel-icon AND /favicon.ico fallback through the image cache, decodes, and sends EmbedderMsg::SetFavicon → webview.set_favicon. So the gap is almost certainly SHELL-side, not engine.
+- Shell suspects in priority order: (1) the writeback-loop insertion may never execute — check loop variable binding `*tab_id` and whether writeback runs for all webviews; (2) `webview.favicon()` returns Ref filter — borrow timing; (3) the upload loop keys off favicon_data but x.com tab ids may mismatch tab strip lookup `cx.favicons.get(&tab.id)`; (4) favicon arrives but texture format len check rejects (RGBA8 vs RGB8 vs other PixelFormat variants like K8/BGRA — embedder PixelFormat enum has more variants than the two handled!). NEXT SESSION: add debug eprintln in writeback when favicon bytes received, run once, localize which stage is empty.
+
+## sec1zt86 — media retention: measured precisely, deferred-dispose reaper shipped, honest severity revision
+Navigate-away protocol measurement: first video +110-140MB, ~0 reclaimed after 35s BUT second video adds only ~16MB — the bulk is REUSABLE glibc-arena mass, not per-player leak. The old defect-queue 'permanent 150MB per video' overstates severity. Root mechanism: teardown hits dragons condition (play refs 2 — one EXTERNAL glib ref that NEVER drains even after pipeline NULL+bus flush — permanent gst-internal ref, upstream MR13022 class). SHIPPED: deferred-dispose reaper — dragons-hit players queued, reaper re-runs exact drop-time refcount check, disposes when safe; strict improvement over permanent mem::forget at zero risk. Symptom index: '[playerleak] with play refs 2 persistent' → gst-internal permanent ref, do NOT force-dispose (UAF class). OPEN at honest severity: small per-video shell accumulation; blocked on upstream lifecycle fix.
+
+## sec1zt87 — SW-pref regression sweep: CLEAN; YouTube playback stall NOT caused by the pref
+Post-#200 verification: X (twitter) boots zero-error full content; reddit boots zero-error 878KB content; Google Maps full vector render (sec1zt85). YouTube watch page boots fully but video never buffers (rs:0, zero MSE activity — servomse never even created; page-level/env). A/B tested pref on/off: IDENTICAL behavior both ways — the SW pref is exonerated. The stall pattern (page fine, googlevideo data never flows) matches bot-wall serving rather than engine regression: initial MSE startup verified working on the mseseekA harness in the same builds. OPEN: needs a run where youtube serves media to this IP — not currently diagnosable further on this VM.
+
+sec1zt88 — media adapter-cycle FIX VERIFIED, retention work closed (2026-11-26, linux lane):
+The permanent-leak mechanism from sec1zt86 confirmed and fixed: the deferred-dispose queue stored
+the whole PlayerInner, but PlayerInner holds the PlaySignalAdapter which keeps a STRONG glib ref on
+the play object — the queue itself pinned play refs at >=2, so the reaper's play_refs==1 drain check
+could never fire. Symptom: player objects never finalize after pipeline teardown → check:
+signal_adapter glib ref cycle (PlayerInner holds adapter, adapter holds play object; queuing inner
+pins the object the reaper is supposed to release). General form: when implementing drain-to-N-refcount
+reaper patterns, audit every field of the queued struct for hidden strong refs on the target object —
+the queue must hold ONLY its own clone, nothing transitive. Fix: queue the bare Play object, drop inner
+at queue time (releases inner.player + adapter refs). VERIFIED live: 3 consecutive navigate-away
+cycles, reaper fired for all three players (2s/0.7s/0.16s — refs drain progressively faster once prior
+deferred mass is gone), playback restarts cleanly on nav back, zero panics, zero regressions. The
+sec1zt86 deferred-dispose design is now actually functional rather than permanent-leak-with-extra-steps.
+Media retention investigation CLOSED — true per-player leak now disposes within seconds; residual RSS
+mass is the documented reusable-arena behavior. Commit 4c126d64190.
+
+sec1zt89 — youtube thumbnails: original defect NON-REPRO in severe form + IO matrix exonerated (2026-11-26, linux lane):
+The reported "youtube search thumbnails don't render" defect does NOT reproduce in its severe form:
+initial-viewport thumbnails render fully (video thumbs, channel avatars, shorts thumbs — screenshot
+verified). RESIDUAL defect: scroll-triggered lazy population never fires — images below the initial
+viewport keep empty src forever even after incremental user-like scrolling (18 in-viewport imgs, 0
+populated). Symptom: lazy-loaded content never populates on scroll → do NOT check IntersectionObserver
+primitives first — full matrix VERIFIED WORKING in servo: window-scroll viewport-root IO fires on
+scroll, rootMargin px + threshold arrays work, percentage/4-value/zero rootMargin + scrollMargin
+constructors all valid, ELEMENT-root IO with inner-scroller scrollTop works, scroll events fire.
+Negative results mandatory-recorded here to prevent re-walking. DEDUCTION: YouTube's visibility
+monitor runs and its IO fires for initial elements (they populate) — so the failure is inside
+YouTube's obfuscated component chain between intersection notification and src write, NOT in any
+servo IO/scroll primitive. Hunting further requires reverse-engineering the ytCoreImage/visibility-
+monitor internals (same class of exercise as the sec1zt17-21 unhide hunt — multi-hour, uncertain).
+Severity DOWNGRADED: initial viewport fully renders; user must know the defect is scroll-population
+only. Next step if resumed: instrument yt-core-image custom element reactions, or capture whether
+YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
+fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
+observer-root geometry on youtube specifically is the lead).
+||||||| parent of a527049da (memory: harness progress)
+- matrix-harness-2 (2026-11-26): hang FIXED — root cause was location.href navigation never replying to evaluateJS + blocking recv; now fire-and-forget + socket timeouts + reconnects, harness completes all 13 pages end-to-end. REMAINING narrowed bug: evaluateJS results never arrive even on stable pages (every collection times out; listTabs/getTarget verified working). Next: manually probe evaluateJS reply format against a live instance — compare with /tmp/dt.py session transcripts; possibly reply key differs or consoleActor resolution picks a worker actor.
+- matrix-harness-3 (2026-11-26): eval replies flow now (Ok-envelope unwrapped; navigateTo primitive works and acks) — BUT two live-probed facts define the remaining bug: (1) evaluateJS SANDBOX quirk — even READING location.href returns None, strongly suggesting eval runs in a sandbox/scope that isn't the page's window (or location access specifically broken); (2) navigateTo DROPS the devtools connection entirely (EOFError right after the ack) — harness reconnects, but reconnection timing vs page load is racy. Symptom: every page collects the FIRST page's results (visibility probes everywhere) — either eval targets a stale sandbox or MATRIX_RESULTS lookup hits the wrong global. NEXT: eval `typeof window` / `typeof document` / `1+1` in sequence after nav+reconnect and compare against pre-nav; check servo's console.rs whether evaluateJS uses a sandbox global (grep components/devtools/actors/console.rs for sandbox/compile).
+
