@@ -120,6 +120,14 @@ pub(crate) fn validate_internal_format(
             Ok(format)
         },
         _ => {
+            let known = TexFormat::from_gl_constant(internal_format);
+            log::warn!(
+                "webgl-validate-internal-format REJECTED: constant=0x{:x} known={} version_ok={} usable={}",
+                internal_format,
+                known.is_some(),
+                known.is_some_and(|f| f.required_webgl_version() <= context.webgl_version()),
+                known.is_some_and(|f| f.usable_as_internal())
+            );
             context.webgl_error(InvalidEnum);
             Err(TexImageValidationError::InvalidTextureFormat)
         },

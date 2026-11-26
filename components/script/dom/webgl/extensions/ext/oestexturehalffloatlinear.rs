@@ -40,7 +40,8 @@ impl WebGLExtension for OESTextureHalfFloatLinear {
             "GL_OES_texture_float_linear",
             "GL_ARB_half_float_pixel",
             "GL_NV_half_float",
-        ])
+        ]) ||
+            !ext.is_gles()
     }
 
     fn enable(ext: &WebGLExtensions) {

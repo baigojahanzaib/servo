@@ -423,6 +423,7 @@ impl WebGLExtensions {
     fn register_all_extensions(&self) {
         self.register::<ext::angleinstancedarrays::ANGLEInstancedArrays>();
         self.register::<ext::extblendminmax::EXTBlendMinmax>();
+        self.register::<ext::extcolorbufferfloat::EXTColorBufferFloat>();
         self.register::<ext::extcolorbufferhalffloat::EXTColorBufferHalfFloat>();
         self.register::<ext::extfragdepth::EXTFragDepth>();
         self.register::<ext::extshadertexturelod::EXTShaderTextureLod>();
@@ -457,7 +458,9 @@ impl WebGLExtensions {
     }
 
     pub(crate) fn is_float_buffer_renderable(&self) -> bool {
-        self.is_enabled::<WEBGLColorBufferFloat>() || self.is_enabled::<OESTextureFloat>()
+        self.is_enabled::<WEBGLColorBufferFloat>() ||
+            self.is_enabled::<ext::extcolorbufferfloat::EXTColorBufferFloat>() ||
+            self.is_enabled::<OESTextureFloat>()
     }
 
     pub(crate) fn is_min_glsl_version_satisfied(&self, min_glsl_version: WebGLSLVersion) -> bool {

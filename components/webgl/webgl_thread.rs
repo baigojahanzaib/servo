@@ -654,6 +654,7 @@ impl WebGLThread {
             })
         };
 
+
         let limits = GLLimits::detect(&gl, webgl_version);
 
         let size = clamp_viewport(&gl, requested_size);

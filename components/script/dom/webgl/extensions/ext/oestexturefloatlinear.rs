@@ -35,7 +35,8 @@ impl WebGLExtension for OESTextureFloatLinear {
     }
 
     fn is_supported(ext: &WebGLExtensions) -> bool {
-        ext.supports_any_gl_extension(&["GL_OES_texture_float_linear", "GL_ARB_texture_float"])
+        ext.supports_any_gl_extension(&["GL_OES_texture_float_linear", "GL_ARB_texture_float"]) ||
+            !ext.is_gles()
     }
 
     fn enable(ext: &WebGLExtensions) {

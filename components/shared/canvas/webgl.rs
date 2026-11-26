@@ -1291,6 +1291,19 @@ impl TexFormat {
             TexFormat::Luminance16f => &[TexDataType::HalfFloat][..],
             TexFormat::Alpha32f => &[TexDataType::Float][..],
             TexFormat::Alpha16f => &[TexDataType::HalfFloat][..],
+            // Unsized RG/Red are not valid in strict WebGL2 texImage2D, but real-world
+            // content (three.js r186+ DFG LUT) uses them and every browser accepts them
+            // via driver passthrough. Accept them for compatibility.
+            TexFormat::Red => &[
+                TexDataType::UnsignedByte,
+                TexDataType::Float,
+                TexDataType::HalfFloat,
+            ][..],
+            TexFormat::RG => &[
+                TexDataType::UnsignedByte,
+                TexDataType::Float,
+                TexDataType::HalfFloat,
+            ][..],
             TexFormat::R8 => &[TexDataType::UnsignedByte][..],
             TexFormat::R8SNorm => &[TexDataType::Byte][..],
             TexFormat::R16f => &[TexDataType::HalfFloat, TexDataType::Float][..],
