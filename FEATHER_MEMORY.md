@@ -3092,3 +3092,10 @@ ANALYSIS for closure honesty: the writeback-convergence design makes oscillation
 **UNRESOLVED — the live bug**: after ctrl+shift+t with len=1, no visible new tab appears in the strip. Debug eprintln in the state handler silently failed to apply in one edit (indentation mismatch — python replace without assert), so it is UNKNOWN whether the handler executes. Suspects: (a) Action::Open semantics — may navigate current tab rather than opening new; (b) reopen executes but tab opens offscreen/in wrong workspace. NEXT STEP: check what Action::Open actually does in state.rs; add asserted debug or read code directly.
 **Testing gotcha**: xdotool clicks need correct coords — feather tab strip tabs start ~x=720 real (not 560); inactive tabs show no X, must activate first; first click after launch may only focus window. windowactivate via xdotool search --name feather helps.
 **Disk/memory state**: all committed on branch. feather-ui running with instrumented binary.
+
+
+## sec1zt68 — ctrl+shift+T: root cause found+fixed, PR open (verification partial)
+
+**ROOT CAUSE of the no-visible-reopen**: Action::Open NAVIGATES THE ACTIVE TAB — does not open a new one. The first ctrl+shift+t actually worked but destroyed the page the user was on (favicon swap observed in rt4 was exactly this). LATENT DEFECT affecting open_external_url too — single-instance forwarded urls navigate the current tab rather than opening new ones; #182 verification passed only because the initial tab was a NewTab. ReopenClosedTab fixed to construct Tab::new(id, Page::Web) directly and push to tabset. Debug eprintlns removed for PR.
+**Symptom index**: Symptom: shortcut fires, state mutates, but no visible new tab appears → check: whether the action you reuse navigates the active tab vs creating one (Action::Open navigates; there is no open-in-new-tab action in state.rs).
+**Status**: PR open on devin/1795708996-reopen-closed. Live visual verification incomplete — key fires + recording verified + open-semantics root-caused; end-to-end visual pass flaky due to xdotool coordinate guessing on relaunched sessions. Follow-up: open_external_url should use the same new-tab path.
