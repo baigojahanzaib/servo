@@ -2861,7 +2861,6 @@ CSS-layout feature: inline overflow measurement + ellipsis rendering in the inli
 Estimate: multi-hour engine feature, not a papercut. Recommend as a dedicated engine-compat mission;
 it's the most visible recurring text-rendering gap on real sites.
 ||||||| parent of 97d4f0bd4 (memory: shadow-input typed-text deep chain — endgame-27)
-=======
 
 ## Shadow-input typed-text defect — deep chain (endgame-27). Symptom: inputs inside shadow DOM accept focus + keystrokes (keydown/beforeinput/input all fire, value correct internally) but TYPED text never renders. Minimal repro: /tmp/vtest/inputtest.html (vanilla/react/shadow rows). Established facts: (1) isConnected=true inside shadow tree — the is_connected() gate in value_changed (htmlinputelement.rs `if self.upcast::<Node>().is_connected()`) is NOT the cause; (2) initial `value=` attribute and JS `.value=` assignment RENDER CORRECTLY in shadow inputs — so UA-shadow-tree composition, layout, and the value→character-data sync path all fundamentally work in nested shadow context; (3) placeholder text renders and correctly hides on typing (:placeholder-shown state updates correctly); (4) scrollWidth never exceeds clientWidth when typing in shadow input (vanilla: 447/214) — typed text never enters layout; (5) forced repaint (tab switch) doesn't help — not an invalidation-only issue; (6) typing path diverges from JS-set path: KeyReaction::DispatchInput in htmlinputelement::handle_key_reaction does NOT call update_shadow_tree directly — it queues the input event; handle_event then calls value_changed(cx, trusted) for InputEvents, which is the SAME path JS-set uses — yet outcomes differ, so either the input-event-driven value_changed never runs in shadow context, or the damage/invalidation from the typing path (dirty(NodeDamage::Other) on the input node) fails to propagate layout to the nested UA shadow tree; (7) structural fact: servo renders input text via a UA shadow tree (text_input_widget.rs — inner-container > input-editor + input-placeholder divs with text nodes), so input-in-user-shadow = nested shadow roots; editor visibility toggles via `input:placeholder-shown::-servo-text-control-inner-editor { display: none }` in layout/stylesheets/servo.css. NEXT DISCRIMINATOR (cheap, not yet run): type in si2, then force `si2.value = si2.value` via a JS button — if text appears, the typing-path sync is broken DOM-side; if not, layout-side re-traversal of nested UA shadow trees is broken. Also untested: whether `update()` in text_input_widget runs at all during typing in shadow context (instrument with a println — one build cycle). Symptom-index: "input in shadow DOM: focus+events fine, typed text invisible, JS-set text fine" → typing-path sync vs nested-UA-shadow re-layout, see endgame-27.
 ||||||| parent of ee587efae6b (memory: gmail marketing click verified — defect fully closed)
@@ -2874,3 +2873,14 @@ gmail sign-in non-navigation defect is fully closed end-to-end — no caveat rem
 target=_blank class was the whole cause.
 
 sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
+||||||| parent of 95f7851eaf1 (memory: modifier-tracking + egui shift-bracket mechanisms)
+
+sec1zt45 — Symptom: shell keyboard shortcuts using ctrl/shift silently dead → check: WHERE modifiers state is tracked
+feather shell-new tracked winit ModifiersChanged only inside the page-input forwarding path, which
+is gated on engine/egui state — the tracking silently stopped, breaking every shortcut check that
+reads modifiers (fixed feather#164: track ModifiersChanged unconditionally at the top of window_event).
+Second mechanism in the same fix: egui CANNOT express shift+bracket shortcuts — shift+[ arrives as
+the shifted brace character "{" which has no egui Key variant, so consume_shortcut can never match.
+Browser-style ctrl+shift+[/] bindings must be intercepted at the winit layer matching the brace
+characters directly. Also symptom-indexed: "ctrl+t appears dead on a blank New Tab" is NOT a defect —
+the shell dedupes blank New Tabs by design (focuses the existing one); verify shortcuts on non-blank tabs.
