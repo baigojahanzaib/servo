@@ -1873,3 +1873,20 @@ Symptom index: symptom "Unexpected format RG8 panic WRRenderBackend then signal 
 
 ## sec1zu — FINAL ATTRIBUTION measurement protocol note (2026-11-26)
 The stage-4 closeout table compares: sec1zh/sec1zj baselines (idle-top: WR 342 + cache 309 same-bytes ≈340MB real image mass, RSS 1162; deep-scroll: WR 872MB, RSS 3812+) vs post-machinery measurements. All measurements on signed-in reddit, SERVO_MEMDUMP_AFTER timed dumps.
+
+## sec1zv — IMAGE MEMORY MISSION CLOSEOUT: final attribution table (2026-11-26)
+
+Protocol: signed-in reddit, SERVO_MEMDUMP timed dumps, deep scroll 8-24 x 1000-1500px. Same-bytes correction applies throughout (WR + cache rows count the same physical allocation — real mass is NOT their sum).
+
+| measurement | before machinery | after machinery | delta |
+|---|---|---|---|
+| resident total, deep scroll 12000px | 3812MB (growing 4523 by 24k equiv) | 2775MB | -1037MB (-27%) |
+| resident total, deep scroll 24000px | (baseline run showed continuous growth 3812->4184->4524 across dumps) | 2374MB FLAT | bounded flat |
+| webrender/images row, deep scroll | 872MB and growing | 98-111MB FLAT across depths | -88%, non-growing |
+| net image-cache rows, deep scroll | 595+221MB | 36-249MB (encoded retention + protected-resident) | bounded |
+| scrollback correctness | n/a (machinery off) | zero corruption — visually verified r/pics exact-failure-testbed | PASS |
+| crashes in verification | teardown class (fixed separately) | zero eviction-attributable (video RG8 crash proven independent by control 3/3) | clean |
+
+What the numbers mean: image decoded-byte mass is now BOUNDED FLAT across infinite scroll — the single-copy-at-a-time invariant holds: visible+protected images cost decoded bytes, everything else costs only encoded bytes (10-20x smaller) until scrolled back. The residual encoded retention (~tens of MB scaling with distinct images seen) is the documented insurance cost. Remaining documented residuals: synchronous re-decode on scroll path (unmeasured jank risk, proper async is the rejected-cheap-path lesson of sec1zs), registry entry accumulation (KB-scale), DOM text-node mass 272MB (next category — untouched).
+
+Mission structure as built: stage 1 byte-swap machinery (sole-owner residency, Drop-balanced accounting), stage 2 eviction unit + geometric verdict + scroll-driven re-upload, stage 3 async REJECTED with evidence (sync is the design), stage 4 dual-margin hysteresis + 256MB backstop budget + default-on in feather shell (feather#140 merged).
