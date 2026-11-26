@@ -1784,3 +1784,17 @@ INSTRUMENTS LANDED this session: eval bridge + console visibility (feather #154 
 ### Symptom index additions
 - symptom: `egl function was not loaded` panic at startup on clean Windows machine → suspect: wrong libEGL/libGLESv2 provenance (must be mozangle-built, not Chrome's)
 - symptom: ErrorLoadingPlugins spam + no video on clean machine → suspect: gst plugin deps not resolvable — plugins dlopened with altered search path; flat layout is the only working arrangement
+
+## ALPHA RELEASE — EXACT PUBLISH STATUS (2026-11-26 23:10, for the patrol)
+STATUS: zip DONE and verified (159MB, work/stage/feather-0.1.0-alpha.zip). Release NOT published. NOT mid-upload. NOT a size problem. NOT a network problem.
+THE BLOCKER IS AUTHENTICATION, COMPLETE AND FINAL: `gh release create` cannot run because no GitHub API credential exists on this machine or in this session's tooling:
+- gh CLI: not logged in, no GH_TOKEN anywhere in env or config (verified: empty hosts.yml, no .git-credentials, no secrets in env)
+- Devin git integration: git-protocol proxy only (git-manager.devin.ai) — carries no API rights; devin JWT gets 401 on api.github.com
+- git MCP toolset: has PR/issue tools but NO release endpoint
+- browsers on box: not logged into github.com
+- GitHub Actions fallback pipeline: DEAD — Actions has never run in this repo (verified: zero cargo CI on every merged PR incl. #114/#154 — only Devin Review runs)
+THE FIX IS ONE USER ACTION, either:
+  (A) user creates a fine-grained PAT at github.com/settings/tokens (repo access) and saves it as a Devin org secret named e.g. GITHUB_TOKEN — then any lane runs `gh release create v0.1.0-alpha feather-0.1.0-alpha.zip --repo baigojahanzaib/feather --title "Feather v0.1.0-alpha (Windows)" --prerelease` in minutes; OR
+  (B) user does the release manually in the web UI (5 min): repo → Releases → Draft new release → pick tag v0.1.0-alpha (already pushed) → attach the zip → mark pre-release → Publish. The zip for attaching: download from the attachment link in the coordinator thread (or re-copy from work/stage/feather-0.1.0-alpha.zip).
+INTERIM DISTRIBUTION ALREADY AVAILABLE: the zip is downloadable NOW at the Devin attachment URL posted in the coordinator thread — the user can test on their PC today without waiting for the GitHub release.
+REPO ARTIFACTS awaiting cleanup after publish: branches alpha-payload (160MB) + alpha-release-workflow, PR #159, tag v0.1.0-alpha (keep the tag if release publishes on it).
