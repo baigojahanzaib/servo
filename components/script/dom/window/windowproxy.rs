@@ -517,8 +517,12 @@ impl WindowProxy {
         // It's possible to end up in a situation where JS code is executing but
         // we have not had a chance to push an entry global (e.g. via WASM instantiation).
         // If that happens, fall back to the active document of this browsing context.
+        // The entry global is not always a Window: devtools evaluation and
+        // other host-driven executions can enter with a non-Window global on
+        // the stack, and `as_window()` would panic. Only use it when it really
+        // is a window; otherwise fall back to this context's active document.
         let source_document = maybe_entry_global()
-            .map(|global| global.as_window().Document())
+            .and_then(|global| global.downcast::<Window>().map(|window| window.Document()))
             .or_else(|| self.document())
             .expect("Must have an entry global or active document");
         // Step 4. If url is not the empty string:
