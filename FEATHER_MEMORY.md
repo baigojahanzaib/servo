@@ -3793,3 +3793,33 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 - Symptom: windows verified 10x in-DOM duplication in legacy SERP → check: NOT the parser. Remaining suspects indexed by mechanism: (1) server-side A/B or per-IP serving weirdness (raw html itself duplicated for windows IP/UA — re-run the same in-page fetch comparison on WINDOWS to discriminate in one step: if raw counts are duplicated there, server-side confirmed); (2) windows-platform document/navigation re-entrancy (multiple navigation commits appending to one document — windows-specific embedding); (3) session-restore tab duplication (restored tabs re-navigating while the original navigation is in flight). The in-page fetch-vs-dom eval is the one-shot discriminator — harness script in git history / session sec1zt127.
 - Harness gotcha index: legacy-SERP investigation requires FEATHER_HONEST_UA='Feather/1.0 (X11; Linux x86_64) Servo/1.0' env (post-#240 default honest UA is firefox-flavor → modern serp, no legacy); google serves results-only-thin html to honest UA (rawWiki count 3, few links) — duplication repro may need the windows serving state; heavy UI stalls during legacy serp load — eval harness needs patience + repeat clicks.
 - Bonus observed: session-restore resurrected the testing agent's google/youtube tabs on fresh launch — restore works but means launch-url tests inherit dirty state; combined with single-instance leftovers, always screenshot-verify what instance/tab is actually being tested.
+
+## drag-drop-html5-implementation (macOS lane, 2026-11-27)
+
+**IMPLEMENTED: DragEvent + HTML5 drag-and-drop event sequence in the servo engine** (commit ffda1ec2a, feather-engine). Cross-referenced Ladybird `DragAndDropEventHandler` (Libraries/LibWeb/Page/DragAndDropEventHandler.cpp).
+
+### What already existed upstream (do NOT re-derive)
+- `components/script/drag/drag_data_store.rs` — COMPLETE DragDataStore with modes (ReadWrite/ReadOnly/Protected), item list, bitmap, allowed-effects
+- `dom/datatransfer/` — full DataTransfer/ItemList/Item implementation (~750 lines); dropEffect/effectAllowed live ON the DataTransfer object (DomRefCell), not the store
+- `dom/datatransfer` DataTransfer constructor takes `Rc<RefCell<Option<DragDataStore>>>` — when the Option is emptied the object becomes inert (spec-compliant end-of-session behavior); types()/getData() etc read through it
+- `drag/drag_gesture.rs` — existing gesture lifecycle hook framework for TEXT-SELECTION drags, integrated in document_event_handler mousedown/move/up paths
+
+### Architecture of the implementation
+- `drag/html_drag.rs` — HtmlDragHandler state machine: pending (mousedown over draggable) → threshold 4px → begin (fire dragstart, ReadWrite mode) → per-move: drag at source (Protected), hit-node change → dragenter at node + dragleave at previous target element, dragover at current target element each move (Protected) → mouseup: drop if operation != none (ReadOnly) then dragend always (Protected)
+- Drop operation computed from effectAllowed/dropEffect AFTER dragover dispatch, per spec table; canceled dragover = not droppable unless the handler set a valid dropEffect — actually cancellation is what ENABLES dropping per spec: uncancelled dragover → operation none; canceled dragover → compute from effect table
+- DragHandler::Html variant in drag_gesture.rs; release needs hit test → handle_mouse_button_release(cx, event, hit_test) added, document_event_handler reordered so the drag-gesture button handling runs AFTER hit-test computation
+- Installation priority: editing.rs handle_mousedown checks first_draggable_inclusive_ancestor BEFORE installing DocumentSelection — HTML drag wins over selection drag on draggable elements
+- Draggability: explicit draggable="true"; attribute ABSENT + (img OR a[href]) → implicitly draggable (auto state); draggable="false" explicitly disables
+
+### API pitfalls hit (indexed by mechanism)
+- servo codegen constructor traits return `DomRoot` NOT `Fallible<DomRoot>` — check generated bindings in target/release/build/servo-script-bindings-*/out/Bindings/*.rs BEFORE writing impls
+- derived interfaces' Methods traits REQUIRE re-implementing inherited-member forwarding (e.g. IsTrusted) — the generated trait flattens some inherited members in; pattern: `fn IsTrusted(&self) -> bool { self.mouseevent.IsTrusted() }`
+- dictionary nesting: init.parent chain — DragEventInit.parent=MouseEventInit (clientX/button/relatedTarget), .parent=EventModifierInit (modifiers()), .parent=UIEventInit (view/detail), .parent=EventInit (bubbles/cancelable/composed) — one level deeper than MouseEvent's own constructor accesses
+- Event.fire returns bool where FALSE means canceled (dispatch spec semantics) — use `!fire(...)` for cancellation checks
+- attribute setters in generated traits take `cx: &mut JSContext` first (see make_bool_setter)
+- HitTestResult.point_in_frame is already CSSPixel f32 — no cast_unit needed
+- Rc<RefCell<Option<DragDataStore>>> field in dom_struct: copy datatransfer.rs's exact `#[conditional_malloc_size_of] #[no_trace]` attribute pair
+
+### Verification status
+- compile-clean (cargo check release, zero errors)
+- constructor-level matrix probes authored; live trusted-drag verification harness: tests/scenarios/pages/drag-drop.html records event sequence into window.__dragLog (src/tgt are big colored boxes at fixed positions for computer-tool drags)
