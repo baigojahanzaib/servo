@@ -2495,6 +2495,7 @@ keys on, probe that primitive directly. HIGHEST-VALUE TARGETS: servo's TrustedTy
 
 Symptom index: framework sanitizeDOMValue diverges ONLY for undefined input → check Trusted Types
 object identity/unwrap detection (isUnwrappable) and TT type-tag primitives in servo.
+||||||| parent of 7da7aea6a (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
 
 ## sec1zt31 — ROOT CAUSE FINAL: servo's document.all strict-equals undefined — breaks resin's branch
 
@@ -2528,3 +2529,14 @@ Verification gate: `document.all === undefined` must be false; YouTube search re
 Symptom index: ANY framework branch keying on `x === document.all` misfires in servo → check
 document.all implementation (IsHTMLDDA object identity). Indexed by mechanism: strict-equality
 with undefined incorrectly true for document.all.
+||||||| parent of c757f75b8 (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
+||||||| parent of 303ceb416 (memory: ROOT CAUSE — single wrong bit, truthy vs falsy binding eval at stamp time)
+||||||| parent of 303ceb416 (memory: ROOT CAUSE — single wrong bit, truthy vs falsy binding eval at stamp time)
+
+## The write value identified: zClosurez (endgame-14)
+
+Setter-capture with full value inspection: servo write passes **typeof=object, serializes as "zClosurez"** — Closure library's listener-registry expando (the object goog.events stores under the `zClosurez` key on listenable objects). Chrome's write passes falsy (undefined-ish). So the polymer binding evaluation of `data.hideContents` (or sibling) in servo walks a differently-shaped object graph and bottoms out on an object's zClosurez expando instead of yielding undefined. TRUTHY STRING/OBJECT → hidden=true. Deterministic across boots (3/3 identical). Boot variance dead as explanation; literal-binding-attribute theory dead (final attr empty, no literal bindings survive); data absent at write time in BOTH browsers (hasData=N, this.data=N).
+
+Interpretation direction: polymer path resolution (`data.hideContents`) descends into a host/target object that in servo carries the listener registry as its OWN shape — possibly because property enumeration order, expando placement, or prototype chain differs under servo's DOM — or because in servo the walk starts from the wrong root (e.g. resolving `data` against the wrong object that happens to be a listenable with no real data). The object identity behind the resolution is the next probe target. NOTE: the write occurs at stamping BEFORE data system init — this is the framework's initial stamp evaluation; in Chrome it harmlessly evaluates falsy. If the resolution bug is order-of-keys dependent, suspect SpiderMonkey vs V8 enumeration differences for expando/class fields — a REAL engine-divergence class worth checking: key enumeration order on objects with mixed string/symbol/expando keys.
+>>>>>>> 7da7aea6a (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
+>>>>>>> c757f75b8 (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
