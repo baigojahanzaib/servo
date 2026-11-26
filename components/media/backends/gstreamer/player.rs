@@ -794,11 +794,7 @@ impl GStreamerPlayer {
         // Handle `position-update` signal.
         signal_adapter.connect_position_updated(move |_, position| {
             if let Some(seconds) = position.map(|p| p.seconds_f64()) {
-                let offset = weak_inner_pos
-                    .upgrade()
-                    .map(|inner_clone| inner_clone.lock().unwrap().mse_position_offset.get())
-                    .unwrap_or(0.0);
-                let _ = notify!(observer, PlayerEvent::PositionChanged(seconds + offset));
+                let _ = notify!(observer, PlayerEvent::PositionChanged(seconds));
             }
         });
 

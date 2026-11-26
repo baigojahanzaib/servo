@@ -3164,8 +3164,19 @@ impl HTMLMediaElement {
     }
 
     fn seekable(&self) -> TimeRangesContainer {
-        // MSE: seekable mirrors the buffered ranges of the active source buffers.
         if let Some(ref ms) = *self.media_source.borrow() {
+            // MSE with a finite duration: every position is reachable by feeding
+            // data on demand, so the whole presentation is seekable — matching
+            // Chrome/Firefox behavior (YouTube seeks rely on this; clamping
+            // targets against the ever-shifting buffered union breaks backward
+            // seeks and re-feeding entirely). Live (infinite duration) falls
+            // back to the buffered union.
+            let duration = self.Duration();
+            if duration.is_finite() && duration > 0.0 {
+                let mut ranges = TimeRangesContainer::default();
+                let _ = ranges.add(0.0, duration);
+                return ranges;
+            }
             return ms.buffered_value();
         }
         let mut seekable = TimeRangesContainer::default();
