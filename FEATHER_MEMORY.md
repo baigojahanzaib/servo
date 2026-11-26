@@ -2755,3 +2755,20 @@ match confirmed on github.com, live length 2782). Spec surface complete except l
 ## TESTING GOTCHA (solved mystery): schemeless omnibox input (e.g. `127.0.0.1:8931/x`) is HTTPS-upgraded — net log shows `GET https://127.0.0.1:8931/...` and the server log shows TLS ClientHello bytes hitting the plain-HTTP server ("Bad request syntax" 400). This is correct modern browser behavior (https-first), NOT a regression. Local test pages MUST be typed with explicit `http://` scheme. Symptom-index: "local test server connect error, curl works" → check scheme in net log first.
 
 ## STRATEGIC PRIORITY NOTE: the shared-FBO/static-page compositing staleness is now the critical-path item for the macOS lane — it blocks even verification of other work (aux tabs can't be visually verified; clicked pixels are stale composites; every test requires guessing whether paint is current). Recommend the next engine/shell hunt: repaint-on-tab-switch + repaint-on-navigation-completion in shell-new composite() — the invalidation layer, not per-feature hacks. Everything else this session is committed: document.all (alpha gate), traffic lights (#156), aux webviews (#157 open).
+||||||| parent of d1863b5901e (memory: target=_blank + window.open verification PASSED — popup cluster closed)
+
+sec1zt38 — target=_blank + window.open verification: BOTH PASS, popup cluster CLOSED
+Verified in feather shell-new (main bb465a5, engine 884f5777a85) via eval-injected repro on example.com:
+- **target=_blank link click**: opens NEW TAB, navigates to target (example.org loaded), original tab
+  intact, new tab active. PASS — the aux-webview adoption (feather#156) works end-to-end.
+- **window.open('https://example.edu/','_blank')**: returns object, opens third tab, target loads.
+  ZERO panics, ZERO RefCell-borrow errors — the documented aux-popup RefCell blocker (sec1zt33-era)
+  does NOT reproduce. The windowproxy entry-global fix (7df57cb72ac) evidently resolved the whole path;
+  the borrow re-entrancy was downstream of the panic-path state, not an independent defect.
+  Negative result: RefCell-already-borrowed at handle_loads_complete — not reproducible post-fix.
+Verification method note: target=_blank repro does NOT need a local server — inject the anchor into any
+real page via the eval bridge and .click() it.
+Symptom: "client error (Connect)" on http LAN/localhost urls partially explained — typing schemeless
+IP:port in shell-new omnibox goes to HTTPS (TLS InvalidContentType against plain-http server in net log).
+Workaround: none needed for external testing; local-http testing still broken (servo TLS-to-plain or
+connect issue unresolved for explicit http:// too — low priority, eval-injection covers repro needs).
