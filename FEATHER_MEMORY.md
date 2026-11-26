@@ -3654,3 +3654,7 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 - Symptom: sheets/docs must NOT get honest UA (banner cost, never walled) → policy narrowed: default list `www.google.com` only, exact-or-dot-suffix matching in BOTH layers (net http_loader + shim JS). CAUTION: a dot-suffix entry `google.com` matches every subdomain — re-includes docs/sheets and defeats narrowing. bare google.com 301s to www before any /sorry decision so exact www.google.com suffices.
 - Verified: search renders unwalled under narrowed default. Negative-control check (docs.google.com) redirected to sign-in in the probe — UA-on-docs verification incomplete, mechanism-only: docs.google.com neither equals nor dot-suffix-matches `www.google.com` so it gets the chrome UA in both layers.
 - Env override FEATHER_HONEST_UA_HOSTS for widening per-property as evidence accumulates.
+
+## sec1zt116 — post-container-queries compat spot checks
+- Symptom: github.com blank hero → CHECK RESOLVED/NON-REPRO post container-queries: h1 present ('Software still starts with you'), 0/22 broken images. Likely healed by container-queries implementation (hero layout was container-query-dependent) — consistent with the fleet-wide win prediction.
+- Symptom: youtube watch playback under honest-UA-narrowed policy → verified live same session as SERP: t advancing, rs=4. coordinator requirement (3) satisfied.
