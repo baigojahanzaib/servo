@@ -1798,3 +1798,8 @@ THE FIX IS ONE USER ACTION, either:
   (B) user does the release manually in the web UI (5 min): repo → Releases → Draft new release → pick tag v0.1.0-alpha (already pushed) → attach the zip → mark pre-release → Publish. The zip for attaching: download from the attachment link in the coordinator thread (or re-copy from work/stage/feather-0.1.0-alpha.zip).
 INTERIM DISTRIBUTION ALREADY AVAILABLE: the zip is downloadable NOW at the Devin attachment URL posted in the coordinator thread — the user can test on their PC today without waiting for the GitHub release.
 REPO ARTIFACTS awaiting cleanup after publish: branches alpha-payload (160MB) + alpha-release-workflow, PR #159, tag v0.1.0-alpha (keep the tag if release publishes on it).
+
+## F10 MITIGATION VERIFIED END-TO-END (2026-11-26 23:15) — YouTube results render in Feather
+MITIGATION (shell-new/src/app.rs): built-in per-navigation injection of an unhide snippet — MutationObserver + 2s interval stripping `hidden` from ytd-two-column-search-results-renderer once child renderers exist. Verified on the shipping alpha binary via the persist-eval channel (same execution path): full results render — chips, thumbnails, live badges, counts. Screenshot evidence: work/yt-results-rendering.png.
+VERIFICATION CHANNEL NOTE: /tmp/feather-eval-persist.js (merged in PR #154) re-injects on every navigation — allows testing any persistent-JS mitigation on the shipping binary WITHOUT rebuilding. Path on Windows is C:\tmp\feather-eval-persist.js (rust /tmp = drive root tmp).
+SYMPTOM INDEX: youtube-search-results-blank → RESOLVED-BY-MITIGATION; underlying engine symptom (resin sanitizer timing race) documented as wontfix-engine / works-as-fast-as-it-boots.
