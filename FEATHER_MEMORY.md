@@ -3223,3 +3223,13 @@ NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskadem
 4. **REAL discord defect found instead: discord.com/login SPA never boots** — readyState complete, body 1448 chars, ZERO svg elements in DOM, blank white page. The React bundle fails silently before mount. This is the actual user-facing discord breakage on Linux. Uninvestigated — next engine target. (Tab favicon — an `<img>`-embedded SVG — renders correctly, reinforcing that SVG rasterization is fine.)
 
 Harness: /tmp/elltest/discordlogo.html + inlinesvg.html + mainlogo.svg (served :8899).
+
+
+## sec1zt77 — discord login SPA boot failure: first hard evidence + instrumentation gotcha (2026-11-26, linux)
+
+**Symptom: discord.com/login blank white page, app-mount empty → check: libdiscore-wasm-fetch.js init error.**
+
+1. Evidence chain: readyState complete, webpack chunks ARE pushed (364), 300 resources fetched, but `#app-mount` never gains children. Exactly ONE window error captured across boots: `can't access property "open", e is undefined` at `libdiscore-wasm-fetch.5306b4c88499697d.js:1` — Discord's wasm-bindgen XHR/fetch shim (`j1: function(e,t,n){return e.open(b(t,n))}` — receiver object undefined when wasm calls XHR.open). WASM itself works in servo (WebAssembly.compile verified ok, instantiateStreaming/compileStreaming exist).
+2. Open question for continuation: whether the error is fatal-to-boot or a red herring — needs error STACK capture (instrumentation written but incomplete, see 3) and ideally reproducing libdiscore init in a minimal harness. The wasm-bindgen externref-table mechanics: receiver undefined implies the object reference passed from wasm never entered the table — candidates: externref/anyref edge in servo's SpiderMonkey integration, or an earlier silent failure in the shim's own init path.
+3. **Instrumentation gotcha (symptom-index)**: /tmp/feather-eval-persist.js injects once per URL and does NOT re-inject after in-page reload (`persist_eval_url` dedupe) — error capture hooks die on reload. For boot-capture experiments either navigate away and back, or clear the dedupe key. window.onerror capture works when installed early enough.
+4. CONTEXT BUDGET: this session is at the hard limit — continuation state fully in this file. Next steps: (a) capture the error stack properly, (b) minimal libdiscore repro harness, (c) if truly wasm-glue, look at servo's wasm externref table handling in script bindings.
