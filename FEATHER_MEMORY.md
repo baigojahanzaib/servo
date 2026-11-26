@@ -1662,3 +1662,9 @@ RESUME INSTRUCTIONS (exact):
 - Symptom: clicks land down-right of physical position on macOS HiDPI (F1 ledger).
 - Verified CORRECT on Windows with synthetic scale=2 (FEATHER_ZOOM): device-px input → exact css coords. Servo expects DEVICE-pixel input points; paint converts internally (webview_renderer.rs dispatch_input_event_with_hit_testing / as_device_point). Feeding logical coords instead produces half-scale hits.
 - Suspect locations INDEXED BY MECHANISM: input-coordinate mismatch can arise from (a) embedder feeding wrong units — exonerated here; (b) the PRESENT/BLIT path geometry disagreeing with input — prime remaining suspect on macOS wgpu/Metal present path (untested, GL path exonerated); (c) egui scale-factor detection — exonerated, egui_winit tracks window scale automatically.
+
+## ROOT-CAUSED: blank-until-first-input paint stall (F4) — FIXED in feather shell
+- Symptom: page renders blank after navigation until first mouse/keyboard input; any nudge heals it.
+- Mechanism chain: servo notify_new_frame_ready → shell wake → throttled spin DROPPED (8ms coalescing) → final frame notification of a static page never delivered → no paint → blank. Input nudge → new wake → spin → healed.
+- Suspect-location pattern INDEXED BY MECHANISM: any wake/notification throttle that DROPS rather than DEFERS can strand one-shot notifications (frames, load events). When investigating stall-class symptoms, check every early-return in the wake path for whether the dropped work has a guaranteed successor.
+- Scale-correlation: scale-2 doubles device-size churn → more wakes → drops far more likely → macOS HiDPI sees stall constantly, scale-1 rarely.
