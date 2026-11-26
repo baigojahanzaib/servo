@@ -2666,7 +2666,9 @@ class CGDOMJSClass(CGThing):
             "domClass": DOMClass(self.descriptor),
             "enumerateHook": "None",
             "finalizeHook": f"{FINALIZE_HOOK_NAME}::<D>",
-            "flags": "JSCLASS_FOREGROUND_FINALIZE",
+            "flags": "JSCLASS_FOREGROUND_FINALIZE | JSCLASS_EMULATES_UNDEFINED"
+            if self.descriptor.interface.identifier.name == "HTMLAllCollection"
+            else "JSCLASS_FOREGROUND_FINALIZE",
             "name": str_to_cstr_ptr(self.descriptor.interface.identifier.name),
             "resolveHook": "None",
             "mayResolveHook": "None",

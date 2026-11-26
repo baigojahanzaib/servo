@@ -2540,3 +2540,17 @@ Setter-capture with full value inspection: servo write passes **typeof=object, s
 Interpretation direction: polymer path resolution (`data.hideContents`) descends into a host/target object that in servo carries the listener registry as its OWN shape — possibly because property enumeration order, expando placement, or prototype chain differs under servo's DOM — or because in servo the walk starts from the wrong root (e.g. resolving `data` against the wrong object that happens to be a listenable with no real data). The object identity behind the resolution is the next probe target. NOTE: the write occurs at stamping BEFORE data system init — this is the framework's initial stamp evaluation; in Chrome it harmlessly evaluates falsy. If the resolution bug is order-of-keys dependent, suspect SpiderMonkey vs V8 enumeration differences for expando/class fields — a REAL engine-divergence class worth checking: key enumeration order on objects with mixed string/symbol/expando keys.
 >>>>>>> 7da7aea6a (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
 >>>>>>> c757f75b8 (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
+
+## HTMLAllCollection implementation — IN PROGRESS (macOS lane, endgame-15)
+
+sec1zt31 root cause confirmed correct. Implementation landed locally (compiles clean), verification pending:
+- `components/script_bindings/webidls/HTMLAllCollection.webidl` — new (length/item/namedItem union, LegacyOverrideBuiltIns; LegacyFactoryFunction intentionally omitted v1)
+- `components/script/dom/html/htmlallcollection.rs` — new DOM type wrapping HTMLCollection rooted at document, all-elements filter; namedItem returns Element/union sub-collection per spec
+- `components/script_bindings/codegen/codegen.py` — class flags for HTMLAllCollection get `JSCLASS_EMULATES_UNDEFINED` (bit exists in vendored SM 153 as 1<<6, bindgen exposes it — compiled)
+- `components/script_bindings/import.rs` — re-export the constant
+- `Document.webidl` — `all` uncommented (plain readonly attr, or_init caching like images)
+- `document.rs` — all_collection field + All() impl
+- `Bindings.conf` — HTMLAllCollection entry (cx for named methods, cx_no_gc for indexed; 'All' added to Document cx list)
+- dom/html/mod.rs — module registered
+KEY ENGINE FACT: SpiderMonkey implements all IsHTMLDDA semantics (typeof undefined, falsy, loose==undefined true, strict===undefined FALSE) purely from the class flag — no VM changes needed.
+Verification gate: `document.all === undefined` must be false in servo, typeof document.all "undefined", !document.all true, document.all==undefined true; then YouTube results render unassisted.

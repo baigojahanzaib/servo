@@ -180,6 +180,7 @@ use crate::dom::idledeadline::IdleDeadline;
 use crate::dom::html::htmlanchorelement::HTMLAnchorElement;
 use crate::dom::html::htmlareaelement::HTMLAreaElement;
 use crate::dom::html::htmlbaseelement::HTMLBaseElement;
+use crate::dom::html::htmlallcollection::HTMLAllCollection;
 use crate::dom::html::htmlcollection::{CollectionFilter, HTMLCollection};
 use crate::dom::html::htmlelement::HTMLElement;
 use crate::dom::html::htmlembedelement::HTMLEmbedElement;
@@ -482,6 +483,7 @@ pub(crate) struct Document {
     tagns_map: DomRefCell<HashMapTracedValues<QualName, Dom<HTMLCollection>, FxBuildHasher>>,
     classes_map: DomRefCell<HashMapTracedValues<Vec<Atom>, Dom<HTMLCollection>>>,
     images: MutNullableDom<HTMLCollection>,
+    all_collection: MutNullableDom<HTMLAllCollection>,
     embeds: MutNullableDom<HTMLCollection>,
     links: MutNullableDom<HTMLCollection>,
     forms: MutNullableDom<HTMLCollection>,
@@ -4552,6 +4554,7 @@ impl Document {
             tagns_map: DomRefCell::new(HashMapTracedValues::new_fx()),
             classes_map: DomRefCell::new(HashMapTracedValues::new()),
             images: Default::default(),
+            all_collection: Default::default(),
             embeds: Default::default(),
             links: Default::default(),
             forms: Default::default(),
@@ -6965,6 +6968,12 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
     /// <https://html.spec.whatwg.org/multipage/#dom-document-getelementsbyname>
     fn GetElementsByName(&self, cx: &mut JSContext, name: DOMString) -> DomRoot<NodeList> {
         NodeList::new_elements_by_name_list(cx, self.window(), self, name)
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-all>
+    fn All(&self, cx: &mut JSContext) -> DomRoot<HTMLAllCollection> {
+        self.all_collection
+            .or_init(|| HTMLAllCollection::new(cx, &self.window, self.upcast()))
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-document-images>

@@ -64,7 +64,8 @@ pub(crate) mod module {
     pub(crate) use js::jsapi::{
         __BindgenBitfieldUnit, CallArgs, GCContext, Handle as RawHandle, HandleId as RawHandleId,
         HandleObject as RawHandleObject, HandleValueArray, JS_SetReservedSlot,
-        JSCLASS_FOREGROUND_FINALIZE, JSCLASS_RESERVED_SLOTS_SHIFT, JSClass, JSClassOps,
+        JSCLASS_EMULATES_UNDEFINED, JSCLASS_FOREGROUND_FINALIZE, JSCLASS_RESERVED_SLOTS_SHIFT,
+        JSClass, JSClassOps,
         JSFunctionSpec, JSJitGetterCallArgs, JSJitInfo, JSJitInfo__bindgen_ty_1,
         JSJitInfo__bindgen_ty_2, JSJitInfo__bindgen_ty_3, JSJitInfo_AliasSet, JSJitInfo_ArgType,
         JSJitInfo_OpType, JSJitMethodCallArgs, JSJitSetterCallArgs, JSNativeWrapper,
