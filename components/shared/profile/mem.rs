@@ -79,6 +79,7 @@ pub struct ProfilerRegistration {
 
 impl Drop for ProfilerRegistration {
     fn drop(&mut self) {
+        eprintln!("[memprof] UNREGISTERING reporter: {}", self.reporter_name);
         self.sender
             .send(ProfilerMsg::UnregisterReporter(self.reporter_name.clone()));
     }
@@ -110,8 +111,10 @@ impl ProfilerChan {
         // Register the memory reporter.
         let callback = GenericCallback::new(move |message| {
             // Just injects an appropriate event into the paint thread's queue.
+            eprintln!("[repcb] callback fired");
             let request: ReporterRequest = message.unwrap();
             channel_for_reporter.send(msg(request.reports_channel));
+            eprintln!("[repcb] forwarded to event loop");
         })
         .expect("Could not create memory reporting callback");
         self.send(ProfilerMsg::RegisterReporter(
@@ -243,6 +246,7 @@ pub struct Reporter(pub GenericCallback<ReporterRequest>);
 impl Reporter {
     /// Collect one or more memory reports. Returns true on success, and false on failure.
     pub fn collect_reports(&self, reports_channel: ReportsChan) {
+        eprintln!("[repcb] profiler sending request");
         self.0.send(ReporterRequest { reports_channel }).unwrap()
     }
 }

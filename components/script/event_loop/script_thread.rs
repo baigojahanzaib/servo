@@ -2094,6 +2094,17 @@ impl ScriptThread {
     }
 
     fn handle_msg_from_script(&self, cx: &mut JSContext, msg: MainThreadScriptMsg) {
+        if std::env::var("FEATHER_MEMREP").is_ok() {
+            let kind = match &msg {
+                MainThreadScriptMsg::Common(CommonScriptMsg::Task(..)) => "task",
+                MainThreadScriptMsg::Common(CommonScriptMsg::CollectReports(..)) => "collect-reports",
+                MainThreadScriptMsg::Common(CommonScriptMsg::ReportCspViolations(..)) => "csp",
+                MainThreadScriptMsg::Inactive => "inactive",
+                MainThreadScriptMsg::WakeUp => "wakeup",
+                _ => "other",
+            };
+            eprintln!("[scriptmem] handle_msg_from_script kind={}", kind);
+        }
         match msg {
             MainThreadScriptMsg::Common(CommonScriptMsg::Task(_, task, pipeline_id, _)) => {
                 let global_scope =
@@ -2102,6 +2113,7 @@ impl ScriptThread {
                     .run_task(cx, pipeline_id, global_scope, task);
             },
             MainThreadScriptMsg::Common(CommonScriptMsg::CollectReports(chan)) => {
+                eprintln!("[scriptmem] CollectReports message received");
                 self.collect_reports(cx, chan)
             },
             MainThreadScriptMsg::Common(CommonScriptMsg::ReportCspViolations(
@@ -2850,6 +2862,7 @@ impl ScriptThread {
     }
 
     fn collect_reports(&self, cx: &mut JSContext, reports_chan: ReportsChan) {
+        eprintln!("[scriptmem] collect_reports invoked");
         let documents = self.documents.borrow();
         let urls = itertools::join(documents.iter().map(|(_, d)| d.url().to_string()), ", ");
 
@@ -2857,19 +2870,25 @@ impl ScriptThread {
         let mut computed_objects = HashSet::new();
         perform_memory_report(|ops| {
             for (_, document) in documents.iter() {
+                eprintln!("[scriptmem] layout collect start");
                 document
                     .window()
                     .layout()
                     .collect_reports(&mut reports, ops);
-
+                eprintln!("[scriptmem] layout collect done, doc collect start");
                 computed_objects.extend(document.collect_reports(&mut reports, ops));
+                eprintln!("[scriptmem] doc collect done");
             }
 
             let prefix = format!("url({urls})");
+            eprintln!("[scriptmem] get_reports start");
             reports.extend(get_reports(cx, prefix, ops, computed_objects));
+            eprintln!("[scriptmem] get_reports done");
         });
 
+        eprintln!("[scriptmem] sending {} report rows", reports.len());
         reports_chan.send(ProcessReports::new(reports));
+        eprintln!("[scriptmem] send completed");
     }
 
     fn handle_set_throttled_msg(

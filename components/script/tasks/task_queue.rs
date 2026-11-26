@@ -133,6 +133,9 @@ impl<T: QueuedTaskConversion> TaskQueue<T> {
         }
 
         for msg in incoming {
+            if std::env::var("FEATHER_MEMREP").is_ok() {
+                eprintln!("[taskq] message flowing through queue");
+            }
             if let Some(pipeline_id) = msg.pipeline_id() &&
                 !fully_active.contains(&pipeline_id)
             {

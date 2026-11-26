@@ -388,8 +388,19 @@ impl QueuedTaskConversion for MainThreadScriptMsg {
 
 impl OpaqueSender<CommonScriptMsg> for ScriptEventLoopSender {
     fn send(&self, message: CommonScriptMsg) {
-        if self.send(message).is_err() {
-            log::warn!("Error communicating with the target thread from the profiler");
+        let is_collect = matches!(message, CommonScriptMsg::CollectReports(_));
+        match self.send(message) {
+            Ok(()) => {
+                if is_collect && std::env::var("FEATHER_MEMREP").is_ok() {
+                    eprintln!("[scriptmem] opaque send OK");
+                }
+            },
+            Err(e) => {
+                if std::env::var("FEATHER_MEMREP").is_ok() {
+                    eprintln!("[scriptmem] opaque send FAILED: {:?}", e);
+                }
+                log::warn!("Error communicating with the target thread from the profiler");
+            },
         }
     }
 }
