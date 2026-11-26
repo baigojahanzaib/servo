@@ -1815,3 +1815,11 @@ Explored paths and verdicts for the geometric machinery (prerequisite for corrup
 - Hysteresis note: eviction margin must exceed re-upload margin by a hysteresis band or images oscillate evict/re-upload at viewport edges (design doc already says this; now it's concrete WHICH margins: the same spatial index query with two different paddings).
 
 Disk hygiene note for this lane: target/release is now ~30GB after the full rebuild — incremental artifacts pruned once already; if space pressure returns, `cargo sweep` or delete incremental dirs is safe (git is the backup).
+
+## NV12 video pipeline (2026-11-26) — symptom index entries
+
+Symptom: high CPU/energy in video playback → check: videoconvert NV12→BGRA pass (status: FIXED — planar-NV12 pipeline 2e312865a, ~22-26% video CPU reduction; frames now reach webrender as R8+RG8 planes rasterized by brush_yuv shader), general compositing machinery swgl-raster+present (prime suspect for residual — video is a 30fps invalidator; not video-specific, compositing-bound), gst copy-out + texture-upload copies (minor, ≤10% ceiling, deprioritized).
+
+Symptom: video colors wrong (green/purple shift, washed out) after pipeline changes → check: YuvColorSpace/ColorRange hardcoded Rec709+Limited in layout/display_list/mod.rs push_yuv_image (correct for HD h264; wrong for SD BT.601 content — if SD video looks wrong, this is why; proper fix parses gst colorimetry caps), chroma plane order in VideoFrameData::NV12 (verified correct for vtdec output), UV plane dimensions (RG8 half-width half-height — a full-width UV mistake shows as horizontal chroma doubling).
+
+Measurement lesson: copy-pass elimination measured HALF its predicted win (22% vs ~50%) because per-pixel conversion compute merely moves from videoconvert into the rasterizer shader — only memory bandwidth and extra passes are truly saved. When costing pipeline optimizations, separate compute (often conserved) from bandwidth/passes (actually eliminated).
