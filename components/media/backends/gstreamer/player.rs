@@ -259,6 +259,17 @@ impl PlayerInner {
         self.can_resume.set(false);
         self.last_metadata = None;
         self.source = None;
+        // Teardown nudges for the navigate-away retention class (sec1zt86):
+        // an external glib ref on the Play object never drains otherwise,
+        // pinning ~140MB per video permanently. NULL the pipeline and flush
+        // the bus so in-flight/queued bus messages and their object refs are
+        // released. Safety is unaffected: disposal only happens when the
+        // reaper verifies the refcount actually drained.
+        let pipeline = self.player.pipeline();
+        let _ = pipeline.set_state(gstreamer::State::Null);
+        if let Some(bus) = pipeline.bus() {
+            bus.set_flushing(true);
+        }
         Ok(())
     }
 
@@ -567,6 +578,60 @@ fn ensure_download_directory() -> bool {
 }
 
 static LEAKED_PLAYERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// Dragons-hit players awaiting disposal: the refs that blocked safe dispose
+/// at drop time are transient (in-flight bus messages / signal emissions) and
+/// drain within milliseconds-to-seconds. Instead of leaking permanently, the
+/// reaper re-runs the EXACT same refcount check later; once only the queue's
+/// own references remain (inner strong count 1, glib ref count 1) disposal is
+/// exactly as safe as the original drop-time dispose. Fixes the permanent
+/// per-video retention measured at ~140MB per navigate-away (sec1zt86).
+struct PendingDispose {
+    inner: Arc<Mutex<PlayerInner>>,
+    player: gstreamer_play::Play,
+    queued_at: std::time::Instant,
+}
+
+static PENDING_DISPOSE: std::sync::LazyLock<Mutex<Vec<PendingDispose>>> =
+    std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+static REAPER_SPAWNED: std::sync::Once = std::sync::Once::new();
+
+fn queue_deferred_dispose(inner: Arc<Mutex<PlayerInner>>, player: gstreamer_play::Play) {
+    PENDING_DISPOSE.lock().unwrap().push(PendingDispose {
+        inner,
+        player,
+        queued_at: std::time::Instant::now(),
+    });
+    REAPER_SPAWNED.call_once(|| {
+        std::thread::Builder::new()
+            .name("gst-dispose-reaper".to_string())
+            .spawn(|| loop {
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                let mut pending = PENDING_DISPOSE.lock().unwrap();
+                let mut still_pending = Vec::new();
+                for entry in pending.drain(..) {
+                    let inner_refs = Arc::strong_count(&entry.inner);
+                    let play_refs = entry.player.ref_count();
+                    // Same invariant as the drop-time check, shifted by exactly
+                    // the queue's own references: count 1 means only we hold it.
+                    if inner_refs == 1 && play_refs == 1 {
+                        eprintln!("[playerleak] deferred dispose firing after {:?}",
+                            entry.queued_at.elapsed());
+                        // SAFETY: identical to the drop-time dispose — nobody
+                        // uses the player any more; handlers keep weak refs.
+                        unsafe {
+                            entry.player.run_dispose();
+                        }
+                        drop(entry.inner);
+                    } else {
+                        still_pending.push(entry);
+                    }
+                }
+                *pending = still_pending;
+            })
+            .expect("could not spawn gst dispose reaper");
+    });
+}
 
 impl GStreamerPlayer {
     #[allow(clippy::too_many_arguments)]
@@ -1322,10 +1387,10 @@ impl Drop for GStreamerPlayer {
                     play_refs,
                     LEAKED_PLAYERS.load(std::sync::atomic::Ordering::Relaxed)
                 );
-                // Forget a strong reference so the object is never finalized:
-                // finalization is the use-after-finalize hazard.
-                std::mem::forget(player);
-                std::mem::forget(inner);
+                // Do NOT dispose now — but do not leak permanently either:
+                // the blocking refs are transient in-flight bus messages, so
+                // queue for deferred dispose once they drain (sec1zt86).
+                queue_deferred_dispose(inner, player);
                 return;
             }
             unsafe {
