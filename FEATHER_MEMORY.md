@@ -1736,3 +1736,16 @@ The vp9 gap is real but marginal (~7pp of ~47-59% playback CPU); upgrading bundl
 for vtdec-vp9 is the only available lever and is risky while the vp9/gst threading crash (youtube,
 indexed for the Linux lane) is unresolved — a newer gst may also change that crash's behavior either way.
 Deprioritized behind the compositing-cost program which dominates video CPU regardless of codec.
+||||||| parent of f395e941df8 (media: intentional-leak mitigation for player teardown use-after-finalize)
+
+## sec1zl — teardown-crash FIX landed: intentional-leak mitigation, 10/10 gate (2026-11-26)
+
+Fix (sec1zk option a) in GStreamerPlayer::drop: the dragons condition (non-unique inner / extra player refs) is now checked BEFORE dispose; when detected the player is intentionally leaked (mem::forget) instead of run_dispose — eliminating the use-after-finalize crash class at a bounded memory cost. Loud comment + upstream MR13022 reference in-code. [playerleak] eprintln counter logs each leak with running total.
+
+Verification gate PASSED: 10/10 deep-scroll reddit sessions survived (8 scrolls each, scrollY 14000-16000 — video posts in path); pre-fix crash rate was ~1/5 sessions.
+
+LEAK COST MEASURED: 7-13 leaked players per 8-scroll reddit session (mean ~11) — the dragons condition is PERVASIVE, not occasional: without the fix those players were all disposed unsafely and the crash was the unlucky intersection. Per-leak cost is pipeline object shells not frame data (pipeline stopped first) — est. tens-to-hundreds of KB each, so single-digit MB per heavy scroll session. Acceptable against the image masses, but it ACCUMULATES over very long sessions — indexed as a known bounded-leak cost; proper fix remains upstream MR13022 or the true refholder root-cause.
+
+Calibration: healthy progressive-mp4 teardown does NOT trip the leak path (0 leaks) — the threshold distinguishes correctly.
+
+Symptom index — symptom: SIGSEGV in Script#3 during/after scrolling video-heavy feeds, preceded by gst object-finalized assertions → check: GStreamerPlayer::drop disposal race (CONFIRMED cause class — fixed by intentional-leak mitigation), scroll input handling (ruled out), [playerleak] counter in stderr (diagnostic: nonzero count means the hazardous condition occurred and was survived).

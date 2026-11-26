@@ -539,6 +539,8 @@ fn ensure_download_directory() -> bool {
     }
 }
 
+static LEAKED_PLAYERS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 impl GStreamerPlayer {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -1235,22 +1237,38 @@ impl Drop for GStreamerPlayer {
             // code at
             // https://gitlab.freedesktop.org/gstreamer/gstreamer/-/merge_requests/13022
             // SAFETY: nobody uses the player after this moment. Handlers keep weak refs.
+            //
+            // That safety claim is sometimes FALSE in practice: bus messages or
+            // signal emissions still in flight can hold references during
+            // teardown (video-heavy feeds churning players on scroll hit this —
+            // crash signature: gst_bus_set_flushing / g_object_ref
+            // '!object_already_finalized' assertions then SIGSEGV in the script
+            // thread). When the dragons condition is detected we therefore
+            // INTENTIONALLY LEAK the player instead of disposing it: a bounded
+            // memory cost per torn-down video in exchange for eliminating the
+            // use-after-finalize crash class. The leak is a handful of pipeline
+            // objects per video element, not frame data. Revert to unconditional
+            // dispose once the upstream MR13022 lifecycle fix is in.
+            let inner_refs = Arc::strong_count(&inner);
+            let play_refs = player.ref_count();
+            if inner_refs > 1 || play_refs > 1 {
+                LEAKED_PLAYERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                eprintln!(
+                    "[playerleak] intentionally leaking player (inner refs {}, play refs {}); total leaked {}",
+                    inner_refs,
+                    play_refs,
+                    LEAKED_PLAYERS.load(std::sync::atomic::Ordering::Relaxed)
+                );
+                // Forget a strong reference so the object is never finalized:
+                // finalization is the use-after-finalize hazard.
+                std::mem::forget(player);
+                std::mem::forget(inner);
+                return;
+            }
             unsafe {
                 player.run_dispose();
             }
-            // Let's ensure the safety we claim above.
-            let unique = Arc::try_unwrap(inner).is_ok();
-            let play_refs = player.ref_count();
-            if !unique || play_refs > 1 {
-                gstreamer::error!(
-                    gstreamer::DebugCategory::get("servoplayer").unwrap(),
-                    "GStreamerPlayer drop: inner is not unique or player has other references, there be dragons!"
-                );
-                debug_assert!(
-                    false,
-                    "GStreamerPlayer drop: inner is not unique or player has other references"
-                );
-            }
+            drop(inner);
         }
     }
 }
