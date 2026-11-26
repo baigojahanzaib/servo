@@ -2824,6 +2824,8 @@ first-composite ordering, webview must be show()n before its frames composite.
 Behavioral side effect: hide() throttles background script + discards decoded images (memory win,
 but background media pauses — documented in PR).
 ||||||| parent of 74926cca4 (memory: alpha gate final validation — YouTube fully unassisted)
+
+## Watch-page validation (endgame-23): click-through from search results to watch page works fully — complete player chrome, live chat rendering with scrolling messages, view counts, channel cards, ad pre-roll playing. Deepest YouTube functionality verified to date. PR collision note: Linux lane independently implemented the same visibility fix (#160) — strong cross-lane confirmation of the root cause; theirs closed, #161 primary.
 ||||||| parent of f2d7203ae5b (memory: aux-paint residual negative — visibility contention was the whole cause)
 
 sec1zt41 — aux-tab paint residual: NEGATIVE (contradicts f593a5d9cba lane note)
@@ -2834,3 +2836,4 @@ content immediately (infobox photos included on first paint), and three-way tab 
 lane saw were visibility contention, not a create-request builder registration defect — the
 new_for_create_request path needs no compositor fix. Minor observed artifact: images in a hidden-then-reshown
 tab take a moment to re-decode (hide() discards decoded surfaces by design) — text/layout correct instantly.
+||||||| parent of 993ab15c1 (memory: watch page validated end-to-end)
