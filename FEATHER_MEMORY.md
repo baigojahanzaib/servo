@@ -2873,6 +2873,8 @@ gmail sign-in non-navigation defect is fully closed end-to-end — no caveat rem
 target=_blank class was the whole cause.
 
 sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
+
+## ROOT CAUSE + FIX: shadow-input typed-text defect (endgame-28). println discrimination on instrumented build: typing in light DOM produces UA-WIDGET-SYNC lines, typing in shadow DOM produces NONE — the input-event-driven value_changed never runs in shadow context. Mechanism: Event::dispatch_inner default-action block (event.rs) invoked vtable.handle_event on `self.GetTarget()` for all non-keyboard events — but composed events (the typing input event is composed) are RETARGETED to the outer shadow host during dispatch, so GetTarget() returns the host element, not the input; vtable_for(host) is not a text control, value_changed never fires, the UA widget character data never syncs, typed text never reaches layout. Keyboard events were already special-cased to original_target with a comment describing exactly this principle ("the default action should use the element the event was originally fired on") — the fix generalizes that to ALL events (the light-DOM behavior is unchanged since no retargeting occurs there). Symptom-index final: "input inside shadow DOM: focus+keydown+input events all correct but typed text invisible" → event.rs dispatch_inner default-action retargeting, NOT editing.rs, NOT focus, NOT layout. UPSTREAMABLE — strong funding-model candidate (real-world impact: x.com login, most polymer/lit apps).
 ||||||| parent of 95f7851eaf1 (memory: modifier-tracking + egui shift-bracket mechanisms)
 
 sec1zt45 — Symptom: shell keyboard shortcuts using ctrl/shift silently dead → check: WHERE modifiers state is tracked
@@ -2884,3 +2886,4 @@ the shifted brace character "{" which has no egui Key variant, so consume_shortc
 Browser-style ctrl+shift+[/] bindings must be intercepted at the winit layer matching the brace
 characters directly. Also symptom-indexed: "ctrl+t appears dead on a blank New Tab" is NOT a defect —
 the shell dedupes blank New Tabs by design (focuses the existing one); verify shortcuts on non-blank tabs.
+||||||| parent of 7e7c08179 (memory: shadow-input root cause — default-action retargeting (endgame-28))
