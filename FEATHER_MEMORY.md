@@ -1828,3 +1828,13 @@ IN FLIGHT: mitigation release rebuild — when done, replace the release asset: 
 - feather-0.1.0-setup.exe (NSIS, 105MB): Program Files install, shortcuts, StartMenuInternet browser registration, uninstaller. Verified silent-install → clean boot. Script: shell/packaging/feather.nsi adapted (APP_EXE feather-ui.exe).
 - feather-0.1.0-alpha.zip refreshed to the identical build (shim+GPU+crashcapture+mitigation).
 - Asset contents as of this entry = uiwt main @ PR#172 merge.
+
+
+## 2026-11-26 late-2 — botguard probe: concrete API-gap list from sannysoft fpCollect
+Running bot.sannysoft.com in feather, its own collector errors enumerate exactly what servo lacks vs real Chrome:
+- `navigator.sendBeacon` — present but "Not enough arguments" (arity/impl divergence)
+- `navigator.getUserMedia` — absent; `navigator.mediaDevices` — undefined
+- `navigator.getBattery` — absent (Battery Status API)
+- `Notification` — undefined (constructor missing entirely)
+- PerformanceObserver: "No valid entry type provided to observe()" — entry-type support diverges
+These presence-level gaps are EXACTLY what botguard-class detection harvests — a real Chrome population has all of them. Google sign-in rejection is plausibly THIS class of problem (API-surface deviation scoring) rather than any single fingerprint. Symptom index: heavy-js bot detection / google signin rejection → FIRST enumerate missing navigator/window constructors vs chrome (sannysoft fpCollect errors are a free oracle); individual API surface gaps are the fix-unit. Cheap shim-level stubs possible for presence-level checks (mediaDevices/enumerateDevices/getBattery/Notification/sendBeacon arity) — but stubs that throw-when-called may score worse than absence; implement carefully, verify each against fpCollect.
