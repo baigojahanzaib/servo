@@ -278,7 +278,6 @@ page and its JS deep-link logs "Load cancelled" with the page intact;
 a JS `location.href='whatsapp://chat/'` test page stays rendered; a
 restored whatsapp:// session tab loads about:blank, no error page.
 
-
 ## WPT pass-rate baseline (macOS arm64, 2026-11-24)
 
 Subset: `tests/wpt/tests/html/dom` + `tests/wpt/tests/css/cssom` = 695 test
@@ -867,7 +866,6 @@ MediaSource needs element backreference; (3) appendBuffer routing +
 updating flag + update events; (4) EOS only from endOfStream — must NOT
 let servosrc auto-EOS; (5) StreamType choice for MSE player.
 
-
 ## SAB/Atomics shim experiment verdicts (Nov 25, macOS lane — stage 0 of the SAB unlock)
 
 Decisive measurements with a pure-JS fake-SAB/Atomics shim (ArrayBuffer subclass + functional Atomics ops stubs, injected via feather's boosts.json userscript system — zero engine changes):
@@ -876,7 +874,6 @@ Decisive measurements with a pure-JS fake-SAB/Atomics shim (ArrayBuffer subclass
 - **accounts.google.com: UNCHANGED** — still "browser may not be secure" with the shim. Binding constraint for Google is the non-JS signals (TLS/JA3 prime suspect per docs/google-signin-decision.md); accepted limitation, do not chase.
 
 Symptom: `typeof SharedArrayBuffer === 'undefined'` in servo (anti-bot payloads probe it) → check: mozjs-sys makefile.cargo `--disable-shared-memory` flag (CONFIRMED CAUSE — the engine implementation is compiled out entirely), `JS::RealmCreationOptions::setSharedMemoryAndAtomicsEnabled` in mozjs/js/public/RealmOptions.h (the embedder opt-in that exists but is dead while the build flag is off), servo's WebIDL surface in components/script_bindings/webidls (no SharedArrayBuffer.webidl exists — bindings work needed even after the flag flip), structured clone in script (needs a share-not-copy branch for real implementation).
-
 
 Symptom: postMessage/structuredClone of a real SharedArrayBuffer throws DataCloneError (cross-agent sharing dead even though the built-ins exist) → check: CloneDataPolicy literals in components/script/dom/bindings/structuredclone.rs write/read paths (CONFIRMED CAUSE — both hardcode allowSharedMemoryObjects_: false + allowIntraClusterClonableSharedObjects_: false, and use StructuredCloneScope::DifferentProcess; per mozjs/js/public/StructuredClone.h shared-memory cloning requires the policy opt-in AND is only possible intra-process — servo's agents are in-process threads so SameProcess scope is the correct configuration for window↔worker messaging), the realm option sharedMemoryAndAtomics_ in script_bindings/interface.rs (status: FIXED 398467e6a — enabled, built-ins verified live), mozjs build flags (status: ruled out — desktop builds compile shared memory in by default; --disable-shared-memory is WASI-only). FIXED 5f26d9f7a: write/read now default SameProcess scope + policy allowed, sabCloned veto removed; IndexedDB persistence paths use explicit DifferentProcess variants. Verified TRULY-SHARED memory + cross-agent Atomics on macOS. CAUTION for future work: flipping the policy flags while keeping DifferentProcess scope is memory-corruption-fatal (silent death, no panic) — scope and policy must always be coherent. Residual: claude.ai turnstile STILL stalls even with correct shared memory — SAB was necessary but not sufficient; remaining suspects per the Cloudflare doc: OffscreenCanvas (confirmed absent), wasm threads, Atomics.wait/notify edge behavior.
 
@@ -953,7 +950,6 @@ SOLVED sub-cause chain (each verified in harness):
 - Symptom: pipeline stalls pre-preroll with no error, no EOS, position frozen at 0 → check: dynamically-added element states (`state=Null` in topology walk means missing `sync_state_with_parent` — confirmed first cause), then appsrc `current-level-bytes` property (if bytes accumulate = streaming task never started — OPEN, see above).
 - Symptom: gst element added to running bin accepts data but never processes → check: `sync_state_with_parent` call (owns state propagation for runtime-added elements — gst_bin_add does NOT reliably propagate; silent because pushes return Ok into the internal queue regardless).
 
-
 Symptom: gst streaming thread or script thread wedges permanently after a seek (playback frozen, all later media ops stall) → check: `SeekChannel::_await` in servo-media gstreamer player.rs (owns the seek roundtrip — was an unbounded recv; FIXED with 5s bounded try_recv_timeout, seek reported as failed on timeout), `SeekLock::unlock` ack wait in servo-media-player lib.rs (same class, same fix). Unbounded-IPC wedge family — same pattern as the clipboard GetClipboardText and WebDriver wait_for_ipc_response fixes; any NEW cross-thread recv introduced in media code must be bounded at review time.
 
 ## macOS video playback verification + symptom index entries
@@ -971,7 +967,6 @@ Symptom: video element renders black/no frames on macOS → check: GST_PLUGIN_PA
 - Symptom: typefind errors "Stream doesn't contain enough data" on EOS → check: whether EOS raced ahead of data because a pad flush event destroyed queued buffers in transit (evidence: burst of `_gst_buffer_free` finalizes at flush time) — likely artifact of manual state cycling, NOT a real MSE hazard (ruled out for normal operation).
 
 ## Symptom index additions — media/memory investigations (Windows lane)
-
 
 ### Symptom: memory grows without bound scrolling an infinite media feed (synthetic mp4 autoplay test: +386MB over 25 scroll bursts)
 
@@ -1037,7 +1032,6 @@ Two-layer seek swallow for StreamType::MediaSource: player-level early-return in
 → VERDICT: no cheap safe win. The real fix requires either content-visibility-style layout skipping of offscreen subtrees (servo lacks it — large feature) or byte-swappable RasterImage shells with paint-time re-decode (deep engine surgery). Weeks-scale either way. The pin-release implementation was built, verified mechanically correct (113 evictions logged in one scroll test), measured useless, and REVERTED — do not re-attempt the same two-pin variant.
 → note: images below the initial viewport appear NOT to decode until scrolled near (has_image=false below viewport in scan logs) — servo already has partial lazy behavior; retention is for once-visible content only.
 
-
 ## 1s. Signed-in YouTube verification + cookie persistence + real-world MSE recon (2026-11-25)
 
 STAGE 6 VERIFIED: signed-in YouTube plays in feather. Cookie path: user signed into Chrome on the VM, cookies decrypted from Chrome's profile sqlite (Linux v10 = AES-CBC, PBKDF2("peanuts","saltysalt",1,16), IV=16 spaces), converted to servo's cookie_jar.json format (`{version:1, cookies_map{regkey:[{cookie as Set-Cookie-string, host_only, persistent, creation_time, last_access, expiry_time}]}, max_per_host:150}`; SystemTime serializes as `{secs_since_epoch, nanos_since_epoch}`; cookie field is a string parsed by cookie::Cookie::parse — one bad cookie fails the WHOLE jar silently; map keys are eTLD+1 reg domain of the cookie domain attribute, domains written WITHOUT leading dot), dropped into feather's data dir. Verified: personalized feed, pre-roll ad then main video continuous playback with captions, live cookie rotation (SIDCC rotation proves the jar is bidirectionally live).
@@ -1051,7 +1045,6 @@ Recon verdicts (2026-11-25): dailymotion PLAYS. twitch FAILS (black player, page
 - Symptom: twitch page fully works but player black forever → check: HLS/fMP4+H264 path (prime suspect — twitch is avc-only, supported_codecs=av1,h265,h264 in their usher call; transmuxed hls.js fMP4 appends never exercised in our WebM-first validation), avc decode presence in the gst registry (check avdec_h264/openh264 — avdec absent on stock Linux), `Could not set the playback rate: NonSeekableStream` warnings (MSE/live stream rate-set unhandled), "Trying to exec media action on an unknown client context" (media client lifecycle mismatch, unchecked). DOM surface/network/CDN ruled out — m3u8 master playlists fetch 200 fine.
 - Symptom: vimeo video page shows generic "Technical Difficulties" → uncharacterized, occurs BEFORE any media init evidence; suspect player feature-detection JS failing, not yet investigated.
 - Symptom: shaka-player demo header/footer render but content area never populates → uncharacterized framework-level JS failure, pre-player; not evidence about MSE itself.
-
 
 ## 1t. Silent hard crash on heavy real sites — amazon, reproducible (2026-11-25)
 
@@ -1126,7 +1119,6 @@ isTypeSupported true for avc1/mp4a, fMP4 init+media appends decode and play
 - Symptom: fMP4 MSE append produces no playback → NOT a real symptom class;
   verified working end-to-end. If seen, suspect timestampOffset confusion
   or missing init re-feed post-seek instead.
-
 
 ## 1u. Silent heap-corruption crash — deep characterization (2026-11-25, Windows lane)
 
@@ -1295,7 +1287,6 @@ IMPLEMENTATION DESIGN for Stage-1 (relevance + paint-skip), for whoever continue
 - KEY UNEXPLORED RISK: servo's display-list construction may not have a clean per-subtree elision point if items are emitted during a single pass tied to fragment tree walk — evaluate paint_traversal.rs first.
 - contain-intrinsic-size + size containment needed only for Stage-2 (eviction); Stage-1 correct without them because layout still runs.
 - threading: determination runs on script thread; layout reads element state during reflow on the same thread — no cross-thread concern (layout is same-thread in servo).
-
 
 ## content-visibility Stage 1 — landed on cv-wip branch (2026-11-25)
 
@@ -1663,3 +1654,27 @@ Cross-check rows: jemalloc-heap-allocated 777 / active 798 / mapped 885; smaps a
 **Symptom index — symptom: single idle reddit tab RSS >1GB → check: net image_cache enforcement (prime suspect — cap measurably violated, 309/128MB), double-ownership of decoded surfaces net-cache vs webrender (confirmed structural, 2x copies), DOM text-node mass on shreddit (confirmed 272MB — content-visibility addresses layout not DOM), JS heaps (ruled out as dominant — only ~160MB all realms), layout trees (ruled out — 51MB).**
 
 **Measurement caveats**: measurement-race crash (MessagePort concurrency) NOT hit in 3+ consecutive reddit dumps on Linux — treat as rare. vsize/total-row sums are hierarchical double-counting — never sum all rows; attribute per leaf categories. The url() rows key by document — reddit shows google-recaptcha webworker (29MB malloc + 20MB non-heap!) and accounts.google.com iframes as separate realms — third-party JS is ~90MB of the JS total.
+||||||| parent of ae8dce0ef (memory: black-skinning root cause — unsized RG internalformat rejection, fix verified)
+
+## Black-skinning root cause + fix (Nov 26, mac lane) — SOLVED
+
+Symptom: three.js skinned-mesh / ANY MeshStandardMaterial content renders solid black in both GL and Metal
+modes, while basic/phong materials and the ground plane render correctly → check: `validate_internal_format`
+in components/script/dom/webgl/validations/tex_image_2d.rs (owns texImage2D internalformat acceptance —
+CONFIRMED CAUSE: rejected unsized GL_RG 0x8227 because TexFormat::Red/RG had empty compatible_data_types
+via the catch-all), texture upload paths image-element/image-bitmap/blob-bitmap (status: ruled out — all
+verified uploading+sampling correctly via probe), skinning/bone-texture pipeline (ruled out — procedural
+SkinnedMesh repro correct), shadow mapping (ruled out — shadowMap+castShadow repro correct), MSAA/antialias
+(ruled out), canvas size (ruled out), RG16F half-float sized upload+sampling (ruled out — raw probe exact).
+MECHANISM: three.js r186 added unconditional `material.dfg = texture2D(dfgLUT, ...)` to standard-material
+lighting; the LUT is a 16x16 RG+HalfFloat DataTexture uploaded with UNSIZED GL_RG internalformat — invalid
+in strict WebGL2 but accepted by all browsers via driver passthrough. servo rejected it → texture never
+allocated → shader sampled 0 → `multiScatteringCompensation = 1 + spec*(1/EssMs - 1)` with EssMs=0 →
+division by zero → NaN → black. FIX: feather-engine d4a8a04e3 — Red/RG compatible types added;
+EXT_color_buffer_float implemented (core-profile GL exposes float rendering without the ES extension
+string — is_supported now `!is_gles || extension-present`); OES_texture_float/half_float_linear same.
+Bisect artifacts (three r183-r187 + probes) in /tmp/vtest — key ones: pbrtest186.html (minimal repro),
+rg16fprobe.html, glbtestlive.html. DIAGNOSTIC LESSON: bisecting the three.js VERSION (r185 ok/r186 black)
+cracked it in 4 steps when mechanism-guessing was stalled; for library-dependent rendering defects, bisect
+the library version FIRST. Also: the texImage InvalidEnum error appeared in WORKING versions too (r183) —
+error-presence is not proof of causation; verify against a passing baseline before chasing.
