@@ -3450,3 +3450,8 @@ components/layout/flow construction entry, stylo container_rule.rs traverse_cont
 - Fix shipped: favicons.bin FAV2 format, origin-keyed, 32px downscale, RGB8→RGBA normalize, 5s throttled writes. Verified live: github octocats visible on restored lazy tabs.
 - FEATHER_FAVICON_DEBUG env tracing lives in shell-new (writeback + paint-miss).
 - Gotcha: the debug paint-miss print fires per-frame-per-tab — a few minutes of logging = GIGABYTES (filled /tmp once). Use briefly.
+
+## matrix-expansion-1 — round-2 results + hit-test open question (2026-11-26)
+- Expanded 13→17 scenario classes, 61→88 probes. Grid 81/88. New green classes: history-api 5/5, keyboard-input 5/5, transforms-animations 5/5, fetch-xhr 8/8.
+- OPEN QUESTION: elementFromPoint hit-test FAIL on overlapping z-indexed elements — returns an unnamed ancestor, not the top element. elementFromPoint IS implemented in servo (documentorshadowroot.rs). Probe uses viewport coords incl. default 8px body margin — math says the point should still land in the overlap, so a real hit-test defect is plausible but unproven. Needs minimal repro: elementFromPoint at various coords on a z-indexed stack, compare vs Chrome. If real: mechanism suspect is servo's hit-test not respecting z-order/point-in-fragment — CHECK compositing hit_test pipeline.
+- Probes self-report element tag/id now for future runs.
