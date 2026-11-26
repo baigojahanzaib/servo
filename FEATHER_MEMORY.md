@@ -3042,3 +3042,16 @@ Implementing layout-side text-overflow: ellipsis. Design decisions made:
 - Ellipsis shaped via font.glyph_index('\u{2026}') + glyph_h_advance (both pub on Font). If font lacks U+2026: no truncation at all (v1 limitation — should fall back to clipping behavior eventually).
 - v1 documented limitations: horizontal writing modes only; atomic inline content (images/inline-blocks) not truncated; width budget uses IFC containing block content-inline-size rather than the exact padding-box clip edge; string values of text-overflow unsupported; justification adjustment not recomputed after truncation; nested cases where the ellipsis-applying element is not the IFC root not handled.
 - Check overflow_x in (Hidden|Scroll|Auto|Clip); end edge = TextOverflowSide::Ellipsis via `.second` (correct for ltr single+double value forms).
+
+## sec1zt57 — text-overflow: ellipsis IMPLEMENTED + VERIFIED (2026-11-26, linux lane)
+The multi-day-estimated feature landed in one session segment. What shipped:
+- fonts/glyph.rs: `ShapedText::single_glyph` (synthetic shaped text), `ShapedTextSlice::whole` (full-range constructor), `ShapedTextSlice::truncate_to_advance` (glyph-range narrowing with cache recompute).
+- layout/flow/inline/line.rs: truncation in `layout_text_run` — compare run's line-position+advance vs IFC containing block inline size; budget = width - start - ellipsis_advance; truncate slices, append ellipsis shaped in the run's font via font.glyph_index('\u{2026}').
+- config/prefs.rs: `layout_css_text_overflow_enabled` default TRUE + stylo static pref mapping.
+VERIFIED LIVE in feather (screenshot): 6/6 cases correct — plain truncation with visible ellipsis; nested span (inline-box positioning via parent_offset accumulation — CRITICAL FIX: current_state.inline_advance is box-relative inside nested inline boxes, must add current_state.parent_offset.inline); multi-run mixed bold/italic truncation; negative control (no text-overflow) plain clip; scroll container ellipsis; visible-overflow negative control (no ellipsis rendered — spec correct).
+Symptom-index entries:
+- Symptom: truncated text missing ellipsis inside nested inline elements → check: inline_advance is inline-box-relative in LineItemLayoutInlineContainerState; absolute line position = inline_advance + parent_offset.inline chain.
+- Symptom: style property missing from InheritedText at compile time though in longhands.toml → check: struct="text" is the NON-INHERITED group; access via style.get_text() not get_inherited_text().
+- Symptom: `ShapedTextSlice` has no public constructor → slices are slicer-produced; use new `whole()` for synthetic content.
+- Symptom: re-navigation to same URL in feather is a no-op (no reload) → append query-string bust when iterating test pages.
+Known v1 limitations (documented in code): horizontal writing modes only; atomic inline content not truncated; string values unsupported; fonts lacking U+2026 skip truncation; budget uses content-box width not padding-box clip edge; justification not recomputed; RTL visual-order correctness inherited from physical glyph storage order (correct by construction per slicer comment, untested).

@@ -675,13 +675,24 @@ impl LineItemLayout<'_, '_> {
                     ComputedOverflow::Clip
             );
             let line_box_inline_size = self.containing_block().inline_size();
-            let inline_start = self.current_state.inline_advance;
+            // The inline start of this run in the coordinates of the line. Inside nested
+            // inline boxes `inline_advance` is relative to the box, so the accumulated
+            // parent offsets must be added to get the position in the line.
+            let inline_start = self.current_state.inline_advance +
+                self.current_state.parent_offset.inline;
             if overflow_is_clipped &&
                 matches!(text_overflow.second, TextOverflowSide::Ellipsis) &&
                 inline_start + inline_advance > line_box_inline_size
             {
-                if let Some((truncated_glyphs, truncated_advance, retained_characters)) = self
-                    .truncate_glyphs_for_text_overflow(
+                if inline_start >= line_box_inline_size {
+                    // This run starts beyond the end edge of the container, where an
+                    // ellipsis was already rendered by a previous run. It is entirely
+                    // clipped away, so it should not produce any glyphs of its own.
+                    glyphs = Vec::new();
+                    inline_advance = Au::zero();
+                    character_range_in_dom_node.end = character_range_in_dom_node.start;
+                } else if let Some((truncated_glyphs, truncated_advance, retained_characters)) =
+                    self.truncate_glyphs_for_text_overflow(
                         &text_item.info.font_info.font,
                         &glyphs,
                         line_box_inline_size - inline_start,
