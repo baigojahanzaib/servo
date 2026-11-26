@@ -1853,3 +1853,11 @@ Symptom: shell becomes zombie after sustained use — omnibox/new-tab silently d
 Symptom: video element black despite playback → check: gst plugin loading (status: ruled out — vtdec hw decode verified active, 993 samples in gst_vtdec_handle_frame; startup plugin-error log is benign fallback path), frame handoff to compositor / media client-context registration (prime suspect — "unknown client context" warnings coincide), initial-paint invalidation gap (related: pages don't composite until first input).
 
 Symptom: localhost dev servers unreachable "client error (Connect)" → check: IPv6/IPv4 resolution fallback (localhost→::1 vs IPv4-only server; 127.0.0.1 works fine) — no happy-eyeballs in servo net.
+
+## Hydration-stall class root cause (2026-11-26) — symptom index entries
+
+Symptom: SPA renders but never becomes interactive though JS partially runs (analytics fire, spinners animate) → check: MISSING BOOT-CRITICAL APIs first (confirmed cause class) — requestIdleCallback/cancelIdleCallback undefined (NO webidl/impl in servo at all, unguarded call throws sync mid-boot — prime suspect, YouTube boot scheduler uses rIC), window.scheduler missing, crypto.subtle missing, visualViewport missing, serviceWorker missing, navigation api missing, history.scrollRestoration missing; shadow DOM rendering (status: ruled out — verified painting correctly); customElements lifecycle (status: ruled out — define/upgrade/connectedCallback/built-in extends all verified working); single unguarded missing-API call unwinds the whole boot routine at the throw point — explains uniform failure across unrelated heavy apps.
+
+Symptom: cannot diagnose engine JS failures in embedding → console output and uncaught exceptions invisible in shell-new (nothing surfaces); servo's devtools server exists behind devtools_server_enabled pref but shell doesn't wire it; diagnosis requires blind localhost-probe pages — highest-leverage tooling fix available.
+
+Lesson: probe pages testing typeof/guarded-call behavior loaded in the target browser beat log spelunking when no console exists — write results visibly into the DOM, click page once to force the first paint (F4 invalidation gap).
