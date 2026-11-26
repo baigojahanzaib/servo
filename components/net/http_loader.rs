@@ -1607,7 +1607,7 @@ async fn http_network_or_cache_fetch(
             // accounts never did, and the honest UA costs unsupported-browser
             // banners on UA-sniffing subapps, so the narrowest effective list wins.
             let hosts = std::env::var("FEATHER_HONEST_UA_HOSTS")
-                .unwrap_or_else(|_| "www.google.com,google.com".to_string());
+                .unwrap_or_else(|_| "www.google.com".to_string());
             let host = http_request.current_url().host_str().unwrap_or_default().to_string();
             let honest = hosts
                 .split(',')
