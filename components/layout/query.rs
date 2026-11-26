@@ -140,10 +140,6 @@ pub(crate) fn process_box_areas_request(
         root_transform_for_fragments(&stacking_context_tree.paint_info.scroll_tree, &fragments);
 
     let fragment_count = fragments.len();
-    let fragment_kinds: Vec<String> = fragments
-        .iter()
-        .map(|f| format!("{:?}", f).chars().take(40).collect())
-        .collect();
     let rects = fragments
         .into_iter()
         .filter_map(move |fragment| fragment.cumulative_box_area_rect(area, layout_thread.into()));
@@ -151,8 +147,8 @@ pub(crate) fn process_box_areas_request(
     let Some(transform) = transform else {
         if std::env::var("RANGE_DEBUG").is_ok() {
             eprintln!(
-                "[range-debug] NO-TRANSFORM fallback hit — fragments={} kinds={:?}",
-                fragment_count, fragment_kinds
+                "[range-debug] NO-TRANSFORM fallback hit — fragments={}",
+                fragment_count
             );
         }
         return rects
@@ -161,8 +157,8 @@ pub(crate) fn process_box_areas_request(
     };
     if std::env::var("RANGE_DEBUG").is_ok() {
         eprintln!(
-            "[range-debug] transform ok — fragments={} kinds={:?}",
-            fragment_count, fragment_kinds
+            "[range-debug] transform ok — fragments={}",
+            fragment_count
         );
     }
 
