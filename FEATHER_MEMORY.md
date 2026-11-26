@@ -3374,3 +3374,14 @@ refetch with: curl -A "Mozilla/5.0 (X11; Linux x86_64; rv:128.0) Gecko/20100101 
 "https://www.google.com/search?q=test"). Next steps: extract <link>/css urls from the html,
 fetch them, rewrite references to local paths, serve, screenshot feather vs expectation,
 identify broken mechanism with scenario-matrix minimal repros.
+
+sec1zt92 — google wall discriminated: UA-exonerated, fingerprint-level (2026-11-26, linux lane):
+curl with a plain Firefox UA string fetches the real SERP fine (200, no wall) FROM THE SAME IP
+at the same time feather gets /sorry/index — so the wall is NOT the UA string and NOT the IP.
+Distinguishers left: TLS/HTTP2 fingerprint, header set/ordering (accept, accept-language,
+sec-fetch-*), or behavioral (parallel subresource burst). NOTE the fetched SERP html is a
+JS-bootloader shell — zero link tags, no center_col — localhost static repro is impossible;
+layout investigation requires either unwalling feather or a MITM-style replay. High-value
+unblocked path if resumed: dump exactly what headers servo sends (net crate) vs curl's set —
+google's wall on headless-ish clients is often triggered by missing/odd accept-language or
+sec-fetch headers, a cheap mechanism-level fix healing ALL google properties.
