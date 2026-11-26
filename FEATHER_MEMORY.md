@@ -1698,3 +1698,30 @@ BUILD: engine builds inside shell-new target (servo = path dep); expect 1-3h for
 
 ## rIC implementation VERIFIED, YouTube verdict NEGATIVE (2026-11-26)
 requestIdleCallback implemented (fork branch ric-implementation, commit f5da1c83f9c): piggybacks animation-frame pipeline. Probe-verified end-to-end: fires in 5ms with correct deadline object. BUT: YouTube results list STILL never renders — rIC is exonerated as the mechanism. Homepage hydration unaffected (no regression). SYMPTOM-INDEX UPDATE for F10: remaining suspects ranked — (1) adoptedStyleSheets missing (YouTube/lit components use constructable stylesheets in shadow roots; missing = init errors or unstyled/zero-size render — fits 'elements exist but nothing visible'); (2) shadow DOM slot distribution bugs in nested polymer/lit elements; (3) some uninstrumented JS exception mid-boot. NEXT DIAGNOSTIC NEED: DOM/JS visibility into the live page — implement or enable servo devtools-server in the shell (engine.rs Preferences) and inspect whether ytd-video-renderer nodes exist in DOM (data problem) vs render zero-size (style/layout problem). That single fact splits the search space in half. probe files: ric.html (rIC verification), apis.html (API matrix), cenest.html (nested CE).
+
+
+## F10 (YouTube results never render) — deep-dive evidence chain, Windows lane 2026-11-26
+
+INSTRUMENTS (in feather repo, PR #154, eval-console-instruments branch): FEATHER_EVAL=<path> live JS-eval bridge (evaluate_javascript exists in servo webview.rs!); console visibility delegate. adoptedStyleSheets pref flipped ON in shell (servo ships it complete behind dom_adoptedstylesheet_enabled — verified working incl. shadow adoption + cascade; NOT the YouTube trigger).
+
+ELIMINATED (with direct evidence):
+- JS boot exceptions: none. Polymer initializes, components define+upgrade, data stamps.
+- Stamping/tree-sync: PHYSICAL DOM fully populated (247 descendants/renderer, via ShadyDOM.nativeMethods bypass). Logical=physical.
+- Shadow DOM native: works (manual attachShadow fine; trivial CE probe green). className-undefined was polyfill artifact not servo bug.
+- Template innerHTML parsing incl. style-in-dom-module: round-trips fine.
+- ShadyCSS compile+hoist+cascade pipeline: WORKS END-TOEND when driven manually (shadycssfull.html: hoisted style appears, color applies).
+- Full Polymer 3 element with forced-shady (exact YouTube flags): WORKS, renders styled (polymer-repro.html).
+- adoptedStyleSheets: present post-flip but unused by YouTube boot (len stays 0).
+- Network: app bundle (1MB ytmainappweb base) loads; kevlar module script present; components DO define.
+
+THE SMOKING GUN: document CSS totals 6.7KB (the app-shell critical CSS from initial HTML) — YouTube's compiled component css-build payload (hundreds of KB) NEVER materializes anywhere: not in <style> tags (9 tiny ones, zero scope attrs), not in adoptedStyleSheets, not in custom-style carriers (exist but len 1656/0). Properly-stamped content collapses to zero size — hence blank results with working chrome.
+
+KEY ARCHITECTURE FACT: YouTube force-activates ShadyDOM for ALL browsers (inline config force:true,preferPerformance:true,noPatch:true) — the shady path IS production. Chrome renders through the same path. Failure is servo-specific execution of the css-build insertion step, silent, at boot.
+
+OPEN NEXT STEPS (ranked):
+1. The css-build payload insertion is YouTube-app-specific (kevlar module system), not Polymer-core — minified, needs tracing. Either instrument the insertion calls post-boot + force re-run, or serve a local copy of the boot with instrumentation injected.
+2. perf entry durations negative in servo (dur:-22098) — performance.now()/resource timing bug, separate minor defect.
+3. Native-shadow Polymer path (force:false) crashes in my repro bundle: "ShadyDOM.patch is not a function" — possibly artifact of my esbuild bundle, possibly real; unclear.
+4. WebComponentsReady never fires in servo even when everything works — check whether the -sd bundle should fire it at all.
+
+REPRO ASSETS (Windows box): probe server has polymer-repro.html, polymer-native.html, shadycssfull.html, adopted.html, ceprops.html, tplstyle.html + node_modules/@polymer + poly-bundle.js (esbuild). Downloads in work/: ytresults.html (1.5MB), wcsd.js, ytbase.js (1MB).
