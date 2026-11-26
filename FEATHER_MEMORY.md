@@ -2299,3 +2299,7 @@ Direct call ys.onYtShowSearchContentsCommand() → hidden=false, hc=false, layou
 **Instrument survival negative**: attribute-write spy on Element.prototype does NOT survive full navigation (obviously) and the SPA-nav spy capture was pre-empted by the wipe — but the spy install methodology is sound for future SPA-only captures: wrap removeAttribute/setAttribute/hidden-property-setter BEFORE clicking in-page links.
 >>>>>>> e6a2db59b14 (memory: sec1zt22 — home unhide works, search-specific defect + eval-wedge finding)
 ||||||| parent of fdd3b1eab (memory: endgame — full render proven, only command-executor trigger missing)
+
+## Console visibility live — boot nearly clean, one real error (2026-11-26 final)
+
+eval-console-instruments pipe works. Entire YouTube boot produces only: LegacyDataMixin info x2, "No valid entry type" warning x2, and ONE error: "ResizeObserver loop completed with undelivered notifications". No exceptions/rejections otherwise. The RO-loop error is a NEW untested suspect for the missing command trigger: YouTube layout depends on RO chains; if servo's RO loop-limit drops notifications that Chrome delivers, the layout-completion signal the trigger depends on may never fire. Next cheap test: minimal RO-loop repro comparing servo vs spec behavior (chrome tolerates/delivers across frames; servo may drop).
