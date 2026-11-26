@@ -3606,3 +3606,9 @@ CAPTURED feather's real request headers (localhost capture): anomalies vs Chrome
 - TRAP CONFIRMED AGAIN: branch skew cost a debugging detour — a matrix page 404'd because the branch predated the round merge; looked exactly like a regression (0 collected, error page). RULE: sync branch with main BEFORE trusting a matrix negative; the telltale is document.title eval → "Error response".
 - Range-geometry deep-dive banked: chain verified correct Range→border_boxes→box_areas_query→layout query_box_areas; text nodes DO have LayoutBox::Text; silent zero-size fallback exists when root_transform lookup fails. Engine lane has exact file/function trail.
 
+
+## WATCHDOG-DATA HANG ANALYSIS — video playback stalls (2026-11-26 batch-2 binary)
+DATA: during 720p mp4 playback on the GPU-less VM: 28 consecutive "UI thread still stalled" watchdog entries, ZERO spin_event_loop slow probes, zero webview.paint probes — gui-frame-path stalls only, continuous for the playback duration.
+INTERPRETATION: video frames arrive ~30-60/s; each triggers a full egui composite+present of a large texture on software GL. The UI thread is saturated by present, not by engine compositor work (spin fast) nor paint. On real-GPU hardware the same frame cost is ~1ms — playback should be smooth; BUT the architecture still pumps every video frame through the UI thread present path, so any GPU hiccup or large video (4k) can reproduce user-visible input loss. This is now the best-quantified freeze-amplifier chain: video playback -> continuous UI-thread present load -> input swallowed -> user reads it as "glitchy/frozen".
+SYMPTOM INDEX ENTRY: video-heavy page + input glitching/stalls -> suspect present-path saturation, NOT hit-test, NOT compositor spin. Confirm via watchdog cadence matching video fps. Fix = the zero-copy/off-thread present project (see GPU decode scoping entry).
+COLD-BOOT RACE: unchanged, still the only true-freeze class — engine lane.
