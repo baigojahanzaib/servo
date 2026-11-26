@@ -3394,3 +3394,22 @@ Cargo.lock for container_queries support before writing anything; servo's side i
 evaluation integration (container size evaluation needs layout interleaving — the hard part).
 This is a top-5-property-validated, fleet-wide modern-css gap — highest-value css engine work
 identified so far.
+
+sec1zt96 — container queries implementation SCOPED (2026-11-26, linux lane): stylo (pin rev
+0ab78ce) ships MOST of the machinery in shared code, gated for gecko: rule_parser.rs:285
+`"container" if cfg!(feature = "gecko")` — the @container keyword itself only parses in gecko
+builds, so servo drops the whole at-rule at the tokenizer level. But the rest is surprisingly
+complete: container_rule.rs has ContainerConditions, the lazy ContainerSizeQuery evaluation
+abstraction (NotEvaluated closure/Evaluated cache, TraversalResult::InProgress for the
+layout-interleaving protocol), container-type/name properties exist in the box style struct,
+and matching.rs ALREADY runs container restyle logic (get_container_name/type diffing,
+children_hint propagation, SELF_OR_ANCESTOR_HAS_SIZE_CONTAINER_TYPE flag) — that file compiles
+for servo today (it's in the build). IMPLEMENTATION SHAPE: (1) ungate parse keyword — trivial;
+(2) the hard part is servo's layout bridge: size queries resolve against the CONTAINER'S
+laid-out size during style resolution, which servo's single-pass style-before-layout pipeline
+doesn't currently interleave — stylo's TraversalResult::InProgress is the designed hook for
+exactly this (gecko does multi-pass style/layout). Estimate multi-day engine feature, but NOT
+weeks — the abstraction is upstream-complete. PRECURSOR QUESTION worth checking first: does
+servo's stylo build compile with the gates removed (are there gecko-only deps inside the
+evaluation path). Files: stylo/style/stylesheets/{rule_parser,container_rule}.rs,
+style/matching.rs — pin path ~/.cargo/git/checkouts/stylo-*/0ab78ce.
