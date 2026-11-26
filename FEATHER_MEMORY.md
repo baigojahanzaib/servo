@@ -2915,3 +2915,5 @@ through load. Both omnibox papercuts (#1 revert-mid-load, #2 fake-focus) now clo
 papercut tails: progress-affordance visibility, Cmd+Shift+T (needs closed-tab tracking infra).
 
 ## endgame-28 VERIFIED + LANDED: event.rs original-target fix committed as bdd924c00 (println-free). Verified: typed text renders in minimal shadow-input repro ("WORKS" with caret) AND real x.com login accepts typed email. Defect class closed. Upstreamable as written — the commit message is upstream-shaped.
+
+## endgame-28 regression check: alpha gate green post-fix — YouTube search renders unassisted, click-through to watch + ad playback + live chat all intact. The original-target generalization is safe on core paths.
