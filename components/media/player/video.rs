@@ -12,6 +12,15 @@ pub enum VideoFrameData {
     Raw(#[conditional_malloc_size_of] Arc<Vec<u8>>),
     Texture(u32),
     OESTexture(u32),
+    /// NV12 planar video: full-resolution Y plane plus half-resolution
+    /// interleaved CbCr plane, both tightly packed. The UV plane has
+    /// `width` bytes per row (two bytes per horizontal sample pair).
+    NV12 {
+        #[conditional_malloc_size_of]
+        y: Arc<Vec<u8>>,
+        #[conditional_malloc_size_of]
+        uv: Arc<Vec<u8>>,
+    },
 }
 
 pub trait Buffer: Send + Sync + MallocSizeOf {
@@ -69,6 +78,17 @@ impl VideoFrame {
 
     pub fn is_external_oes(&self) -> bool {
         matches!(self.data, VideoFrameData::OESTexture(_))
+    }
+
+    pub fn is_nv12(&self) -> bool {
+        matches!(self.data, VideoFrameData::NV12 { .. })
+    }
+
+    pub fn get_nv12_planes(&self) -> (Arc<Vec<u8>>, Arc<Vec<u8>>) {
+        match self.data {
+            VideoFrameData::NV12 { ref y, ref uv } => (y.clone(), uv.clone()),
+            _ => unreachable!("invalid nv12 plane request for non-nv12 frame"),
+        }
     }
 }
 

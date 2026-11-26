@@ -88,21 +88,47 @@ struct GStreamerBuffer {
     frame: gstreamer_video::VideoFrame<gstreamer_video::video_frame::Readable>,
     stride: usize,
     row_bytes: usize,
+    is_nv12: bool,
+}
+
+fn pack_plane(data: &[u8], stride: usize, row_bytes: usize, rows: usize) -> Vec<u8> {
+    if stride == row_bytes && data.len() == row_bytes * rows {
+        return data.to_vec();
+    }
+    // Whatever consumes VideoFrame expects packed lines, so we discard the
+    // padding at the end of each line.
+    let mut packed = Vec::with_capacity(row_bytes * rows);
+    for row in data.chunks_exact(stride).take(rows) {
+        packed.extend_from_slice(&row[..row_bytes]);
+    }
+    packed
 }
 
 impl Buffer for GStreamerBuffer {
     fn to_vec(&self) -> Option<VideoFrameData> {
         let data = self.frame.plane_data(0).ok()?;
+        if self.is_nv12 {
+            // NV12: plane 0 is full-resolution Y (row_bytes == width), plane 1
+            // is half-height interleaved CbCr with the same byte width per row.
+            let height = self.frame.height() as usize;
+            let uv_stride = usize::try_from(*self.frame.plane_stride().get(1)?).ok()?;
+            let uv_data = self.frame.plane_data(1).ok()?;
+            let y = pack_plane(data, self.stride, self.row_bytes, height);
+            let uv = pack_plane(uv_data, uv_stride, self.row_bytes, height / 2);
+            return Some(VideoFrameData::NV12 {
+                y: Arc::new(y),
+                uv: Arc::new(uv),
+            });
+        }
         if self.stride == self.row_bytes {
             return Some(VideoFrameData::Raw(Arc::new(data.to_vec())));
         }
-        // Whatever consumes VideoFrame expects packed lines, so we discard the
-        // padding at the end of each line.
-        let mut packed = Vec::with_capacity(self.row_bytes * self.frame.height() as usize);
-        for row in data.chunks_exact(self.stride) {
-            packed.extend_from_slice(&row[..self.row_bytes]);
-        }
-        Some(VideoFrameData::Raw(Arc::new(packed)))
+        Some(VideoFrameData::Raw(Arc::new(pack_plane(
+            data,
+            self.stride,
+            self.row_bytes,
+            self.frame.height() as usize,
+        ))))
     }
 }
 
@@ -135,7 +161,9 @@ impl GStreamerRender {
             let caps = sample.caps()?;
             let info = gstreamer_video::VideoInfo::from_caps(caps).ok()?;
             let frame = gstreamer_video::VideoFrame::from_buffer_readable(buffer, &info).ok()?;
-            let row_bytes = info.width() as usize * 4; // BGRA => 4
+            let is_nv12 = info.format() == gstreamer_video::VideoFormat::Nv12;
+            let bytes_per_pixel = if is_nv12 { 1 } else { 4 }; // NV12 Y plane or BGRA
+            let row_bytes = info.width() as usize * bytes_per_pixel;
             // This comes from the mapped frame, that respects GstVideoMeta.
             // Caps understate it when the decoder aligns rows, as VideoToolbox
             // does on macOS.
@@ -150,6 +178,7 @@ impl GStreamerRender {
                     frame,
                     stride,
                     row_bytes,
+                    is_nv12,
                 }),
             )
         }
@@ -168,8 +197,18 @@ impl GStreamerRender {
         if let Some(render) = self.render.as_ref() {
             render.build_video_sink(appsink.upcast_ref::<gstreamer::Element>(), pipeline)?
         } else {
+            // Prefer NV12: hardware decoders (VideoToolbox) output it natively,
+            // so accepting it avoids a videoconvert colorspace pass per frame,
+            // and planar frames travel to webrender's YUV rasterization path.
+            // BGRA remains as the fallback for sources that cannot do NV12.
             let caps = gstreamer::Caps::builder("video/x-raw")
-                .field("format", gstreamer_video::VideoFormat::Bgra.to_str())
+                .field(
+                    "format",
+                    gstreamer::List::new([
+                        gstreamer_video::VideoFormat::Nv12.to_str(),
+                        gstreamer_video::VideoFormat::Bgra.to_str(),
+                    ]),
+                )
                 .field("pixel-aspect-ratio", gstreamer::Fraction::from((1, 1)))
                 .build();
 

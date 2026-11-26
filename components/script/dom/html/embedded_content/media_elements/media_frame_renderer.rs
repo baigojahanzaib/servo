@@ -77,8 +77,8 @@ pub(crate) struct MediaFrameRenderer {
     paint_api: CrossProcessPaintApi,
     player_context: WindowGLContext,
     current_frame: Option<MediaFrame>,
-    old_frame: Option<ImageKey>,
-    very_old_frame: Option<ImageKey>,
+    old_frame: Option<MediaFrame>,
+    very_old_frame: Option<MediaFrame>,
     current_frame_holder: Option<FrameHolder>,
     /// <https://html.spec.whatwg.org/multipage/#poster-frame>
     poster_frame: Option<MediaFrame>,
@@ -186,15 +186,15 @@ impl MediaFrameRenderer {
         let mut updates = smallvec::smallvec![];
 
         if let Some(current_frame) = self.current_frame.take() {
-            updates.push(ImageUpdate::DeleteImage(current_frame.image_key));
+            delete_frame_keys(&mut updates, current_frame);
         }
 
-        if let Some(old_image_key) = self.old_frame.take() {
-            updates.push(ImageUpdate::DeleteImage(old_image_key));
+        if let Some(old_frame) = self.old_frame.take() {
+            delete_frame_keys(&mut updates, old_frame);
         }
 
-        if let Some(very_old_image_key) = self.very_old_frame.take() {
-            updates.push(ImageUpdate::DeleteImage(very_old_image_key));
+        if let Some(very_old_frame) = self.very_old_frame.take() {
+            delete_frame_keys(&mut updates, very_old_frame);
         }
 
         if !updates.is_empty() {
@@ -209,9 +209,25 @@ impl MediaFrameRenderer {
                 image_key,
                 width: image.metadata.width as i32,
                 height: image.metadata.height as i32,
+                uv_key: None,
             })
         });
     }
+}
+
+
+fn delete_frame_keys<A: smallvec::Array<Item = ImageUpdate>>(
+    updates: &mut smallvec::SmallVec<A>,
+    frame: MediaFrame,
+) {
+    updates.push(ImageUpdate::DeleteImage(frame.image_key));
+    if let Some(uv_key) = frame.uv_key {
+        updates.push(ImageUpdate::DeleteImage(uv_key));
+    }
+}
+
+fn plane_descriptor(width: i32, height: i32, format: ImageFormat) -> ImageDescriptor {
+    ImageDescriptor::new(width, height, format, ImageDescriptorFlags::empty())
 }
 
 impl Drop for MediaFrameRenderer {
@@ -230,137 +246,133 @@ impl VideoFrameRenderer for MediaFrameRenderer {
 
         let mut updates = smallvec::smallvec![];
 
-        if let Some(old_image_key) =
+        if let Some(very_old_frame) =
             std::mem::replace(&mut self.very_old_frame, self.old_frame.take())
         {
-            updates.push(ImageUpdate::DeleteImage(old_image_key));
+            delete_frame_keys(&mut updates, very_old_frame);
         }
 
-        let descriptor = ImageDescriptor::new(
-            frame.get_width(),
-            frame.get_height(),
-            ImageFormat::BGRA8,
-            ImageDescriptorFlags::empty(),
-        );
+        let width = frame.get_width();
+        let height = frame.get_height();
+        let is_nv12 = frame.is_nv12();
 
-        match &mut self.current_frame {
-            Some(current_frame)
-                if current_frame.width == frame.get_width() &&
-                    current_frame.height == frame.get_height() =>
+        let bgra_descriptor = plane_descriptor(width, height, ImageFormat::BGRA8);
+
+        // NV12 frames become two plane payloads: full-resolution R8 luma and
+        // half-resolution RG8 interleaved chroma.
+        let nv12_planes = if is_nv12 {
+            let (y, uv) = frame.get_nv12_planes();
+            Some((
+                plane_descriptor(width, height, ImageFormat::R8),
+                SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(y)),
+                plane_descriptor(width / 2, height / 2, ImageFormat::RG8),
+                SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(uv)),
+            ))
+        } else {
+            None
+        };
+
+        let external_image_data = |frame: &VideoFrame| {
+            self.glplayer_id
+                .read()
+                .unwrap()
+                .filter(|_| frame.is_gl_texture())
+                .map(|glplayer_id| {
+                    let texture_target = if frame.is_external_oes() {
+                        ImageBufferKind::TextureExternal
+                    } else {
+                        ImageBufferKind::Texture2D
+                    };
+
+                    SerializableImageData::External(ExternalImageData {
+                        id: ExternalImageId(glplayer_id),
+                        channel_index: 0,
+                        image_type: ExternalImageType::TextureHandle(texture_target),
+                        normalized_uvs: false,
+                    })
+                })
+        };
+
+        let format_matches = self
+            .current_frame
+            .as_ref()
+            .is_some_and(|current| (current.uv_key.is_some()) == is_nv12);
+        let size_matches = self
+            .current_frame
+            .as_ref()
+            .is_some_and(|current| current.width == width && current.height == height);
+
+        if format_matches && size_matches {
+            let current_frame = self.current_frame.as_ref().unwrap();
+            if let Some((y_desc, y_data, uv_desc, uv_data)) = nv12_planes {
+                updates.push(ImageUpdate::UpdateImage(
+                    current_frame.image_key,
+                    y_desc,
+                    y_data,
+                    None,
+                ));
+                if let Some(uv_key) = current_frame.uv_key {
+                    updates.push(ImageUpdate::UpdateImage(uv_key, uv_desc, uv_data, None));
+                }
+            } else if !frame.is_gl_texture() {
+                updates.push(ImageUpdate::UpdateImage(
+                    current_frame.image_key,
+                    bgra_descriptor,
+                    SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
+                        frame.get_data(),
+                    )),
+                    None,
+                ));
+            }
+
+            self.current_frame_holder
+                .get_or_insert_with(|| FrameHolder::new(frame.clone()))
+                .set(frame);
+
+            if let Some(old_frame) = self.old_frame.take() {
+                delete_frame_keys(&mut updates, old_frame);
+            }
+        } else {
+            if let Some(current_frame) = self.current_frame.take() {
+                self.old_frame = Some(current_frame);
+            }
+
+            let Some(image_key) = self.paint_api.generate_image_key_blocking(self.webview_id)
+            else {
+                return;
+            };
+
+            let (descriptor, image_data, uv_key) = if let Some((y_desc, y_data, uv_desc, uv_data)) =
+                nv12_planes
             {
-                if !frame.is_gl_texture() {
-                    updates.push(ImageUpdate::UpdateImage(
-                        current_frame.image_key,
-                        descriptor,
-                        SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
-                            frame.get_data(),
-                        )),
-                        None,
-                    ));
-                }
-
-                self.current_frame_holder
-                    .get_or_insert_with(|| FrameHolder::new(frame.clone()))
-                    .set(frame);
-
-                if let Some(old_image_key) = self.old_frame.take() {
-                    updates.push(ImageUpdate::DeleteImage(old_image_key));
-                }
-            },
-            Some(current_frame) => {
-                self.old_frame = Some(current_frame.image_key);
-
-                let Some(new_image_key) =
+                let Some(uv_image_key) =
                     self.paint_api.generate_image_key_blocking(self.webview_id)
                 else {
                     return;
                 };
-
-                /* update current_frame */
-                current_frame.image_key = new_image_key;
-                current_frame.width = frame.get_width();
-                current_frame.height = frame.get_height();
-
-                // FIXME: This code is duplicated below this branch
-                let image_data = self
-                    .glplayer_id
-                    .read()
-                    .unwrap()
-                    .filter(|_| frame.is_gl_texture())
-                    .map(|glplayer_id| {
-                        let texture_target = if frame.is_external_oes() {
-                            ImageBufferKind::TextureExternal
-                        } else {
-                            ImageBufferKind::Texture2D
-                        };
-
-                        SerializableImageData::External(ExternalImageData {
-                            id: ExternalImageId(glplayer_id),
-                            channel_index: 0,
-                            image_type: ExternalImageType::TextureHandle(texture_target),
-                            normalized_uvs: false,
-                        })
-                    })
-                    .unwrap_or_else(|| {
-                        SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
-                            frame.get_data(),
-                        ))
-                    });
-
-                self.current_frame_holder
-                    .get_or_insert_with(|| FrameHolder::new(frame.clone()))
-                    .set(frame);
-
-                updates.push(ImageUpdate::AddImage(
-                    new_image_key,
-                    descriptor,
-                    image_data,
-                    false,
-                ));
-            },
-            None => {
-                let Some(image_key) = self.paint_api.generate_image_key_blocking(self.webview_id)
-                else {
-                    return;
-                };
-
-                self.current_frame = Some(MediaFrame {
-                    image_key,
-                    width: frame.get_width(),
-                    height: frame.get_height(),
+                updates.push(ImageUpdate::AddImage(uv_image_key, uv_desc, uv_data, false));
+                (y_desc, y_data, Some(uv_image_key))
+            } else {
+                let image_data = external_image_data(&frame).unwrap_or_else(|| {
+                    SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
+                        frame.get_data(),
+                    ))
                 });
+                (bgra_descriptor, image_data, None)
+            };
 
-                let image_data = self
-                    .glplayer_id
-                    .read()
-                    .unwrap()
-                    .filter(|_| frame.is_gl_texture())
-                    .map(|glplayer_id| {
-                        let texture_target = if frame.is_external_oes() {
-                            ImageBufferKind::TextureExternal
-                        } else {
-                            ImageBufferKind::Texture2D
-                        };
+            self.current_frame = Some(MediaFrame {
+                image_key,
+                width,
+                height,
+                uv_key,
+            });
 
-                        SerializableImageData::External(ExternalImageData {
-                            id: ExternalImageId(glplayer_id),
-                            channel_index: 0,
-                            image_type: ExternalImageType::TextureHandle(texture_target),
-                            normalized_uvs: false,
-                        })
-                    })
-                    .unwrap_or_else(|| {
-                        SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
-                            frame.get_data(),
-                        ))
-                    });
+            self.current_frame_holder
+                .get_or_insert_with(|| FrameHolder::new(frame.clone()))
+                .set(frame);
 
-                self.current_frame_holder = Some(FrameHolder::new(frame));
-
-                updates.push(ImageUpdate::AddImage(
-                    image_key, descriptor, image_data, false,
-                ));
-            },
+            updates.push(ImageUpdate::AddImage(image_key, descriptor, image_data, false));
         }
         self.paint_api
             .update_images(self.webview_id.into(), updates);

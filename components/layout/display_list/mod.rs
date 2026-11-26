@@ -956,14 +956,30 @@ impl PaintTraversalHandler for DisplayListBuilder<'_> {
         let common = self.common_properties(state, clip, &style);
 
         if let Some(image_key) = fragment.image_key {
-            self.wr().push_image(
-                &common,
-                rect,
-                image_rendering,
-                wr::AlphaType::PremultipliedAlpha,
-                image_key,
-                wr::ColorF::WHITE,
-            );
+            if let Some(uv_key) = fragment.yuv_uv_key {
+                // NV12 planar video: webrender converts YUV to RGB in its
+                // brush shader during rasterization. HD video is BT.709
+                // limited-range in practice; see the colorspace caveat in
+                // docs/video-compositing-scoping.md.
+                self.wr().push_yuv_image(
+                    &common,
+                    rect,
+                    wr::YuvData::NV12(image_key, uv_key),
+                    wr::ColorDepth::Color8,
+                    wr::YuvColorSpace::Rec709,
+                    wr::ColorRange::Limited,
+                    image_rendering,
+                );
+            } else {
+                self.wr().push_image(
+                    &common,
+                    rect,
+                    image_rendering,
+                    wr::AlphaType::PremultipliedAlpha,
+                    image_key,
+                    wr::ColorF::WHITE,
+                );
+            }
 
             if self
                 .paint_timing_handler
