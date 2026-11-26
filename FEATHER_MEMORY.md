@@ -2917,3 +2917,18 @@ papercut tails: progress-affordance visibility, Cmd+Shift+T (needs closed-tab tr
 ## endgame-28 VERIFIED + LANDED: event.rs original-target fix committed as bdd924c00 (println-free). Verified: typed text renders in minimal shadow-input repro ("WORKS" with caret) AND real x.com login accepts typed email. Defect class closed. Upstreamable as written — the commit message is upstream-shaped.
 
 ## endgame-28 regression check: alpha gate green post-fix — YouTube search renders unassisted, click-through to watch + ad playback + live chat all intact. The original-target generalization is safe on core paths.
+||||||| parent of 62e85e1190c (memory: text-overflow implementation plan)
+
+sec1zt49 — text-overflow implementation plan (execution starting)
+Target files: components/layout/flow/inline/line.rs (line breaking/trimming), inline_box.rs, text_run.rs.
+CSS spec triggers: ellipsis applies only when overflow != visible AND white-space prevents wrapping
+(typically nowrap). Implementation shape: (1) parse/parse-computed the property in components/style
+(text_overflow exists in NO servo style crate — must add property def, check how upstream stylo
+handles it: style/properties longhand text-overflow with clip|ellipsis keywords); (2) during inline
+line layout, after line breaking, if the line's inline size exceeds the containing block AND the
+nearest ancestor with overflow-clip in inline axis has text-overflow: ellipsis, measure the ellipsis
+glyph width in the same font, truncate glyphs/shaped runs at the boundary minus ellipsis width,
+append ellipsis shaped run; (3) paint happens naturally since it's just glyphs in the display list.
+Cheap v1 scope: single-line nowrap blocks only (covers bbc headlines, youtube titles); multi-line
+(-webkit-line-clamp) explicitly out of scope. Verification harness: data:text/html page with fixed-width
+divs, screenshot compare ellipsis presence; then bbc.com live.
