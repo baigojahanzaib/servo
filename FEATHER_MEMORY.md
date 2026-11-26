@@ -3750,3 +3750,6 @@ Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 ne
 
 ## ellipsis-fix-VERIFIED (2026-11-27) — fifth upstreamable engine fix
 - text-overflow ellipsis no longer shrinks scrollable overflow: matrix css-overflow 10/10, scrollWidth 433 correct with ellipsis. Fix = keep original inline_advance in layout_text_run (components/layout/flow/inline/line.rs) — glyph truncation unchanged, only advance accounting. Pushed to feather-engine. UPSTREAM-CANDIDATES.md entry 5 (PR #244). Funding-model ledger now 5 verified fixes.
+
+## cookiestore-writepath-verdict (2026-11-27) — deferred, poor cost/value
+- Both cookieStore write (SetCookieForUrlAsync) and document.cookie funnel into the same netstack set_cookie_for_url — document.cookie roundtrips fine, cookieStore doesn't. Promises RESOLVE (set acks) but get returns null. Differential probes authored (reads-documentcookie / documentcookie-reads-cookiestore in platform-apis.html git history) but testing requires pref-on rebuild. VERDICT: niche API (document.cookie covers ~all real use), deep netstack hunt, poor cost/value vs other items. Stays reverted with the mechanism fully scoped for a future engine-lane pass.
