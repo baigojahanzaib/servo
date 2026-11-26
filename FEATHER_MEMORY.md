@@ -2602,8 +2602,63 @@ implementation dropped in favor of HEAD. sec1zt32's codegen/Bindings.conf cx-mec
 remain valid. Now VERIFYING (the lane's commit note says unverified): shell-new dev build in progress,
 then document.all primitive probes + YouTube end-to-end render check.
 
+## HTMLAllCollection round 2 — the proxy class path (endgame-16)
+
+CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
+
+## HTMLAllCollection VERIFIED — YouTube alpha gate DOWN (endgame-17, THE fix)
+
+Primitive verification (docall.html): typeof document.all="undefined" ✓, !document.all=true ✓, document.all==undefined=true ✓, **document.all===undefined=FALSE** ✓ (the critical bit), instanceof Object=true ✓ — full spec IsHTMLDDA semantics correct.
+END-TO-END VERIFICATION: youtube.com/results?search_query=techno+mix renders full search results UNASSISTED — no shim, no manual unhide. Video entries, thumbnails, sponsored slots all visible. The multi-session hunt (hydration stall → rIC starvation → hidden attribute → resin sanitizer → document.all) is CLOSED.
+KNOWN RESIDUALS: (1) devtools evaluateJS accessing document.all properties crashes/brands-fail — grip serialization or brand-check interaction with the custom proxy class, devtools-only path, in-page semantics correct; (2) LegacyFactoryFunction omitted (document.all callable form unimplemented — essentially unused on real web); (3) namedItem multiple-match sub-collection path untested. Follow-ups non-blocking.
+Implementation notes for upstream port: JSCLASS_EMULATES_UNDEFINED exists in vendored SM 153 (=64); proxies accept custom classes via NewProxyObject class arg; servo previously passed ptr::null() for all DOM proxies — the plumbing added in wrap.rs is generic (any proxy interface can now carry a custom class).
+
+## HTMLAllCollection FINAL — stable + fully verified (endgame-18)
+
+Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — proxy objects NEED SpiderMonkey's proxy class ops (proxy_Finalize/ProxyObject::trace/objectMoved + ProxyObjectOps for all property access). Fix: clone the exported `js::ProxyClass` (JS_PUBLIC_DATA, available in bindgen as js::jsapi::ProxyClass) and OR JSCLASS_EMULATES_UNDEFINED into flags — `html_all_collection_proxy_class()` in script_bindings/utils.rs (lazy OnceLock, SyncClass wrapper for Send/Sync). Final verification all green: typeof=undefined, falsy, loose-eq true, strict-eq false, instanceof Object true; in-page len/indexed/namedItem/keys all work (len=5, i0=HTML, nm=object, keys=7); devtools-path eval access works; NO crashes; YouTube results render fully unassisted (channel cards, shelves, sponsored). The multi-session YouTube invisible-results defect chain is CLOSED at the engine level.
+
+## Post-fix breadth verification (endgame-19)
+
+Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
+
+## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
+
+## New defect (post-alpha matrix): gmail.com marketing page renders fully, but clicking "Sign in" does NOT navigate (link likely target=_blank to accounts.google.com — popup/new-tab handling or link-activation defect candidate; needs repro with a minimal target=_blank test page). Filed for next investigation round.
+
+## target=_blank defect CONFIRMED (post-alpha matrix): minimal repro /tmp/vtest/blank1.html — normal link navigates ✓ but target=_blank click is a dead end: no new tab, no navigation, no visible feedback. Shell-new doesn't handle auxiliary browsing-context creation (embedder create-webview message). This explains gmail Sign-in non-navigation (target=_blank to accounts.google.com). Impact class: HIGH — oauth flows, external links, sign-in redirects across the real web. Fix site: shell-new embedder message handler for auxiliary context requests — should open a new tab.
+
+Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
+
+## target=_blank FIX in progress (post-alpha work): implemented on feather branch devin/1795734400-aux-webviews (commit 307bbb9) — shell-new EngineDelegate.request_create_new builds the auxiliary webview (servo embedder API: CreateNewWebViewRequest.builder(rendering_context).delegate(parent.delegate()).user_content_manager().hidpi_scale_factor().build()) and parks it in engine.pending_aux; sync_engine drains each frame, allocs a tab id, adopts into active workspace as active tab. Transient-liveness handled via aux_keys set (about:blank popups miss `wanted` since it's http-only — close loop would kill them otherwise; writeback loop extended to aux keys so the tab doc picks up the real url once servo navigates). cargo check clean. VERIFICATION PENDING: release build then blank1.html test (BLANK LINK TEST should open new tab) + gmail sign-in. NOTE: disk filled mid-work (cargo check debug tree 5GB) — pruned; 3.5GB free. If build fails for space, prune target/release/deps incremental cruft.
 DISK-NEAR-DEATH lesson: concurrent cargo invocations + debug artifacts filled the disk to 0 mid-build
 (23GB check-target + 13GB servo/target + 4GB prod artifacts). Freed 13GB by deleting the servo release
 target dir entirely (stale pre-fix servoshell backed up to /tmp/servoshell-backup). Rule reinforced:
 one cargo at a time on this VM; the servo release target dir is expendable once feather shell carries
 the engine — verify engine changes through shell-new dev builds (check-target), not servoshell.
+||||||| parent of ffb102fbd (memory: target=_blank fix implementation state)
+## HTMLAllCollection round 2 — the proxy class path (endgame-16)
+
+CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
+
+## HTMLAllCollection VERIFIED — YouTube alpha gate DOWN (endgame-17, THE fix)
+
+Primitive verification (docall.html): typeof document.all="undefined" ✓, !document.all=true ✓, document.all==undefined=true ✓, **document.all===undefined=FALSE** ✓ (the critical bit), instanceof Object=true ✓ — full spec IsHTMLDDA semantics correct.
+END-TO-END VERIFICATION: youtube.com/results?search_query=techno+mix renders full search results UNASSISTED — no shim, no manual unhide. Video entries, thumbnails, sponsored slots all visible. The multi-session hunt (hydration stall → rIC starvation → hidden attribute → resin sanitizer → document.all) is CLOSED.
+KNOWN RESIDUALS: (1) devtools evaluateJS accessing document.all properties crashes/brands-fail — grip serialization or brand-check interaction with the custom proxy class, devtools-only path, in-page semantics correct; (2) LegacyFactoryFunction omitted (document.all callable form unimplemented — essentially unused on real web); (3) namedItem multiple-match sub-collection path untested. Follow-ups non-blocking.
+Implementation notes for upstream port: JSCLASS_EMULATES_UNDEFINED exists in vendored SM 153 (=64); proxies accept custom classes via NewProxyObject class arg; servo previously passed ptr::null() for all DOM proxies — the plumbing added in wrap.rs is generic (any proxy interface can now carry a custom class).
+
+## HTMLAllCollection FINAL — stable + fully verified (endgame-18)
+
+Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — proxy objects NEED SpiderMonkey's proxy class ops (proxy_Finalize/ProxyObject::trace/objectMoved + ProxyObjectOps for all property access). Fix: clone the exported `js::ProxyClass` (JS_PUBLIC_DATA, available in bindgen as js::jsapi::ProxyClass) and OR JSCLASS_EMULATES_UNDEFINED into flags — `html_all_collection_proxy_class()` in script_bindings/utils.rs (lazy OnceLock, SyncClass wrapper for Send/Sync). Final verification all green: typeof=undefined, falsy, loose-eq true, strict-eq false, instanceof Object true; in-page len/indexed/namedItem/keys all work (len=5, i0=HTML, nm=object, keys=7); devtools-path eval access works; NO crashes; YouTube results render fully unassisted (channel cards, shelves, sponsored). The multi-session YouTube invisible-results defect chain is CLOSED at the engine level.
+
+## Post-fix breadth verification (endgame-19)
+
+Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
+
+## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
+
+## New defect (post-alpha matrix): gmail.com marketing page renders fully, but clicking "Sign in" does NOT navigate (link likely target=_blank to accounts.google.com — popup/new-tab handling or link-activation defect candidate; needs repro with a minimal target=_blank test page). Filed for next investigation round.
+
+## target=_blank defect CONFIRMED (post-alpha matrix): minimal repro /tmp/vtest/blank1.html — normal link navigates ✓ but target=_blank click is a dead end: no new tab, no navigation, no visible feedback. Shell-new doesn't handle auxiliary browsing-context creation (embedder create-webview message). This explains gmail Sign-in non-navigation (target=_blank to accounts.google.com). Impact class: HIGH — oauth flows, external links, sign-in redirects across the real web. Fix site: shell-new embedder message handler for auxiliary context requests — should open a new tab.
+
+Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
