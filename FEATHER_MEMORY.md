@@ -3682,3 +3682,13 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 - font-loads probe deep truth: original failure was test-infrastructure — no font file existed on the matrix server. With WPT's Ahem.ttf served, the ENTIRE webfont pipeline proven working: @font-face parse, fetch, decode, font matching, metrics application (canvas measureText 240px Ahem vs 126.9px serif — exact 6×40 square-glyph math). webfonts class 3/3.
 - Matrix infrastructure lesson: probes depending on served binary assets need the assets committed in pages/ — Ahem.ttf (21KB, WPT-licensed) now vendored in tests/scenarios/pages/fonts/.
 
+
+## SERP-DUPLICATION INVESTIGATION (2026-11-27, Windows lane) — INCONCLUSIVE but narrowed
+SYMPTOM: legacy-mode google SERP in feather shows identical result (url+title+snippet) repeated 5-10x.
+EVIDENCE CHAIN:
+1. Live DOM eval: repetition is IN THE DOM (featherapp 10x in outerHTML, snippet 10x in innerText) — NOT a paint/composite duplication.
+2. curl with identical honest-UA + headers, 4 independent fetches: google NEVER sends featherapp content at all (0 occurrences in 93KB responses). BUT feather's document is only 52KB — google serves a DIFFERENT variant to feather's exact request shape (TLS/h2/header fingerprint differs from curl).
+3. feather's DOM: zero <table> (so not the legacy table-SERP), 7 scripts, body innerText only 700 chars — a tiny sparse document. The visible results are JS-built client-side.
+REMAINING HYPOTHESES: (a) google's variant for feather's exact fingerprint genuinely contains repeats (unlikely — google dedups); (b) engine re-runs or mis-nests script-built DOM insertion (clone-and-append bug class in servo HTML parser or innerHTML/insertion logic); (c) a page script depends on an API we shim/miss and retries insertion in a loop.
+DECISIVE TEST NEEDED (engine lane): capture the exact response BODY feather receives for the SERP (network response dump instrumentation) and diff vs live DOM. If body has no repeats -> parser/DOM-construction bug in engine, serious.
+SYMPTOM INDEX: repeated identical DOM subtrees on JS-heavy legacy pages -> suspect insertion-repeat engine bug; discriminate with response-body capture before assuming paint or server behavior.
