@@ -3619,3 +3619,7 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 
 ## range-geometry-EMPIRICAL (2026-11-26) — case closed
 - RANGE_DEBUG instrumentation live-verdict: `[range-debug] NO-TRANSFORM fallback hit — fragments=0` (10 hits per page). Text nodes yield ZERO fragments exactly as statically proven via LayoutBox::with_base returning None for Text. Both traps confirmed: empty fragments AND the silent zero-size fallback. Case closed — architectural upstream feature documented in docs/wiki/UPSTREAM-CANDIDATES.md.
+
+## fontfaceset-check-implemented (2026-11-26)
+- FontFaceSet.check() implemented upstream-style: webidl uncommented (+Pref gate), rust impl pattern-matched on Load — parse via find_the_matching_font_faces, syntax error → false, all matched faces must have Status()==Loaded, unmatched families count as system-available (spec font matching rules). Compilation+matrix validation in flight.
+- NOTE DOMString deref: &font passed to &str param relies on DOMString's Deref — compile verdict pending; if it fails the fix is font.str() or &*font.
