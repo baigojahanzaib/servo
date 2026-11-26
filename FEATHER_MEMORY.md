@@ -2955,3 +2955,13 @@ Granularity caveat: ScriptEventLoopId::installed() returns None on non-script th
 — handle_panic early-returns, so those panics are logged but NOT recovered. WR/compositor are singletons:
 treat their panics as never-bugs, not recovery candidates. multiprocess feature is DEFAULT-ON in-tree
 (run_content_process) — the Stage-3 chromium-model option exists but is weeks of wiring.
+
+sec1zt52 — crash isolation Stage 0 MERGED (feather#170 scoping + #171 implementation)
+=====================================================================================
+hard_fail=false + panic-hook-as-error! + notify_crashed delegate arm + testbinding feature all in
+feather main. VERIFICATION IN PROGRESS: testbinding rebuild running, then forced ServoTestUtils.crashHard()
+in one tab of a two-tab browser — pass criteria: process survives, [tab-crash] log line fires, crashed
+tab reloads (constellation auto-refresh), other tab unaffected. Env-gate for the test hook:
+FEATHER_TESTUTILS=1 enables dom_servo_helpers_enabled. NOTE for the tester: ServoTestUtils requires BOTH
+the testbinding cargo feature AND the pref; interface is a namespace (ServoTestUtils.crashHard()), method
+is crashHard() not panic().
