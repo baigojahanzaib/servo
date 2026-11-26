@@ -106,9 +106,9 @@ impl MediaSource {
     /// Merged buffered ranges across all source buffers (union).
     /// Seek fan-out: every SourceBuffer clears its buffered index and arms
     /// init re-feed. See SourceBuffer::handle_seek.
-    pub(crate) fn notify_seek(&self) {
+    pub(crate) fn notify_seek(&self, target: f64) {
         self.source_buffers.for_each_buffer(|sb| {
-            sb.handle_seek();
+            sb.handle_seek(target);
         });
     }
 

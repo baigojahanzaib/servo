@@ -65,6 +65,10 @@ pub fn set(preferences: Preferences) {
         preferences.layout_css_ellipse_corners_enabled
     );
     stylo_static_prefs::set_pref!(
+        "layout.css.starting-style-at-rules.enabled",
+        preferences.layout_css_starting_style_enabled
+    );
+    stylo_static_prefs::set_pref!(
         "layout.css.font-variations.enabled",
         preferences.layout_css_font_variations_enabled
     );
@@ -332,6 +336,7 @@ pub struct Preferences {
     pub layout_css_columns_enabled: bool,
     pub layout_css_container_queries_enabled: bool,
     pub layout_css_ellipse_corners_enabled: bool,
+    pub layout_css_starting_style_enabled: bool,
     // feature: Variable fonts | #38800 | Web/CSS/Guides/Fonts/Variable_fonts
     pub layout_css_font_variations_enabled: bool,
     pub layout_css_text_overflow_enabled: bool,
@@ -592,6 +597,7 @@ impl Preferences {
             layout_css_backdrop_filter_enabled: false,
             layout_css_columns_enabled: false,
             layout_css_container_queries_enabled: false,
+            layout_css_starting_style_enabled: false,
             layout_css_ellipse_corners_enabled: false,
             layout_css_font_variations_enabled: false,
             layout_css_text_overflow_enabled: true,

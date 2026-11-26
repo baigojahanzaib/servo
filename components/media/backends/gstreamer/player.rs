@@ -331,7 +331,34 @@ impl PlayerInner {
                 })()
                 .unwrap_or(0);
                 eprintln!("[mse] seek target={} running_time_ns={}", time, base_ns);
-                source.seek_reset(time, base_ns);
+                // Pipeline-reset design: decodebin3's stream reselection kills
+                // re-fed streams in a live pipeline (sec1zt84 — zero frames at
+                // sink, injection iteration exhausted). Cycling the playbin to
+                // Ready and back makes ALL downstream state fresh — decodebin3
+                // re-plumbs the resequenced stream exactly like initial
+                // playback, the one path proven to work. The injected segment
+                // base is 0: the pipeline clock domain restarts with the reset.
+                let pipeline = self.player.pipeline();
+                let restore = if self.paused.get() {
+                    gstreamer::State::Paused
+                } else {
+                    gstreamer::State::Playing
+                };
+                source.seek_reset(time, 0);
+                if std::env::var("SERVO_MSE_NORESET").is_err() {
+                    // The state cycle MUST NOT run on the caller thread:
+                    // set_state(Ready->Playing) can block indefinitely joining
+                    // streaming threads in this pipeline, and the caller is the
+                    // shell UI thread in feather's embedding — a synchronous
+                    // cycle deadlocks the whole browser (verified live: watchdog
+                    // stall right after seek_reset, restore never returns).
+                    std::thread::spawn(move || {
+                        let r = pipeline.set_state(gstreamer::State::Ready);
+                        eprintln!("[mse] seek pipeline->ready {:?}", r);
+                        let r = pipeline.set_state(restore);
+                        eprintln!("[mse] seek pipeline->restore {:?}", r);
+                    });
+                }
             }
             self.mse_position_offset.set(time);
             return Ok(());

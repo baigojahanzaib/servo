@@ -38,7 +38,11 @@ pub const STYLE_THREAD_STACK_SIZE_KB: usize = 256;
 /// stack size.
 #[cfg(feature = "servo")]
 pub const STYLE_THREAD_STACK_SIZE_KB: usize = const {
-    let default_stack_size = 512;
+    // servo default raised 512 -> 4096: gecko-flavored modern pages (google
+    // serp is the proving case) recurse the cascade deep enough to overflow
+    // 512k in debug builds — StyleThread overflow = whole-browser crash.
+    // cost is address space only, pages commit lazily.
+    let default_stack_size = 4096;
     if let Some(user_def_size) = option_env!("SERVO_STYLE_THREAD_STACK_SIZE_KB") {
         if let Ok(user_def_size) = usize::from_str_radix(user_def_size, 10) {
             user_def_size

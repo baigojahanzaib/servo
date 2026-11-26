@@ -3727,3 +3727,143 @@ Consequence chain for x.com: React controlled inputs read value="" forever -> Co
 Also reconciles earlier confusion: synthetic .click() did dispatch (hit correct targets), real clicks land correctly — the breakage is purely the keyboard/focus DOM-state path.
 SUSPECT LOCATIONS (symptom index): keyboard input path shell->webview: shell-new/app.rs forward key events? check whether shell forwards winit KeyboardInput/Ime events to webview at all, or whether servo constellation/script input handling updates DOM value only on certain event types (Ime commit vs key events). Focus: document.activeElement stays BODY even while caret renders — suspect focus handling in script thread never receives the focus event, or the input's focus is visual-only via compositor hit-test. Servo upstream may have this working in servoshell — compare ports/servoshell key/ime forwarding vs feather shell-new.
 PRIORITY: this breaks ALL form interaction on the real web (React controlled inputs universal). Highest-priority engine/shell bug currently known.
+## sec1zt113 — youtube playback: observed live once, googlevideo-UA causality INCONCLUSIVE (2026-11-26)
+- With FEATHER_HONEST_UA_HOSTS=".google.,googlevideo.": playback VERIFIED live — ct=4.83 advancing, readyState 4, blob MSE, 21 googlevideo requests. Control run without googlevideo in honest list: 24 googlevideo requests flowed but the eval probe didn't print (flaky harness, not necessarily a stall). VERDICT: insufficient evidence that googlevideo UA matters — the rs:0 stall may be serving-variance (botwall mood) rather than UA-policy. Do not add googlevideo to the default honest list without a larger sample. Cheap follow-up: scripted N=5 alternating runs comparing ct progression.
+
+## sec1zt114 — post-wall google-properties sweep (2026-11-26)
+- Google Sheets (docs.google.com): FULLY RENDERS — complete spreadsheet grid, toolbar, formula bar, data rows, zero /sorry. One tradeoff artifact visible: 'This browser version is no longer supported' banner — google UA-sniffs and Feather/1.0 is an unknown browser. Sheet is still usable. This is the honest-UA cost showing up in-product: walls down, but unsupported-browser banners/nudges appear on UA-sniffing properties. OPEN POLICY QUESTION for coordinator: accept banners on google.*, or hybrid policy (honest UA only on the walled entry endpoints /search + accounts, chrome-ish UA on docs/sheets subapps?) — needs evidence whether docs endpoints themselves wall under chrome UA (they may never have been the wall trigger — /search was).
+- gmail: mail.google.com → accounts signin flow unwalled.
+
+## svg-canvas-source-CLOSED + matrix cross-lane validation (2026-11-26)
+- The svg-canvas-source gap is CLOSED — engine lane implemented rasterize_vector_for_canvas through the image cache (commits d7ad37dab/248425441). Matrix caught it autonomously: grad pixels went from transparent to correct gradient interpolation. PROOF of the matrix doctrine: cross-lane engine fixes surface as grid movement without coordination.
+- Probe lesson: gradient sampling at the midpoint hits exactly 50% interpolation — thresholds must sample asymmetric regions.
+- Grid state close to green-wall: remaining reds ALL explained — webgl x2 environmental (no GPU on VM), webrtc known-large, backdrop-filter unimplemented, range-geometry architectural-documented, cookiestore deliberately reverted, gamepad/webgpu feature-gated-not-enabled.
+- #221 merged (execCommand+credentials in main), #228 merged (Ahem fixture). platform-apis greens on next current-binary grid.
+
+## sec1zt115 — honest-UA policy NARROWED (PR followup to #225)
+- Symptom: sheets/docs must NOT get honest UA (banner cost, never walled) → policy narrowed: default list `www.google.com` only, exact-or-dot-suffix matching in BOTH layers (net http_loader + shim JS). CAUTION: a dot-suffix entry `google.com` matches every subdomain — re-includes docs/sheets and defeats narrowing. bare google.com 301s to www before any /sorry decision so exact www.google.com suffices.
+- Verified: search renders unwalled under narrowed default. Negative-control check (docs.google.com) redirected to sign-in in the probe — UA-on-docs verification incomplete, mechanism-only: docs.google.com neither equals nor dot-suffix-matches `www.google.com` so it gets the chrome UA in both layers.
+- Env override FEATHER_HONEST_UA_HOSTS for widening per-property as evidence accumulates.
+
+## sec1zt116 — post-container-queries compat spot checks
+- Symptom: github.com blank hero → CHECK RESOLVED/NON-REPRO post container-queries: h1 present ('Software still starts with you'), 0/22 broken images. Likely healed by container-queries implementation (hero layout was container-query-dependent) — consistent with the fleet-wide win prediction.
+- Symptom: youtube watch playback under honest-UA-narrowed policy → verified live same session as SERP: t advancing, rs=4. coordinator requirement (3) satisfied.
+
+## merge-resolution-validation-gap (2026-11-26) — CRITICAL PROCESS RULE
+- PR #221's squash-merge carried UNRESOLVED conflict markers (<<<<<<< ||||||| ======= >>>>>>>) into matrix.py on main. Root cause: union-resolving conflicts by hand without a final validation pass. RULE for all lanes: after ANY manual conflict resolution, before pushing: `git grep -l '^<<<<<<< \|^>>>>>>> '` MUST be empty for the whole tree — not just the files you remember touching. Diff3-style markers (`|||||||`) also count. One broken harness file invalidated main for hours; PR #231 is the hotfix.
+
+## final-baseline-174-of-183 (2026-11-26) — quality gate operational
+- PR #233: definitive baseline. ALL remaining reds explained — zero unknowns in matrix. Grid movement validated merges: platform-apis 3→6/9 post-#221.
+- LESSON from the branch-tangle: after rebase conflicts ALWAYS verify `git merge-base --is-ancestor origin/main HEAD` before pushing — stale-base branches look fine locally. And abort-verify: `ls .git/rebase-merge` must be empty before further work.
+- Queue state at close: x.com click-glitch NEEDS USER INPUT (credentials or recording — repro-negative unauthenticated, documented). favicons done. matrix done beyond scope.
+
+## backdrop-filter-scoped (2026-11-26) — gap is NOT "unimplemented"
+- Correction to earlier assumption: backdrop-filter IS plumbed end-to-end in servo — components/layout/display_list/mod.rs build_backdrop_filter pushes to webrender's push_backdrop_filter; style_ext.rs reads effects.backdrop_filter. Regular `filter` computed values serialize fine in the matrix (blur passes). THE GAP is narrowly scoped: either the longhand fails to PARSE (silently dropped) or computed-style SERIALIZATION for the backdrop-filter longhand is broken/missing. Test: inline `style="backdrop-filter:blur(4px)"` computes to empty. Next step: check stylo's property registration — is backdrop-filter servo-enabled in the exact stylo rev servo pins (verify which stylo source actually builds: fork-vendored vs git rev 0ab78ce — check workspace [patch]). SMALL upstreamable candidate once localized. Matrix: css-filters page, backdrop-filter-computed probe.
+- stylo confusion resolved partially: Cargo.toml pins git rev 0ab78ce95162eca027c874b505b505ef17a85ac8 for stylo/selectors/servo_arc — if a vendored fork copy exists it must come through [patch] in the workspace root — VERIFY before any stylo-level work.
+
+## sec1zt117 — timeout-kills-webview: NEGATIVE on Linux, three variants (Windows-only?)
+- Windows report: any timed-out load kills all subsequent loads (top engine bug).
+- Linux repro attempts, all NEGATIVE (subsequent loads work fine):
+  1. abort-during-hang: load 127.0.0.1:8898/hang (never responds), navigate away same-tab mid-hang → target loads 200.
+  2. connect-timeout in-flight: navigate to 10.255.255.1 (non-routable), navigate away BEFORE timeout fires → works.
+  3. connect-timeout completed: wait 25s for the hyper connect timeout (network_connection_timeout pref) to actually fire, THEN navigate → works.
+- Implication: either Windows-platform-specific (different network stack behavior, IPC, or timer threading) or a different sequence/scope (all-webviews? error-page interactions? reload-same-url?). NOTE: no response-timeout exists in servo net — only CONNECT timeout (hyper, pref-driven). A hanging RESPONSE never times out at all in-engine; 'timed out' on Windows may be a shell-level watchdog concept instead.
+- Bisect guidance for Windows lane: test variant 3 first (letting the timeout complete) — if the error-page display itself is what poisons the webview, check the constellation load-error path + whether the pipeline's script event loop wedges on the error document.
+
+## backdrop-filter-CLOSED (2026-11-26) — pref-gate pattern strikes again
+- layout_css_backdrop_filter_enabled one-liner in shell engine.rs → matrix-verified blur(4px) computes. css-filters 5/5. PR #234. The pref-gate sweep pattern (fontface/clipboard/execCommand/backdrop-filter) remains the highest-value-per-line work in the project: audit = grep servo_pref in vendor/stylo/style/properties/longhands.toml + webidl Pref= — anything with a complete implementation and a runtime pref is a candidate.
+- Grid projection: 175/183. Remaining reds: webgl environmental, webrtc known-large, range-geometry architectural, cookiestore deliberate, gamepad/webgpu never-enabled.
+- CANDIDATE for next lanes: gamepad cargo-feature evaluation (enable servo's gamepad feature in shell Cargo.toml — check implementation completeness first), cookieStore functional investigation (roundtrip failed when exposed — is the fix small?), upstream PR submission of the 4 verified fixes (document.all, shadow-input, devtools-teardown, fontfaceset-check) per UPSTREAM-CANDIDATES.md.
+
+## sec1zt118 — timeout-kills-webview: CONCLUSIVE negative incl. paint path (Windows-only)
+- Extended sec1zt117: after letting connect timeout COMPLETE (shell title 'Error loading page'), same-tab navigation to visual test page paints perfectly — screenshot-verified bright-green page + text. Net + script + compositor all healthy post-timeout on Linux.
+- Verdict: NOT reproducible on Linux in any variant incl. the full paint path. Windows lane owns; suspects stay as flagged (arena purge 693146a10, download spool 92080fd7, hidden-doc GC 826f3a5) — recommend Windows bisect by reverting each in turn. The one Linux observable: shell error-page state itself works fine (title updates, navigation recovers).
+
+## gamepad-CLOSED (2026-11-26) — sixth matrix-driven enable
+- servo `gamepad` cargo feature enabled in shell — navigator.getGamepads matrix-verified. Key distinction: cargo features (skip-unless in webidl) don't appear in pref sweeps — audit both. Empty-array-no-hardware IS spec-correct, safe to expose unlike cookieStore. platform-apis 7/9. PR #235. Remaining: webgpu unassessed, cookiestore deliberate.
+- DISK: multiple full builds this session — purge before next big build.
+
+## cookiestore-scoped (2026-11-26) — NOT a stub, real diagnosis needed
+- cookiestore.rs is 986 lines with full Get/Set/Delete/GetAll implementations — the roundtrip failure is a real behavioral bug, not an absence. Next step: enable dom_cookiestore_enabled in shell, run platform-apis matrix page, capture WHICH operation fails (set? get? promise resolution?). Probe detail in tests/scenarios/pages/platform-apis.html. If small: another upstreamable fix; if architectural: stays reverted.
+
+## sec1zt119 — MSE backward-seek: pipeline-reset design + the retention verdict
+- BREAKTHROUGH: pipeline state-cycle (Ready->Playing) on MSE seek makes decodebin3 re-plumb fresh — the reselection death of sec1zt84 bypassed. MUST run on a detached thread: synchronous set_state on feather's UI thread deadlocks the entire browser (streaming-thread join wedge — verified live, watchdog stall).
+- Verified post-reset: seek completes, position correct at target, zero stalls, buffered ranges cleared (handle_seek wiring confirmed present and working).
+- REMAINING root cause, precise: per MSE spec appended data PERSISTS across seeks, so spec-correct players (YouTube) track appends internally and never re-fetch after a backward seek — zero media GETs observed post-seek. Servo dropping the data is the spec violation; the page is correct.
+- THE FIX (designed, not yet implemented): fragment RETENTION in script SourceBuffer — infrastructure already exists (webm_indexer timecodes, scan_fmp4_timecodes, init_cache, per-fragment buffered indexing). Cache (timerange, bytes) per fragment, honor remove() eviction, and on seek proactively re-feed retained fragments covering the seek target into the resequenced stream. Timing caveat: appsrc rejects pushes while pipeline is mid-reset — re-feed needs retry/delay after reset completion.
+- Symptom index: 'mse post-seek total starvation, zero pushes, zero media GETs, buf=[] correct' → check: page is spec-correct, engine retention missing — do NOT iterate on page-side or pipeline-side anymore.
+
+## sec1zt120 — SERP lite-vs-modern keying: UA is server-side decisive, verification chain secondary
+Evidence chain (2026-11-27):
+1. curl gets identical enablejs-interstitial shells for ALL UAs (firefox/chrome/feather) — curl can't execute JS so google never varies; UA comparisons via curl are useless for this question.
+2. feather + honest UA: lite SERP forever. Network trace: verify chain RUNS (/verify/ 204s, cookies sent incl __Secure-STRP) but lite=1 never clears across repeated searches. Zero /xjs/ fetches ever.
+3. feather + full Firefox UA: MODERN SERP SERVED — proven negatively: google sends gecko-flavored modern css (:has() complex selectors, @starting-style — servo parse errors) and the deep modern DOM stack-overflows StyleThread#2 (servo cascade recursion crash, pre-existing defect). Server keys modernity on the UA string, full stop.
+4. honest-but-firefox-SHAPED UA ('Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Feather/1.0'): NOT modern — google checks the browser NAME token, not just engine grammar. No crash, still lite-ish.
+5. The 'sgs undefined' puzzle is a red herring: sgs is never defined in the shell in ANY browser (the window.sgs&&ussv&&sp guard falls to the ma() path by design); obfuscated pow script executes without error in servo when tested directly.
+CONCLUSION: google SERP modernity = recognized-browser UA name token. The verification-chain failure may still matter for other things, but lite mode is primarily UA-keyed. RECOMMENDED PATH: firefox-flavor UA for google properties + fix the StyleThread cascade stack overflow (real crash-class defect) + parse support for modern css features the serp uses (:has() complex inner, @starting-style). No impersonation-wall cost: firefox UA verified unwalled.
+Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 never clears' → check: UA name token not a recognized modern browser. 'stylethread stack overflow on modern google serp' → check: servo cascade recursion depth vs deep DOM — real crash defect, see below.
+
+## late-session-shell-wins (2026-11-27)
+- PR #236 merged: progress strip hysteresis (350ms sustained-idle before clearing load flag) — user-reported flicker. Mechanism: servo load_status flaps per-frame within one navigation; strip toggled off/on.
+- PR #237 open: update check — rustls+webpki-roots background GitHub-release version check, quiet toolbar glyph. Design doc docs/wiki/AUTOUPDATE.md. NOTE: cargo check (debug profile) fills disk fast — NEVER run plain cargo check in shell-new, use release builds only. Disk critical ~4GB free, purge deps duplicates before builds.
+- cookieStore DIAGNOSED: exposes fine but roundtrip returns null after set — real behavioral bug in write/persist path, stays reverted. cookiestore-diag branch has the pref flip for the next investigator.
+- Gamepad merged #235, backdrop-filter merged #234, baseline merged #233.
+- OPEN USER ITEM: x.com click-glitch — needs deeper repro; matrix expansion vs spec-compliance cross-ref open.
+
+## x-click-glitch-mechanism-verified (2026-11-27)
+- PR #238: shadow click-activation probes green — anchor activation + listener delivery inside shadow roots both correct post-shadow-input-fix. The clickable-text glitch class is mechanism-verified fixed. USER RE-TEST NEEDED on live authenticated x.com — prediction: fixed. If user reports still broken, the residual is NOT shadow-retargeting — next suspects: hit-test z-index class or selection-drag interference.
+- Matrix state: shadow-input 7/7. Total probe count now 185.
+
+## sec1zt121 — BREAKTHROUGH: modern google SERP fully renders — the crash was the blocker, not the JS
+- ROOT CAUSE RESOLUTION of the legacy-serp complaint: google keys modernity on the UA NAME token server-side (sec1zt120). With firefox UA the modern SERP is served — and the gecko css/dom overflows servo's 512k style thread stack (cascade recursion), killing the whole browser mid-hydration. Every prior observation of 'lite forever' was partially the bootstrap dying with the crash.
+- FIX: stylo STYLE_THREAD_STACK_SIZE_KB default 512 -> 4096 (compile-time const in vendored stylo style/parallel.rs; virtual cost only). VERIFIED LIVE: zero crashes, jsname=472 hydrated, rcnt present, 1.5MB dom, screenshot shows AI Overview + knowledge panel + modern tabs fully rendered. NOTE: env SERVO_STYLE_THREAD_STACK_SIZE_KB exists as compile-time override but cargo does not reliably rebuild on it — the vendored-default patch is the durable fix.
+- IMPLICATION FOR UA POLICY: the honest-UA-on-google policy (PR #225/#230) yields PERMANENT LITE serp — google won't serve modern to an unknown browser name, verification-chain completion is irrelevant. Firefox-flavor UA gets modern + is unwalled (impersonation tolerance differs by browser). RECOMMEND: switch google.* from honest to firefox-flavor UA once the shim can adapt (firefox surface: no window.chrome, no userAgentData, different vendor/platform strings). Residual serp css gaps now visible: complex :has() inner selectors and @starting-style parse-gated (pref plumbed this commit, needs feather enable + verify).
+- Symptom index: 'google modern serp never bootstraps, no js errors, verify 204s loop forever' → check: StyleThread overflow killing hydration — need firefox UA + big style stack. 'honest ua always yields lite serp' → check: server keys modernity on browser NAME token — by design, not fixable client-side.
+
+## sec1zt122 — firefox-flavor google UA shipped + verified end-to-end (feather PR #240)
+- VERIFIED with pure defaults: google serp modern hydration jsname=426 rcnt=true, ua consistent transport+js (firefox/133), correct firefox js surface (no window.chrome, no useragentdata, vendor=''), zero crashes, zero /sorry.
+- Residual modern-serp css gaps now visible in console: complex :has() inner selectors fail parse ('html:has(>.srp[style*=...])' SelectorError UnexpectedIdent — relative-selector inside :has unsupported), @starting-style was parse-gated (pref now plumbed + feather-enabled, verify next pass). Rendering is already good enough for full ai-overview serp; these are polish-tier.
+- Harness gotcha: single-instance forwarding silently invalidates UA-env tests — a surviving old feather process means the new launch just forwards the url and the env never applies. ALWAYS kill -9 + verify pgrep empty before ua tests. ALSO: stale /tmp/feather-eval-persist.js scripts pollute later probes (they re-inject every navigation) — clear before each experiment.
+
+## sec1zt123 — youtube same-session verified post-UA-switch + retention implementation plan
+- youtube watch playback live same session as modern serp: t advancing rs=4, and correctly on the CHROME surface (youtube not in firefox-host list) — per-host ua split works as designed.
+- RETENTION IMPLEMENTATION PLAN (backward-seek completion, sec1zt119 design): fragment cache in script SourceBuffer. pieces: (1) struct RetainedFragment { start: f64, end: f64, bytes: Vec<u8> } vec in SourceBuffer, populated in AppendBuffer AFTER successful push (rejected bytes never retained), using the timecodes already extracted by webm_indexer/scan_fmp4_timecodes; (2) eviction: SourceBuffer.remove() implementation must drop overlapping retained fragments (check remove() exists — if unimplemented, retained memory grows unbounded: cap total retained bytes ~48MB/track mirroring MAX_SRC_QUEUE_SIZE, evict oldest-end-first); (3) on seek (handle_seek): instead of ONLY clearing buffered index, RE-FEED retained fragments with end > seek_target in time order into the pipeline — timing problem: appsrc rejects pushes mid-reset, so re-feed must happen after restore completes. simplest correct ordering: move the resequence trigger — since engine now owns re-feed, the FIRST re-fed fragment carries the init+resequence naturally; implement re-feed as a script-side task queued ~200ms after seek (player reset is fast in practice) OR poll player state. (4) buffered index must then reflect retained ranges AGAIN post-seek (do not clear — or clear+repopulate from retention) so the page sees spec-correct persistent buffering.
+- verification harness: youtube backward seek 8s->2s must resume playback within ~2s; currentTime advancing.
+
+## writing-modes-ENGINE-SCALE (2026-11-27) — pref experiment negative, reverted
+- writing-mode parses correctly but computed is forced horizontal-tb — vertical layout unimplemented in servo layout engine, NOT a pref-gate quick win. Pref reverted deliberately (half-enabled worse than absent: CSS.supports lies). text-orientation has its own pref (layout.css.writing-mode.text-orientation.enabled) — same architectural situation. PR #241 + matrix round 6. css-conditional 6/6 green. :has() unsupported.
+- css-conditional spec area fully verified — @supports/@media/CSS.supports all correct.
+
+## ellipsis-scrollwidth-bug (2026-11-27) — upstreamable, precisely isolated
+- scrollWidth clamps to clientWidth when text-overflow:ellipsis applies (80 vs correct 433 control). Servo measures scroll overflow from the ellipsized text run not original content. Breaks truncation-detection tooltips everywhere. PR #243 matrix harness. NEXT: fix in layout ellipsis truncation — scope: measure pre-truncation width. FUNDING-MODEL candidate.
+- git lesson reconfirmed: squash-merges invalidate local commit hashes — always `git rebase origin/main` before pushing branches that raced merges; verify with merge-base --is-ancestor.
+
+## ellipsis-fix-VERIFIED (2026-11-27) — fifth upstreamable engine fix
+- text-overflow ellipsis no longer shrinks scrollable overflow: matrix css-overflow 10/10, scrollWidth 433 correct with ellipsis. Fix = keep original inline_advance in layout_text_run (components/layout/flow/inline/line.rs) — glyph truncation unchanged, only advance accounting. Pushed to feather-engine. UPSTREAM-CANDIDATES.md entry 5 (PR #244). Funding-model ledger now 5 verified fixes.
+
+## cookiestore-writepath-verdict (2026-11-27) — deferred, poor cost/value
+- Both cookieStore write (SetCookieForUrlAsync) and document.cookie funnel into the same netstack set_cookie_for_url — document.cookie roundtrips fine, cookieStore doesn't. Promises RESOLVE (set acks) but get returns null. Differential probes authored (reads-documentcookie / documentcookie-reads-cookiestore in platform-apis.html git history) but testing requires pref-on rebuild. VERDICT: niche API (document.cookie covers ~all real use), deep netstack hunt, poor cost/value vs other items. Stays reverted with the mechanism fully scoped for a future engine-lane pass.
+
+## matrix-sweep-rounds-7-9 (2026-11-27) — core CSS comprehensively solid
+- css-position 7/7 (sticky pinning verified incl. scroll behavior), grid-advanced 7/7 (template areas/spanning/auto-placement/fr/minmax), css-values 10/10 (calc/clamp/minmax/custom-props incl runtime setProperty). PRs #245/#246/#247. PATTERN ESTABLISHED: WPT fail-density in the spec map is edge-subtest noise, core mechanisms solid. Matrix CSS coverage approaching saturation — next high-value targets are non-CSS: websockets (772 fail expectations in map, completely untested in matrix), streams, shadow-dom deep. WebSocket needs ws server in matrix harness — moderate complexity, high value.
+## sec1zt124 — retention backward-seek VERIFIED-FAILING on real YouTube (2026-11-27) — four concrete defects isolated
+Retention implementation (engine 60a01938a43) compile-clean and pushed, but live verification FAILS the primary criterion: backward seek 16s→2s freezes at 0.15s 10+s with paused=false (starvation signature), reproduced twice. No rust panics. Negative results mandatory-indexed:
+- Symptom: re-feed pushes error `result=Err(Flushing) level=0` → check: refeed-vs-flush timing in sourcebuffer refeed_retained vs gstreamer player seek_reset — the pipeline is STILL FLUSHING when retained fragments are re-pushed. handle_seek refeeds synchronously but the pipeline reset runs on the detached thread (sec1zt82 design) — the two paths race. FIX DIRECTION: defer refeed until flush-stop completes, or gate refeed pushes on the appsrc being back in non-flushing state.
+- Symptom: `GStreamer-CRITICAL: gst_bus_set_flushing: assertion 'GST_IS_BUS (bus)' failed` → check: bus use-after-pipeline-destroy in the seek_reset path — the detached reset thread touches a bus whose pipeline was already nulled (either by a SECOND seek or the adapter-cycle reaper).
+- Symptom: appsrc oscillation `recreated appsrc state=Null linked=false peer=None` alternating with partial Paused/linked → check: appsrc recreation pad-relink race — recreated source not reliably relinked to demuxer pads.
+- Symptom: position clamps to 0.15 NOT the 2.0 target → check: re-fed fragment timestamps not re-based onto the post-seek segment — seek applied against a stream whose timing reset to zero.
+- Symptom: after backward-seek corruption, forward seek to 10s also freezes → check: pipeline state corruption is sticky, not seek-direction-specific. Forward-seek-on-pristine-pipeline never tested — coverage gap.
+- UI watchdog stall during seek churn in run 1 — the reset path can still touch the UI thread somewhere.
+- PRE-EXISTING unrelated: initial playback starts then freezes (~1.7s/8.5s) despite 60s buffer + readyState 4 until v.play() nudge — separate engine defect, present before any seek.
+- Evidence: /tmp/yt-seek-test.log, /tmp/yt-seek-test2.log on the linux VM; recording in the session artifacts.
+- DO NOT open the PR until a clean single backward seek survives.
+
+## matrix-rounds-10-12 (2026-11-27)
+- websockets 4/4 (harness embeds dependency-free RFC6455 echo server on 8472 — close handshake needs server close-echo), focus-events 10/10, drag-drop 3/6 honest absence (no DragEvent.webidl in servo at all, draggable commented out — engine-scale, sites feature-detect safely). PRs #248/#249/#250.
+
+## sec1zt125 — matrix-rebase union parser diff3 bug (2026-11-27)
+- Symptom: union-merge loop leaves files still conflicted → check: diff3-style conflicts have a `|||||||` base section BEFORE `=======` — a parser keying on `=======` mis-slices. Correct walk: <<< then optional ||| base, then ===, then >>>. 248 websockets rebased+pushed clean (no diff3 conflicts); 247/249/250 still conflicted on origin, branches untouched, local repo back on main. Also: matrix classes should batch per-round per coordinator.
+- seek settle-fix (engine 72b6c0fe29d) pushed, VERIFICATION PENDING — testing-agent handoff not yet done.
+
+## definitive-grid-239-of-254 (2026-11-27) — matrix comprehensive
+- 37 classes, 254 probes, 239 passing, EVERY red categorized zero-unknowns. Union PR #251 supersedes conflicting per-round PRs (closed 245/247/248/249/250 — per-round branches conflict on shared matrix.py registration line; union carries identical content + definitive grid). LESSON: matrix rounds that all edit the same registration line should batch 2-3 classes per branch, or accept the union-merge pattern.

@@ -689,9 +689,14 @@ impl LineItemLayout<'_, '_> {
                     // ellipsis was already rendered by a previous run. It is entirely
                     // clipped away, so it should not produce any glyphs of its own.
                     glyphs = Vec::new();
-                    inline_advance = Au::zero();
                     character_range_in_dom_node.end = character_range_in_dom_node.start;
-                } else if let Some((truncated_glyphs, truncated_advance, retained_characters)) =
+                    // Deliberately keep `inline_advance` unchanged: `text-overflow`
+                    // affects only rendering, never layout. The scrollable overflow
+                    // of the container is computed from the line advance, and per
+                    // spec it must reflect the full untruncated content (this is
+                    // what makes `scrollWidth`-based truncation detection work).
+                    // Runs this far down the line render nothing either way.
+                } else if let Some((truncated_glyphs, _truncated_advance, retained_characters)) =
                     self.truncate_glyphs_for_text_overflow(
                         &text_item.info.font_info.font,
                         &glyphs,
@@ -699,7 +704,10 @@ impl LineItemLayout<'_, '_> {
                     )
                 {
                     glyphs = truncated_glyphs;
-                    inline_advance = truncated_advance;
+                    // As above: keep the original `inline_advance` so the scrollable
+                    // overflow area matches the untruncated content, per spec. Any
+                    // subsequent runs are themselves clipped away or truncated, so
+                    // their positions shifting rightward has no visual effect.
                     character_range_in_dom_node.end =
                         character_range_in_dom_node.start + retained_characters;
                 }
