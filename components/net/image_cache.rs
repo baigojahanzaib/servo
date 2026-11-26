@@ -825,7 +825,11 @@ impl ImageCacheStore {
             std::env::var("FEATHER_IMGMEM_BUDGET_MB")
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
-                .unwrap_or(384)
+                // 256MB production default: 2x the 100MB verified zero-corruption
+                // on deep-scroll reddit, with headroom for image-dense viewports.
+                // With geometric protection in place the budget is a backstop —
+                // far-offscreen eviction only happens under pressure past it.
+                .unwrap_or(256)
                 * 1024 * 1024
         });
         let mut resident_total =
@@ -848,13 +852,13 @@ impl ImageCacheStore {
                     // layout reports as near the viewport — evicting them is what
                     // caused the black-rectangle corruption on visible content.
                     if let Some(upload_key) = image.id {
-                        let near = pixels::IMAGE_GEOMETRY
+                        let protected = pixels::IMAGE_GEOMETRY
                             .read()
                             .unwrap()
                             .get(&upload_key)
-                            .map(|record| record.near_viewport)
+                            .map(|record| record.eviction_protected)
                             .unwrap_or(false);
-                        if near {
+                        if protected {
                             continue;
                         }
                     }

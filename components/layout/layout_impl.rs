@@ -795,18 +795,21 @@ impl Layout for LayoutThread {
                 .height;
             // Hysteresis: re-upload margin (1x viewport) is tighter than the
             // eviction margin (2x) so edge images don't oscillate.
-            let margin = viewport_h;
+            let tight = viewport_h;
+            let wide = viewport_h * 2.0;
             let image_cache = self.image_cache.clone();
             let mut reupload_keys = Vec::new();
             {
                 let mut registry = pixels::IMAGE_GEOMETRY.write().unwrap();
                 for (key, record) in registry.iter_mut() {
-                    let near = record.content_rect[3] > scroll_y - margin &&
-                        record.content_rect[1] < scroll_y + viewport_h + margin;
+                    let near = record.content_rect[3] > scroll_y - tight &&
+                        record.content_rect[1] < scroll_y + viewport_h + tight;
                     if near && !record.near_viewport {
                         reupload_keys.push(*key);
                     }
                     record.near_viewport = near;
+                    record.eviction_protected = record.content_rect[3] > scroll_y - wide &&
+                        record.content_rect[1] < scroll_y + viewport_h + wide;
                 }
             }
             if !reupload_keys.is_empty() {
@@ -1791,17 +1794,20 @@ impl LayoutThread {
                     .viewport_details
                     .size
                     .height;
-                let margin = viewport_h;
+                let tight = viewport_h;
+                let wide = viewport_h * 2.0;
                 let mut reupload_keys = Vec::new();
                 {
                     let mut registry = pixels::IMAGE_GEOMETRY.write().unwrap();
                     for (key, record) in registry.iter_mut() {
-                        let near = record.content_rect[3] > scroll_y - margin &&
-                            record.content_rect[1] < scroll_y + viewport_h + margin;
+                        let near = record.content_rect[3] > scroll_y - tight &&
+                            record.content_rect[1] < scroll_y + viewport_h + tight;
                         if near && !record.near_viewport {
                             reupload_keys.push(*key);
                         }
                         record.near_viewport = near;
+                        record.eviction_protected = record.content_rect[3] > scroll_y - wide &&
+                            record.content_rect[1] < scroll_y + viewport_h + wide;
                     }
                 }
                 if !reupload_keys.is_empty() {

@@ -371,8 +371,15 @@ pub enum DecodedBytes {
 pub struct ImageGeometryRecord {
     /// [min_x, min_y, max_x, max_y] in content space.
     pub content_rect: [f32; 4],
-    /// Layout-maintained verdict: intersects viewport +/- re-upload margin.
+    /// Layout-maintained verdict: intersects viewport +/- re-upload margin
+    /// (1x viewport — the TIGHT margin, drives scroll-triggered re-upload).
     pub near_viewport: bool,
+    /// Layout-maintained verdict: intersects viewport +/- eviction-protection
+    /// margin (2x viewport — the WIDE margin, protects from eviction). The band
+    /// between the two margins is the hysteresis band: images inside it are
+    /// neither re-uploaded nor evicted, so fast scrolling across the boundary
+    /// cannot thrash evict/re-decode cycles.
+    pub eviction_protected: bool,
 }
 
 pub static IMAGE_GEOMETRY: std::sync::LazyLock<
