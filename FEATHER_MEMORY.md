@@ -3159,3 +3159,18 @@ F6/F7/F15 negatives this session: scrolling verified working end-to-end (wikiped
 NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskademux/vp9dec outputs by walking the pipeline in player.rs post-seek; check whether frames reach the sink at all, and whether the render callback errors.
 
 **Testing rule (MANDATORY for all future media verification)**: before any instrumented run, move ~/.config/feather/session.json aside or use unique-per-run URLs; session-restore duplicates test pages silently and invalidates instance-level logs.
+
+
+## sec1zt72 — MSE seek final closeout: validation methodology flaw + mechanism verdict + the one real partial win (2026-11-26, linux)
+
+**METHODOLOGY FINDING (affects all prior seek validation)**: position-advance post-seek is NOT evidence of frame flow — the pipeline clock advances regardless once unblocked. Every prior "playback resumes" harness validation (§1t, sec1zf, the ENGCLOCK/playbin3 bisections in sec1zt69/70) is SOFT — likely nothing ever actually flowed post-seek in any design tried so far. Mandatory for future verification: pixel-diff the video region across seconds (trivially scriptable: import -window root crops + ImageChops, mean diff > 0) or pad-probe the sink input; positions are meaningless.
+
+**MECHANISM VERDICT after full instrumentation campaign**:
+1. Source-side flow post-seek WORKS (in clean instance): re-fed buffers exit servomse into decodebin. Neither flush nor recreation is the blocker.
+2. Downstream consumption never produces frames: no re-preroll (video new_preroll fires exactly once at startup, never post-seek), pixel-identical frames in every engine run, positions pin at target or 0.
+3. A FLUSHING TIME SEEK on the pipeline (seek always fails upstream — BoolError expected — but the flush+rebase side effects execute) partially improves things: currentTime lands EXACTLY on the target (40.0) instead of nonsense values. In the harness it unblocked positions too. But frames still frozen + MEDIA_ERR_DECODE surfaced once — insufficient alone, though the position-rebase is a genuine mechanistic piece of any final fix.
+4. The re-preroll failure is the crux: after flush, sinks need a fresh preroll buffer to resume; it never completes. WHY is the open question — suspects: decoder never outputs a frame (vp9 state post-flush despite keyframe), the stream-start/caps sequence absent on re-fed data in the no-recreate path (demux outputs unparsable stream), or running-time/segment mapping puts frames at times the sink discards pre-preroll.
+
+**THE HONEST VERDICT**: the flush+recreate design is dead as implemented; the path forward is EITHER (a) cracking re-preroll directly with gst-debug pipeline graphs (GST_DEBUG bin DOT dumps — GST_DEBUG_DUMP_DOT_DIR — never tried! much better than blind probes), or (b) the full timestamp-rewriting redesign per sec1zt70. Recommend (a) first: one afternoon with dot-graph pipeline inspection beats guessing. The instrumentation infrastructure is all in place (10s media-crate rebuilds, working repro /tmp/elltest/mseseekA.html served at :8899, session-restore contamination rule in sec1zt71).
+
+**Tree state**: mse_source.rs + player.rs carry debug instrumentation (eprintlns, FLOW probes, SERVO_MSE_NORECREATE/NOFLUSH env gates, the experimental flushing-seek block in player.rs MSE seek branch). NOTHING committed to feather-engine — all local, strip-or-keep decision deferred. The flushing-seek experiment in player.rs is the only piece worth considering for keeping (improves position reporting) — but it also surfaced MEDIA_ERR_DECODE once, so it is NOT clean; do not land without understanding the decode error.
