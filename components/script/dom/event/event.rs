@@ -697,18 +697,13 @@ impl Event {
         // https://w3c.github.io/uievents/#default-action
         // https://dom.spec.whatwg.org/#action-versus-occurance
         if !self.DefaultPrevented() {
-            if self.is::<KeyboardEvent>() {
-                // For keyboard events, use the original dispatch target rather than
-                // event.GetTarget(). Composed keyboard events may retarget across
-                // shadow boundaries, but the default action (character input, Tab
-                // navigation) should use the element the event was originally fired on.
-                if let Some(node) = original_target.downcast::<Node>() {
-                    let vtable = vtable_for(node);
-                    vtable.handle_event(cx, self);
-                }
-            } else if let Some(target) = self.GetTarget() &&
-                let Some(node) = target.downcast::<Node>()
-            {
+            // Use the original dispatch target rather than event.GetTarget().
+            // Composed events may retarget across shadow boundaries during
+            // dispatch, leaving the stored target pointing at an outer shadow
+            // host, but the default action (character input, form control
+            // value updates, Tab navigation) must run on the element the
+            // event was originally fired on.
+            if let Some(node) = original_target.downcast::<Node>() {
                 let vtable = vtable_for(node);
                 vtable.handle_event(cx, self);
             }
