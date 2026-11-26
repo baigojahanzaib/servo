@@ -942,7 +942,7 @@ impl DedicatedWorkerGlobalScope {
                 target,
                 scope.upcast(),
                 message.handle(),
-                Some(msg.origin.ascii_serialization().as_ref()),
+                None,
                 None,
                 ports,
             );
