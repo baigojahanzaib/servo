@@ -1744,3 +1744,25 @@ SECONDARY OBSERVATIONS:
 - servo getComputedStyle returns specified width (auto) rather than resolved px in some cases — measurement hazard when comparing.
 
 ASSETS: probe/ytstatic.html (static repro), probe/ytmain.css (real 3.2MB sheet), probe/race*.html + ytcss.html (negative results), cdp_eval.py (Chrome CDP eval harness — ground truth for any future comparison), chromeprof/ chrome CDP on port 9223.
+
+
+## F10 FINAL ROOT CAUSE (2026-11-26 ~14:15) — the unhide signal never completes
+
+CORRECTED CONCLUSION (supersedes the "layout engine" entry earlier same day — that was wrong: static rendering proved layout handles everything fine).
+
+THE MECHANISM: YouTube stamps results into a container (`ytd-two-column-search-results-renderer`) carrying the `hidden` attribute. The app removes it when rendering completes — removal happens inside YouTube's job scheduler (Rendererstamper: elements stamp hidden, jobs registered in a map HT, `J.hidden=!1` on job completion; jobs added via `_.xk = addJob(W,0,J)` priority lanes; primitives rAF/rIC/setTimeout ALL verified working in servo). In servo the unhide never happens: `hidden` persists, UA stylesheet applies display:none, entire results subtree zero-size. THE REST WAS ALL HEALTHY: data stamping, DOM structure (88 divs/3 imgs identical to Chrome), CSS payload (plain external link stylesheet, 19k rules, applies fine), computed styles correct, layout engine handles the structure perfectly (static repro renders pixel-perfect: v:700x331 img:342x192 matches Chrome's 701x255/343x192).
+
+PROOF: manually `removeAttribute("hidden")` on the live page → results render completely and correctly, screenshots taken. Clone-reinsert test: even fresh elements in the live document stay zero — the collapse is container-state, not element-state.
+
+PRIME SUSPECT for the missing signal: servo lacks PerformanceObserver entry types YouTube observes — supportedEntryTypes = container, largest-contentful-paint, mark, measure, navigation, paint, resource, visibility-state — MISSING: longtask, first-input, layout-shift, element, event. YouTube's scheduler yield logic literally does `KdC.observe({type:"longtask", buffered:!0})` — servo warns "No valid entry type provided to observe()" (seen in console) and the observer never fires. The scheduler's task-yield measurement stalls; whether job execution itself depends on it needs confirmation. NOTE: `observe()` does not throw in servo for unsupported types — it silently no-ops after the warning.
+
+ALTERNATIVE/complementary suspect: scheduler start gating or job-lane execution conditions in the minified machinery (`_.wD` scheduler instance, `yt.scheduler.instance`).
+
+CHROME GROUND TRUTH harness: cdp_eval.py — headless Chrome CDP port 9223 — any future comparison is one command. Chrome state: tcHidden:false, hiddenCount:390 vs servo 502 (+112 stuck-hidden).
+
+NEXT STEPS ranked:
+1. Implement longtask performance entries in servo (or at minimum make observation of unsupported types not break the chain — measure what Chrome fires). Test whether unhide then completes.
+2. If insufficient: instrument the scheduler job execution — needs pre-boot injection (served-copy trick).
+3. STATIC REPRO ASSETS remain valid for verifying rendering correctness: probe/ytstatic2.html (static + ytmain.css renders correctly!).
+
+INSTRUMENTS LANDED this session: eval bridge + console visibility (feather #154 merged), adoptedStyleSheets pref enabled (in #154), cdp_eval.py Chrome harness, rIC from earlier.
