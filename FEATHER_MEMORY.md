@@ -1713,3 +1713,26 @@ Mechanism chain: scrolling is innocent but causally adjacent — moving through 
 Ruled out: pure create/destroy lifecycle churn — a synthetic MSE teardown loop (460 rapid cycles of video+MediaSource+appendBuffer+abort+remove) survives cleanly. Garbage-fed pipelines never reach the playing state though — the fatal window likely requires a LIVE pipeline mid-teardown (bus messages in flight while dispose finalizes the bus).
 
 Fix options in cost order: (a) intentional-leak mitigation — skip run_dispose when inner is non-unique (the dragons condition is already detected! currently only debug_asserted, compiled out in release) — bounded memory cost per torn-down video, eliminates the whole class; (b) serialize teardown — NULL state + bus drain before dispose, ordering complexity; (c) true root-cause of the violating refholder — 1-2 days gst/glib internals, uncertain. NOTE: the dragons detection already exists in-code — option (a) is small and surgical.
+||||||| parent of 869a38f4e (memory: hw video decode investigation — vtdec active, vp9 gap measured marginal)
+
+## Hardware video decode investigation (Nov 26, mac lane) — vtdec already active; vp9 gap measured marginal
+
+Symptom: video playback CPU high on macOS → check: gstreamer vtdec/VideoToolbox hardware decode
+(status: CONFIRMED ALREADY ACTIVE — gst_vtdec_handle_frame + VideoToolbox frames in thread samples of
+normal playback; nothing to wire). videoconvert/software-conversion cost (status: ruled out as
+significant — ~zero activity in samples). Repaint/compositing path (prime suspect, confirmed dominant —
+consistent with the repaint-cost diagnosis: video is a 30fps invalidator).
+
+MEASURED (bundled .app, env-clean, 30fps looped local files, windowed top sampling):
+static page ~0%, h264-720p 39.1%, h264-1080p 52.0%, vp9-720p 46.6%, vp9-1080p 58.6%.
+Software vp9 decode costs only ~+7pp over hw-decoded h264 at the same resolution — the compositing
+path dominates both. Codec coverage: gst 1.22.3 vtdec handles h264/h265/mpeg2/jpeg/prores — NO vp9/AV1
+(vp9 hw wiring landed upstream in gst 1.24+). YouTube serves vp9 → falls to libav software decode.
+vtdec SRC caps include video/x-raw(memory:GLMemory) — hw frames CAN stay GPU-side in gst, but servo's
+appsink handoff forces system memory (cheap-ish on unified memory, nonzero).
+
+VERDICT: no software-decode defect exists for h264/HEVC — hardware decode was already working.
+The vp9 gap is real but marginal (~7pp of ~47-59% playback CPU); upgrading bundled GStreamer to 1.24+
+for vtdec-vp9 is the only available lever and is risky while the vp9/gst threading crash (youtube,
+indexed for the Linux lane) is unresolved — a newer gst may also change that crash's behavior either way.
+Deprioritized behind the compositing-cost program which dominates video CPU regardless of codec.
