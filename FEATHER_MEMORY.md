@@ -2089,3 +2089,34 @@ ytd-masthead (fully working) ALSO lacks __data/dataReady — modern YouTube elem
 ## PerformanceObserver probe — mostly fine, warning is narrow (2026-11-26, macOS lane)
 
 servo supportedEntryTypes: container, largest-contentful-paint, mark, measure, navigation, paint, resource, visibility-state. observe() accepts every type without throwing (even unsupported ones like longtask/layout-shift — no validation error). The youtube "No valid entry type provided to observe()" warning is therefore NOT a broad PerfObserver gap — likely a specific buffered/option combination; weak lead, deprioritized as boot-telemetry noise unless proven load-bearing.
+||||||| parent of f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
+
+## sec1zt10 — YouTube OOM/define_properties theory VERIFIED + fixed (2026-11-26)
+
+Verification of the macOS lane's unifying theory (memory-pressure boot corruption), on Linux:
+
+**Experiment setup**: js_mem_max=32 induced-pressure harness (youtube.com watch boot × 6 per run). NOTE js_mem_max pref is capped at range 1..0x100 (256MB) in script_runtime — values above 256 are IGNORED silently.
+
+**Findings**:
+1. **The ceiling lever is a dead end**: servo already sets JSGC_MAX_BYTES=u32::MAX when js_mem_max unset — there is no ceiling to raise. The OOM is genuine allocation failure, not a configurable cap.
+2. **Memory pressure reproduces the boot-corruption variance exactly as theorized**: under 32MB cap, boots alternate full/partial ('no-ytplayer' — empty title, incomplete boot) — the stuck-boot symptom reproduced on demand. This CONFIRMS pressure→corruption causal chain.
+3. **Panic fixed at BOTH sites** (define_guarded_properties:434 AND define_guarded_methods:418 — same defect class): failure now clears the pending exception + logs `[interface]` warn + leaves interface partially defined. Page degrades, browser survives.
+4. **Post-fix survival verified**: 64 uncaught out-of-memory exceptions across 6 boot attempts — all surfaced as page-level JS exceptions, zero panics, process alive throughout. The OOM-death behavior is now correct-by-construction at the interface-definition sites.
+5. Caveat: the `[interface]` warning never fired in the induced-pressure runs — the interface-definition path apparently wasn't the failure point under this pressure pattern (OOMs hit script execution instead). The fix is verified by construction + general survival, not by direct observation of that path firing. If YouTube instability persists on memory-constrained devices after this, the next suspect is NON-interface OOM corruption of boot state (page-level, not engine-fixable beyond what browsers normally do).
+
+**Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
+## sec1zt10 — YouTube OOM/define_properties theory VERIFIED + fixed (2026-11-26)
+
+Verification of the macOS lane's unifying theory (memory-pressure boot corruption), on Linux:
+
+**Experiment setup**: js_mem_max=32 induced-pressure harness (youtube.com watch boot × 6 per run). NOTE js_mem_max pref is capped at range 1..0x100 (256MB) in script_runtime — values above 256 are IGNORED silently.
+
+**Findings**:
+1. **The ceiling lever is a dead end**: servo already sets JSGC_MAX_BYTES=u32::MAX when js_mem_max unset — there is no ceiling to raise. The OOM is genuine allocation failure, not a configurable cap.
+2. **Memory pressure reproduces the boot-corruption variance exactly as theorized**: under 32MB cap, boots alternate full/partial ('no-ytplayer' — empty title, incomplete boot) — the stuck-boot symptom reproduced on demand. This CONFIRMS pressure→corruption causal chain.
+3. **Panic fixed at BOTH sites** (define_guarded_properties:434 AND define_guarded_methods:418 — same defect class): failure now clears the pending exception + logs `[interface]` warn + leaves interface partially defined. Page degrades, browser survives.
+4. **Post-fix survival verified**: 64 uncaught out-of-memory exceptions across 6 boot attempts — all surfaced as page-level JS exceptions, zero panics, process alive throughout. The OOM-death behavior is now correct-by-construction at the interface-definition sites.
+5. Caveat: the `[interface]` warning never fired in the induced-pressure runs — the interface-definition path apparently wasn't the failure point under this pressure pattern (OOMs hit script execution instead). The fix is verified by construction + general survival, not by direct observation of that path firing. If YouTube instability persists on memory-constrained devices after this, the next suspect is NON-interface OOM corruption of boot state (page-level, not engine-fixable beyond what browsers normally do).
+
+**Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
+>>>>>>> f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
