@@ -2206,12 +2206,10 @@ LIVE PROBE of the scheduler instance on the broken page (ytglobal.schedulerInsta
 BUNDLE ANALYSIS (scheduler.js — only 8KB, readable, fetched at /tmp/ytscheduler.js — note /tmp files are ephemeral, refetch if gone: youtube.com/s/desktop/HASH/jsbin/scheduler.vflset/scheduler.js): yt scheduler priorities 0-5+8; mode decision M(): priority-8 jobs with rAF available and page visible run on **requestAnimationFrame** (mode 3), low-priority (1) jobs use rIC {timeout:3000}, mode 2/4/5 use setTimeout variants. Feature-detect: uses rIC only if window.requestIdleCallback exists — meaning pre-rIC servo used reliable setTimeout fallback; implementing rIC naively made things worse (macOS irony confirmed in code).
 
 UNHIDE MECHANISM FOUND (kevlar bundle /tmp/ytbase.js 9.8MB — search 'hideContents'): for ytd-rich-grid-renderer (home; search equivalent follows same pattern): onPageChange schedules a **priority-8 job** whose body runs setMasthead/maybeSetBigYoodle/forceRefreshAndLog/terminateVideoPreview in a try, with `hideContentsForNavigation=false` in the **finally** — the unhide is finally-guarded so even a throwing job body still unhides. Binding: `hidden="[[computeHideContents(hasLoadingContent, hideContentsForNavigation)]]"`. Consequence: since the finally guarantees the flip IF the job runs, and queues are empty (jobs ran or never scheduled), the live suspects narrow to exactly two: (a) onPageChange never fires or isCurrentPage() false — job never scheduled; (b) W-flag logic — if the job runs synchronously-ish via scheduler quirks, onPageChangeJobId handling differs. The single most instrumentable next probe: whether the framework's navigate/response events fire AT ALL on the search page in servo post-fix — the yt-navigate-finish event and whether a data response object reaches the element. NOTE the response itself arrives (200 verified repeatedly) — it's the framework-internal dispatch that's suspect.
-||||||| parent of e13779d9a (memory: rIC fix verified — stamping completes, hideContents write is the last layer)
 
 ## Temporal proof: hideContents write NEVER happens (11:40 2026-11-26)
 
 Property-write instrumentation on ytd-search.data.hideContents across 40s of settled post-response state: zero writes ever (hcw=[] at T25s and T40s). Not a timing issue — the completion logic that should flip hideContents is either never invoked or exits before the write. Also: eval-console-instruments branch built (BUILDEXIT:0) — shell-new now has FEATHER_EVAL live bridge + console visibility available for next session. Next concrete step for the continuation: implement servo's unhandledrejection event (the missing visibility primitive) OR instrument yt-navigate-finish handlers in the kevlar bundle to find where the search-response completion path diverges. /tmp/ytbase.js still on disk.
-||||||| parent of 8af493c268c (memory: sec1zt17 — data bound, flip never writes, cancel-race suspect)
 
 ## sec1zt17 — final narrowing: data FULLY BOUND, disconnect is data-arrival → attribute-flip (2026-11-26)
 
@@ -2223,12 +2221,10 @@ Live probe on stuck search page: `ytd-search` element `.data` is FULLY POPULATED
 ## sec1zt18 — investigation halt state + tooling unlock needed (2026-11-26)
 
 Additional negative data: injected yt-navigate listeners catch NOTHING even when clicking filter chips — and the chip click doesn't even navigate (url unchanged). Whether that's because the page is already wedged or in-page navs don't fire these events in servo is undetermined. THE INVESTIGATION IS NOW TOOLING-BLOCKED: every remaining question requires observing the boot sequence from T+0 (pre-load JS injection), which webdriver fundamentally cannot do. THE UNLOCK for the next session: either (a) servo's devtools protocol — check if it supports Debugger/Runtime instrumentation attachable before navigation completes (servo has devtools feature in build), or (b) mitm proxy (mitmproxy with CA cert installed in servo profile — servo accepts custom CA? unverified) to inject instrumentation into served HTML, or (c) build a servo variant with a pref-gated pre-load user-script injection (small engine feature, ~1-2h, generally useful for all future framework debugging — RECOMMENDED). Summary of the narrowed state: response arrives, data binds, scheduler drains, binding works when manually driven — but the hidden-flip write never executes and the evidence needed to distinguish cancel-race vs cascade-break is inside the unobservable boot window.
-||||||| parent of 05a1b9907 (memory: temporal proof — hideContents never written; unhandledrejection is the needed next tool)
 
 ## hideContents final chain — command never dispatched (2026-11-26 late)
 
 FULL CONTRACT: ytd-search actionMap registers "yt-show-search-contents-command"→onYtShowSearchContentsCommand→set("data.hideContents",!1). The command string appears NOWHERE else in kevlar_base — not server-sent either: live scan of ys.data shows onResponseReceivedCommands contains ONLY adsControlFlowOpportunityReceivedCommand, and no "showSearchContents" string anywhere in the data. Therefore the command is fired LOCALLY by framework completion logic (app-shell/navigator once content ready) — possibly in one of the 12 other JS chunks the page loads (only base bundle analyzed). The trigger itself never fires in servo — suspect chain: rendering-completion hook that should dispatch it. NEXT: grep the other page chunks for "show-search-contents" or the dynamic dispatch site; alternatively instrument the live dispatch pipeline. IO fully exonerated incl. display:none-ancestor nesting (io2.html — initial false + transitions all correct).
-||||||| parent of 7cd7d0d5673 (memory: sec1zt19 — devtools unlock, upgrade myth busted, IO-lazy-init prime suspect)
 
 ## sec1zt19 — devtools unlock + near-complete root cause: IO-lazy-init suspect, upgrade myth busted (2026-11-26)
 
@@ -2274,12 +2270,10 @@ FULL CONTRACT: ytd-search actionMap registers "yt-show-search-contents-command"�
 ## sec1zt21 — DEFINITIVE isolation: exactly ONE write missing, all downstream machinery verified working (2026-11-26)
 
 Force-unhide cascade experiment (live devtools on stuck youtube search): removeAttribute('hidden') on ytd-two-column-search-results-renderer → IO observer on video renderer FIRED (iofires:1), 108 framework mutations cascaded, tc rendered to 7288px height, video renderers populated data (vr.data true AFTER unhide — lazy init was GATED ON VISIBILITY), heights 249px, thumbnails loading, nothing re-hides it. **The entire defect is exactly one missing write: hidden-removal on the replacement element. Everything downstream — IO cascade, visibility-gated lazy data init, rendering, image loading — works perfectly in servo.** This inverts the earlier suspicion: lazy init is not broken; it was correctly waiting for visibility which never came. The missing write is in YouTube's response-completion path (external to the element — class is a thin shell). The investigation question is now fully precise: in Chrome, what code performs the hidden-removal on the post-response replacement element, and why doesn't that codepath execute in servo? Cheap decisive continuation: Element.prototype.removeAttribute + attribute-setter spy on 'hidden' installed BEFORE a true SPA nav (link click, not form submit) will capture whether servo-YouTube even attempts the write vs Chrome attempting it.
-||||||| parent of b2eea5eab (memory: yt-show-search-contents-command never dispatched; not in response data — local completion trigger missing)
 
 ## ENDGAME STATE: YouTube fully renders — only the command trigger missing (2026-11-26 final)
 
 Direct call ys.onYtShowSearchContentsCommand() → hidden=false, hc=false, layout height 7901px, FULL VISUAL RENDER: thumbnails/titles/chapters/badges all correct (screenshot proof). Raw CustomEvent dispatch does NOT trigger the handler (YouTube actions route through the central command-executor service, not raw DOM events). THE ENTIRE downstream pipeline is functional in servo — the single missing piece is whatever invokes the command through the executor in Chrome. Alpha-shim option now trivially viable: inject the direct handler call post-response. Trigger hunt continuation: find which response-processing/navigation step submits the command to the executor (search the executor service in chunks — command resolution is dynamic, no static string exists; likely the executor resolves a command object constructed by completion logic or embedded in a part of response processing that silently fails in servo — the unhandledrejection tool remains the key visibility need).
-||||||| parent of e6a2db59b14 (memory: sec1zt22 — home unhide works, search-specific defect + eval-wedge finding)
 
 ## sec1zt22 — CRITICAL discriminator: unhide mechanism WORKS on home page, fails only on search; plus eval-wedge defect (2026-11-26)
 
@@ -2295,7 +2289,6 @@ Direct call ys.onYtShowSearchContentsCommand() → hidden=false, hc=false, layou
 **New defect surfaced — eval-wedge on fresh loads**: after location.href full navigation to youtube home, devtools evaluateJS persistently throws 'Location relevant Document is not same origin-domain with entry settings object' for 30+s across fresh devtools connections — servo document/script state wedges after full navigation in a way it does not after SPA nav. Transient version of this error is normal during navigation, but persistent-for-30s+ suggests either navigation never completing or a script-thread wedge. UNVERIFIED whether page renders visually during the wedge (no screenshot taken). This wedge also blocked the fresh-load-vs-SPA discriminator experiment. **This is itself a serious servo defect candidate affecting all full navigations — possibly the SAME mechanism that breaks initial-load search unhide**: if the initial-load document state is wedged in some subtle way (not fully wedged — most JS runs — but some spec check failing), framework codepaths touching affected state would throw silently. Direction for continuation: reproduce eval-wedge minimally (any full navigation to a simple page?) and find the spec check in servo script/dom — grep for 'same origin-domain' or the spec step in location/document access.
 
 **Instrument survival negative**: attribute-write spy on Element.prototype does NOT survive full navigation (obviously) and the SPA-nav spy capture was pre-empted by the wipe — but the spy install methodology is sound for future SPA-only captures: wrap removeAttribute/setAttribute/hidden-property-setter BEFORE clicking in-page links.
-||||||| parent of fdd3b1eab (memory: endgame — full render proven, only command-executor trigger missing)
 
 ## Console visibility live — boot nearly clean, one real error (2026-11-26 final)
 
@@ -2304,7 +2297,6 @@ eval-console-instruments pipe works. Entire YouTube boot produces only: LegacyDa
 ## unhandledrejection implementation scope + final handoff (2026-11-26 final-final)
 
 ResizeObserver EXONERATED (rotest.html: n=122 callbacks, loop error fires but delivery continues — spec-shaped, same as Chrome). Console pipe shows otherwise-clean boot. unhandledrejection: NO infrastructure exists — needs SM promise rejection tracker hook + PromiseRejectionEvent webidl + firing logic; multi-hour engine feature. It's the correct next investment: the command-trigger failure is either async-invisible (needs this) or a pure logic divergence. Alternative cheaper probe for continuation: compare YouTube's served JS/config in servo vs Chrome — UA-dependent feature flags (_.L(...) killswitches) can gate the command-trigger logic; yt.config_ / EXPERIMENT_FLAGS diff may reveal a flag gate servo fails. yt.config_ is readable live via devtools — look for flags mentioning search_contents/navigation_completion.
-||||||| parent of 58815dfeb23 (memory: sec1zt23 — location wedge + failed navigation, prime mechanism suspect)
 
 ## sec1zt23 — REFRAMED: location-object wedge + failed navigation — a servo navigation-state defect (2026-11-26)
 
@@ -2312,7 +2304,6 @@ CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a docu
 ## sec1zt23 — REFRAMED: location-object wedge + failed navigation — a servo navigation-state defect (2026-11-26)
 
 CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a document-wide wedge — pure JS evals fine, document.title/documentElement/body all accessible post-error. It is specifically **the Location object access that throws**. AND: after `location.href='https://example.com/'` the page NEVER NAVIGATED — title still 'YouTube', body still youtube's 47 children, minutes later. **Servo defect: location.href assignment during a complex page state can silently fail to navigate AND leaves the Location object itself throwing spec errors on subsequent access.** Mechanism hypothesis: navigation starts (transitions the document's incumbent/settings state) but never completes or aborts, leaving Location's relevant-document check permanently failing. IMPACT ON YOUTUBE THEORY: YouTube's SPA framework constantly reads/writes location/history during response processing — if servo location state wedges during the boot sequence's navigation transitions, framework code touching location throws silently (K() swallows), aborting response completion before the unhide write. **This is now the prime mechanism suspect.** Next steps: (1) minimal repro — does location.href wedge reproduce on simple pages or only youtube-complex ones; (2) grep servo script/dom/location.rs for the relevant-document check and audit navigation-transition state handling; (3) test whether history.pushState (what YouTube SPA actually uses) also wedges. NOTE prior data point consistent: clicking filter chips didn't navigate either (sec1zt18) — possibly the same defect, not 'page already wedged'.
-||||||| parent of d092a9361 (memory: RO exonerated; unhandledrejection scope; UA-flag probe alternative)
 
 ## CORRECTION: unhandledrejection IS fully implemented in servo upstream (2026-11-26)
 
@@ -2321,7 +2312,6 @@ Earlier claim was wrong. Full chain exists: SM promise_rejection_tracker hook (s
 ## Navigation chain detail + final options (2026-11-26 endgame)
 
 VERIFIED LIVE: yt-page-data-updated + yt-navigate-finish both fire correctly (T2037) — navigation completion machinery works. yt-show-search-contents-command NEVER fires. Bundle analysis: navigate-finish fires in a promise continuation after publishPageData (fEm/Uue at ~3808572 of /tmp/ytbase.js). Response commands resolve via gMl.handleResponse→commandHandler.resolveCommand — gated by commandAllowlist (xQ5). The show-contents command is NOT in servo's response data (only adsControlFlow present). REMAINING DECISIVE TEST (needs fresh session): capture youtubei/v1/search response body in servo AND in Chrome (this mac has Chrome) and diff — if Chrome's response contains the command, servo's client-context in the POST payload diverges (missing capability flags); if neither has it, the trigger is purely client-side render-completion logic inside publishPageData chain and needs breakpoint-level tracing. Cheapest immediate alternative: implement a shell-side shim (auto-inject the direct handler call when data arrives — proven working) as the alpha mitigation while the trigger hunt continues.
-||||||| parent of fa21179f982 (memory: sec1zt24 — location theory retracted, devtools artifact)
 
 ## sec1zt24 — CORRECTION: location wedge is devtools-eval artifact, page JS unaffected — location theory DEAD (2026-11-26)
 
@@ -2329,7 +2319,6 @@ Definitive discrimination test: page with inline script accessing location.hostn
 ## sec1zt24 — CORRECTION: location wedge is devtools-eval artifact, page JS unaffected — location theory DEAD (2026-11-26)
 
 Definitive discrimination test: page with inline script accessing location.hostname + history.pushState + location.pathname — title shows LOC-OK:127.0.0.1|PS-OK:/spa-path — **real page JavaScript location access works perfectly, incl. pushState SPA pattern**. The persistent 'same origin-domain' throw is specific to devtools evaluateJS: entry settings object for devtools eval is not the page global, so the spec check correctly throws FOR THE EVAL ONLY. sec1zt23's 'prime mechanism suspect' is RETRACTED — it was instrumentation artifact. (Side findings that stand: location.href full navigation DOES work on simple pages — iana.org nav succeeded; and devtools eval of location.* will always throw — workaround: read location indirectly via document.URL or a page-side mirror.) ALSO: the servo FIXME in location.rs document_if_same_origin is real but only affects not-fully-active edge cases, NOT the youtube defect. BACK TO EVIDENCE: home unhide works (SPA-navigated), search unhide fails (initial loads). The open discriminator is initial-load vs SPA-nav for the SEARCH page specifically.
-||||||| parent of 403c3881c (memory: nav events fire; command never dispatches; response-diff test + shim option as the fork)
 
 ## hideContents origin refined (2026-11-26 endgame-2)
 
@@ -2348,7 +2337,6 @@ Live SPA navigation triggered (search-box type + enter works!). Captured actual 
 ## ★ REFRAME — the bug may be the erroneous HIDE, not a missing unhide (endgame-6)
 
 Deep scan of fully-processed ys.data: only showDialogCommand + adsControlFlowOpportunity — showSearchContentsCommand absent everywhere in every layer (initial data, SPA payload, processed data, all JS chunks). Since no trigger exists anywhere, reconsider: perhaps in Chrome the hidden write NEVER HAPPENS on direct loads (nothing to hide — no prior contents). The hide at T1469 (qJC binding evaluation with hideContents momentarily true) may be SERVO'S ERROR — data.hideContents incorrectly true during boot. New prime question: what makes hideContents true in servo on a direct load? The binding evaluates [[data.hideContents]] — for it to fire true, some logic SET it true. That set is the defect's origin. Hunt direction flipped: find the hide-write logic (probably in navigation-start/page-data logic misfiring on initial load in servo — e.g. treating initial load as a replacement navigation, possibly because of the boot sequencing or an extra navigation event). KEY supporting evidence: yt-navigate events fired at T2037 — if servo fires an EXTRA/duplicate navigation or page-data event that Chrome doesn't, the hide-during-navigation logic triggers spuriously.
-||||||| parent of d64c64ac09a (memory: sec1zt25 — mechanism fully decoded, trigger never fires)
 
 ## sec1zt25 — full mechanism chain decoded: the yt-show-search-contents-command action never fires (2026-11-26)
 
@@ -2356,7 +2344,6 @@ STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds
 ## sec1zt25 — full mechanism chain decoded: the yt-show-search-contents-command action never fires (2026-11-26)
 
 STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds `hidden="[[data.hideContents]]"` on ytd-two-column-search-results-renderer. The ONLY write that clears it: `onYtShowSearchContentsCommand(){this.set("data.hideContents",!1)}` registered via `actionMap={"yt-show-search-contents-command":"onYtShowSearchContentsCommand"}` in the YtActionHandlerBehavior — actions flow as `yt-action` DOM events carrying detail.actionName, routed by the _.jL singleton router. LIVE VERIFIED on stuck servo page: handler IS registered (typeof function), manual `ys.set('data.hideContents', false)` unhides + full render 7960px — binding chain perfect. Response data (1.66MB) contains NO showSearchContents anywhere (568 other Command refs) and NO hideContents key — the action trigger is purely client-side, fired when response processing completes. BOOT CAPTURE (dispatchEvent spy installed T+7.2s mid-boot): yt-action events DO fire (yt-open-video-preview-action, yt-forward-redux-action-to-live-chat-iframe x8) but yt-show-search-contents-command NEVER fires. The action-routing infrastructure works; the specific trigger never executes. The 'yt-show-search-contents-command' string appears exactly ONCE in ytbase.js (the registration) — so the firing site is either in another jsbin (search controller bundle — bins loaded incl. webcomponents-sd, scheduler, spf, network — full bin list not yet grepped) or constructed dynamically. NEXT: grep all loaded bins for the firing logic, OR compare against Chrome capture of the same event stream to see exact expected firing time/context. Hypothesis space narrowed to: some completion condition in the search response-processing controller never becomes true in servo (e.g. all-renderers-stamped signal, an idle callback, a specific promise chain, or visibility-of-something gate).
-||||||| parent of aa4392968 (memory: reframe — the erroneous hide may be the bug, not a missing unhide)
 
 ## Chrome comparison — DECISIVE END STATE (endgame-7 FINAL)
 
@@ -2369,7 +2356,6 @@ Fresh-boot hidden setter instrumentation: hid=1 at T1522, stack: vj5 → qJC →
 ## Shim negative + protocol note (endgame-9 FINAL)
 
 Prototyped auto-shim (500ms interval, fires ys.onYtShowSearchContentsCommand when hidden+data present) — NEVER self-fired across 20s despite hidden=true/vrs=19. Condition never satisfied in-page: likely onYtShowSearchContentsCommand not present as callable on the element instance at poll times (behavior method wiring differs), OR ys.data/.contents timing. Manual direct call DID work earlier in a different boot — variance again. Devtools protocol gotcha: evaluateJS replies sometimes arrive wrapped {"Ok":{...}} vs nested — extraction must handle both; socket noise heavy. Honest close for this session: the shim path is NOT trivially reliable — the element instance method availability itself varies boot-to-boot, which is itself another manifestation of the initialization race the rIC fix partially addressed. Deepest consistent frame: something in the behavior/action wiring finalizes late or never on the results-page elements in servo.
-||||||| parent of 07805d5dda8 (memory: sec1zt26 — breakthrough: nav-completion events absent in servo)
 
 ## sec1zt26 — BREAKTHROUGH: chrome ground truth — yt-navigate-finish/yt-page-data-updated never fire in servo (2026-11-26)
 
@@ -2377,7 +2363,6 @@ CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDo
 ## sec1zt26 — BREAKTHROUGH: chrome ground truth — yt-navigate-finish/yt-page-data-updated never fire in servo (2026-11-26)
 
 CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDocument — TRUE pre-boot injection, the capability devtools-eval lacks): on a WORKING chrome render of the same youtube search (hidden:false, h:7143): **yt-show-search-contents-command NEVER FIRES IN CHROME EITHER** — the action-based unhide theory is DEAD; that's a legacy/unused path. The events that DO fire in chrome: yt-page-data-fetched:1, yt-page-data-updated:1, yt-navigate-finish:1, yt-update-title:1, yt-renderidom-finished:9, yt-rendererstamper-finished:22. **SERVO CAPTURE COMPARISON: yt-navigate-finish, yt-page-data-fetched, yt-page-data-updated, yt-update-title ALL ABSENT in servo** — the navigation/response-processing completion events never fire. yt-rendererstamper-finished and yt-renderidom-finished DO fire in servo — so rendering machinery runs, but the navigation-completion layer never completes. REVISED MECHANISM UNDERSTANDING: hidden is not cleared by an explicit command — in chrome the post-response re-render naturally stamps the replacement without hidden because data.hideContents is falsy in the response (binding `hidden=\"[[data.hideContents]]\"` evaluates false). The servo replacement being stamped WITH hidden means either the binding evaluated against navigation-in-progress state (hideContentsForNavigation-equivalent stuck true because nav completion never happens) or the servo replacement is not the proper client re-render at all. THE QUESTION IS NOW FULLY PRECISE: why doesn't YouTube's navigation-completion machinery (yt-navigate-finish emission) run in servo? yt-navigate-start comparison pending (was in the chrome stream? not captured — check). Servo navigation machinery suspects: popstate/history events, the navigatefinish trigger waiting on some resource/signal, or the response-processing promise chain breaking. NOTE for future captures: chrome CDP addScriptToEvaluateOnNewDocument is the gold-standard pre-boot injection; use it as ground truth for ANY event-stream question.
-||||||| parent of 306713457 (memory: shim negative — handler availability varies; honest close)
 
 ## Shim iteration results — ONE iteration from working mitigation (endgame-10 FINAL)
 
@@ -2390,7 +2375,6 @@ Final measurements: exactly ONE ytd-two-column-search-results-renderer exists (c
 ## REPLACEMENT THEORY DEAD — clean single-boot capture (endgame-12)
 
 Comprehensive identity-tracked capture (setter patch + MO + polls, one boot): exactly ONE write ever — T1724 SETTER hid=1 on el#1 (already connected), one ATTR record T2028, then the SAME single element stays hidden forever. NO replacement, NO re-hide, NO second element. Earlier replacement observations were boot-variant artifacts. The truth is minimal: hide-while-loading write happens once at stamping; unhide write never happens; everything else completes. Frame: in Chrome either the same hide-then-unhide sequence runs with the unhide trigger firing (trigger unknown — command absent everywhere), or Chrome stamps after data finalization so hideContents is never true. The remaining unexplored machinery: the visibility monitor (WHY()/visibilityObserver) — visOpt{calledOnce:false,state:hidden} persists; possible circular dependency (hidden→never intersects→observer never fires→completion never signaled) that Chrome somehow bootstraps through prescan/initial logic.
-||||||| parent of a0968cd0bd5 (memory: sec1zt27 — userscript unlock, unhide fires, defect is replacement re-stamp)
 
 ## sec1zt27 — USERSCRIPT UNLOCK + reversal: hidden-removal FIRES in servo, events all fire — defect is replacement re-stamp (2026-11-26)
 
@@ -2402,7 +2386,6 @@ Comprehensive identity-tracked capture (setter patch + MO + polls, one boot): ex
 **TOOLING: servo has --userscripts <dir> BUILT IN** (components/script/dom/userscripts.rs — scripts evaluated when head element parses, TRUE pre-boot injection, no engine work needed). This replaces all the injection hacks — use for all future framework debugging.
 
 **FULL BOOT CAPTURE with userscript injection — reverses the sec1zt26 narrowing**: yt-page-data-fetched FIRES @1928, yt-page-data-updated @2198, yt-navigate-finish @2199, yt-update-title @2162 — the navigation-completion pipeline COMPLETES in servo! AND critically: **HIDDEN-REMOVE on ytd-two-column-search-results-renderer FIRES @1933** — the unhide write DOES execute! Yet final state is hidden:true. Confirmed synthesis with the replacement docs: removal fires on the boot/SSR element, the response-data replacement then arrives stamped WITH hidden, and no second removal fires for the replacement instance. The events all firing means the completion pipeline is NOT the defect. NEW PRECISE QUESTION: in chrome does the replacement element exist at all / does a second removal fire? ANOMALY OBSERVED: every event in servo fires exactly 3x with identical timestamps — either triple-dispatch in youtube logic (servo-specific) or triple-nested spy wrappers (userscript injected 3x?) — discriminate before trusting multiplicities. ALSO NOTE: sec1zt26's 'events absent in servo' was an artifact of post-boot injection (events fire before T+7s when spies could attach) — corrected.
-||||||| parent of cab1e7635 (memory: replacement theory dead — single write at T1724, never cleared)
 
 ## YouTube hidden-stall ROOT CAUSE — SOLVED to the single wrong bit (endgame-13, FINAL)
 
@@ -2416,7 +2399,6 @@ Both: exactly one write through stack `_setUnmanagedPropertyToNode ← qJC (bind
 Minimal repro needed: custom element w/ template `hidden="[[data.hideContents]]"` stamped before data set — compare written value servo vs Chrome. Requires webcomponents/polymer harness — alternatively instrument qJC's computed value + intermediate path resolution directly in the live servo page (log what value qJC passes and what the binding source resolved to).
 
 Prior layer results all still valid: rIC starvation fix landed (`933f453ad`, verified); stamping reliable post-fix; every other primitive exonerated; visibility-observer state machine noise; replacement theory dead (some boots show element replacement but endgame-12 clean capture shows single element, single write).
-||||||| parent of 40038cbea4b (memory: sec1zt28 — root cause cornered: undefined→true binding write)
 
 ## sec1zt28 — ROOT CAUSE CORNERED: binding writes hidden=true for undefined data.hideContents (2026-11-26)
 
@@ -2495,7 +2477,6 @@ keys on, probe that primitive directly. HIGHEST-VALUE TARGETS: servo's TrustedTy
 
 Symptom index: framework sanitizeDOMValue diverges ONLY for undefined input → check Trusted Types
 object identity/unwrap detection (isUnwrappable) and TT type-tag primitives in servo.
-||||||| parent of 7da7aea6a (memory: write value is zClosurez — Closure expando; resolution walks wrong object)
 
 ## sec1zt31 — ROOT CAUSE FINAL: servo's document.all strict-equals undefined — breaks resin's branch
 
@@ -2635,7 +2616,6 @@ DISK-NEAR-DEATH lesson: concurrent cargo invocations + debug artifacts filled th
 target dir entirely (stale pre-fix servoshell backed up to /tmp/servoshell-backup). Rule reinforced:
 one cargo at a time on this VM; the servo release target dir is expendable once feather shell carries
 the engine — verify engine changes through shell-new dev builds (check-target), not servoshell.
-||||||| parent of ffb102fbd (memory: target=_blank fix implementation state)
 ## HTMLAllCollection round 2 — the proxy class path (endgame-16)
 
 CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
@@ -2677,11 +2657,8 @@ sec1zt36 — post-document.all regression sweep (negative results + one environm
 - google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
   NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
   chase engine causes.
-||||||| parent of 8e00d9628 (memory: aux-popup upstream RefCell blocker filed)
 
 ## Aux-popup upstream blocker (filed): after the windowproxy entry-global fix, window.open gets further but hits `RefCell already borrowed` at script_thread.rs handle_loads_complete / documents.borrow_mut().insert — re-entrancy in the aux browsing context document load path. This is upstream servo popup-path breakage (unexercised in embedding), NOT shell-adoption-specific — popups would crash the same way in any embedder that builds the requested webview. NOTE: window.open was NEVER safe in feather — it panicked even before aux shell support (the entry-global panic fires before the constellation consults the embedder), so the shell's adoption support is strictly additive, no regression either way. Next step when prioritized: backtrace the borrow conflict (RUST_BACKTRACE=1), likely the documents RefCell held across a re-entrant load callback in the initial-about-blank aux document path.
-||||||| parent of 5ca51d09be0 (memory: document.all verification PASSED end-to-end — YouTube results render)
-||||||| parent of acd75309d67 (memory: document.all verification PASSED end-to-end — YouTube results render)
 
 sec1zt34 — document.all verification: PASSED end-to-end (Linux, feather shell-new)
 Verification of the HTMLAllCollection implementation (1a1f702bdd6, other lane) in the integrated
@@ -2718,7 +2695,6 @@ devin-d3790f631f184a44862d36d5fb5f39e4.
 sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
 
 ## Aux-webview verification detail (post-PR156): target=_blank real-link clicks DO open a new tab with correct navigation (verified: injected anchor on example.com → new active tab, omnibox example.org). But the new tab's CONTENT stays stale (shows opener's pixels) — force-repaint at adoption (feather branch aux-paint-fix) is correct but insufficient. Root mechanism: shell never hides inactive webviews and only repaints on servo frame signals — static pages stop producing frames, so ANY tab switch to a static page is potentially stale (same class as the documented F1 paint-invalidation defect, shared-FBO limitation noted in app.rs composite()). The proper fix is in the compositing invalidation layer, not aux-specific. window.open() JS path still blocked by the upstream RefCell-borrow panic in the aux document load; real-link clicks avoid that path entirely.
-||||||| parent of 54bbe9043a5 (memory: document.all named-getter verification)
 youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
 with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
 working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
@@ -2748,7 +2724,6 @@ sec1zt36 — post-document.all regression sweep (negative results + one environm
 
 sec1zt37 — document.all named-getter verified: document.all['id'] returns exact element (identity
 match confirmed on github.com, live length 2782). Spec surface complete except legacy call-form.
-||||||| parent of 7967b23d6 (memory: aux verification detail — opens correct, compositing staleness is shared-FBO class)
 
 ## TESTING GOTCHA (solved mystery): schemeless omnibox input (e.g. `127.0.0.1:8931/x`) is HTTPS-upgraded — net log shows `GET https://127.0.0.1:8931/...` and the server log shows TLS ClientHello bytes hitting the plain-HTTP server ("Bad request syntax" 400). This is correct modern browser behavior (https-first), NOT a regression. Local test pages MUST be typed with explicit `http://` scheme. Symptom-index: "local test server connect error, curl works" → check scheme in net log first.
 
@@ -2760,10 +2735,8 @@ by the aux-webview work as theorized. Caveat: this run redirected gmail.com→ac
 showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
 re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
 The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
-||||||| parent of 97426c6c2 (memory: aux paint residual isolated to create-request builder path)
 
 ## Aux final verification state: post-paint-fix, normal tab switching verified correct both directions, BUT aux-adopted tabs still never paint their content even after manual tab cycling — deeper than frame timing: webview.paint() on the aux webview appears to composite nothing/the wrong thing. Suspect the WebViewBuilder::new_for_create_request path misses some compositor/constellation registration that normal creation performs (compare what new() does beyond builder vs new_for_create_request in components/servo/webview.rs). Tab chrome/navigation/omnibox all correct — purely compositing. This is the last aux-blocking defect; fix site comparison is the next step.
-||||||| parent of d1863b5901e (memory: target=_blank + window.open verification PASSED — popup cluster closed)
 
 sec1zt38 — target=_blank + window.open verification: BOTH PASS, popup cluster CLOSED
 Verified in feather shell-new (main bb465a5, engine 884f5777a85) via eval-injected repro on example.com:
@@ -2786,7 +2759,6 @@ sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with c
 ## COMPOSITING STALENESS CLASS SOLVED: root cause was visibility contention — all webviews permanently "shown", servo composites every shown webview into the shared rendering context on its own refresh schedule, so the active tab's pixels get overwritten by background tabs continuously. Explains: aux tabs never painting (always lost contention), static-page switch staleness (the repaint-force helped only because it repainted AFTER servo's last background composite — race-dependent), and likely a big slice of the historical F1 paint-invalidation defects. Fix in shell-new composite(): hide all non-active webviews, show only active. hide() semantics: throttles script threads + discards decoded image surfaces — standard browser backgrounding. VERIFIED end-to-end: target=_blank correct content immediately, bidirectional tab switching correct. Symptom-index: "correct tab chrome/navigation but pixels belong to a different page" → visibility contention in shared rendering context, check show/hide discipline.
 
 ## ALPHA GATE FINAL VALIDATION (endgame-22): with document.all + rIC + visibility-discipline + paint fixes all in one build, YouTube search renders FULLY UNASSISTED end-to-end — complete chrome, filter chips, sponsored cards, channel cards, video results with thumbnails/avatars/durations/LIVE badges, working scroll. Screenshots: lofi beats results indistinguishable from Chrome. The multi-session hunt chain is closed: rIC starvation → hidden-attribute → resin sanitizer → document.all → compositing visibility. Residual classes: attestation/botwall, background-media-aware visibility throttling, window.open JS-path RefCell panic (upstream).
-||||||| parent of f6a2ad7e986 (memory: stale-composite root cause — show/hide contract, fix verified)
 gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
 and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
 originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
@@ -2820,10 +2792,8 @@ compositing. Symptom: blank white content area on first load after naive show/hi
 first-composite ordering, webview must be show()n before its frames composite.
 Behavioral side effect: hide() throttles background script + discards decoded images (memory win,
 but background media pauses — documented in PR).
-||||||| parent of 74926cca4 (memory: alpha gate final validation — YouTube fully unassisted)
 
 ## Watch-page validation (endgame-23): click-through from search results to watch page works fully — complete player chrome, live chat rendering with scrolling messages, view counts, channel cards, ad pre-roll playing. Deepest YouTube functionality verified to date. PR collision note: Linux lane independently implemented the same visibility fix (#160) — strong cross-lane confirmation of the root cause; theirs closed, #161 primary.
-||||||| parent of f2d7203ae5b (memory: aux-paint residual negative — visibility contention was the whole cause)
 
 sec1zt41 — aux-tab paint residual: NEGATIVE (contradicts f593a5d9cba lane note)
 The "aux-adopted tabs never paint even after cycling" residual does NOT reproduce with the
@@ -2833,7 +2803,6 @@ content immediately (infobox photos included on first paint), and three-way tab 
 lane saw were visibility contention, not a create-request builder registration defect — the
 new_for_create_request path needs no compositor fix. Minor observed artifact: images in a hidden-then-reshown
 tab take a moment to re-decode (hide() discards decoded surfaces by design) — text/layout correct instantly.
-||||||| parent of 993ab15c1 (memory: watch page validated end-to-end)
 
 ## Post-fix breadth matrix (endgame-24, all-in-one build): github.com/login renders complete form ✓, x.com SPA onboarding fully interactive-looking with sso buttons + email field ✓, youtube search+watch+chat ✓, old.reddit ✓ (earlier), wikipedia/cnn no regressions ✓. The compositing visibility fix + document.all together cleared most of the pre-alpha ledger's rendering-defect rows; remaining defect classes: attestation/botwall, background-media throttling, window.open RefCell panic.
 
@@ -2856,10 +2825,8 @@ truncated headlines on BBC/YouTube/every news site (defect-queue engine findings
 CSS-layout feature: inline overflow measurement + ellipsis rendering in the inline box tree.
 Estimate: multi-hour engine feature, not a papercut. Recommend as a dedicated engine-compat mission;
 it's the most visible recurring text-rendering gap on real sites.
-||||||| parent of 97d4f0bd4 (memory: shadow-input typed-text deep chain — endgame-27)
 
 ## Shadow-input typed-text defect — deep chain (endgame-27). Symptom: inputs inside shadow DOM accept focus + keystrokes (keydown/beforeinput/input all fire, value correct internally) but TYPED text never renders. Minimal repro: /tmp/vtest/inputtest.html (vanilla/react/shadow rows). Established facts: (1) isConnected=true inside shadow tree — the is_connected() gate in value_changed (htmlinputelement.rs `if self.upcast::<Node>().is_connected()`) is NOT the cause; (2) initial `value=` attribute and JS `.value=` assignment RENDER CORRECTLY in shadow inputs — so UA-shadow-tree composition, layout, and the value→character-data sync path all fundamentally work in nested shadow context; (3) placeholder text renders and correctly hides on typing (:placeholder-shown state updates correctly); (4) scrollWidth never exceeds clientWidth when typing in shadow input (vanilla: 447/214) — typed text never enters layout; (5) forced repaint (tab switch) doesn't help — not an invalidation-only issue; (6) typing path diverges from JS-set path: KeyReaction::DispatchInput in htmlinputelement::handle_key_reaction does NOT call update_shadow_tree directly — it queues the input event; handle_event then calls value_changed(cx, trusted) for InputEvents, which is the SAME path JS-set uses — yet outcomes differ, so either the input-event-driven value_changed never runs in shadow context, or the damage/invalidation from the typing path (dirty(NodeDamage::Other) on the input node) fails to propagate layout to the nested UA shadow tree; (7) structural fact: servo renders input text via a UA shadow tree (text_input_widget.rs — inner-container > input-editor + input-placeholder divs with text nodes), so input-in-user-shadow = nested shadow roots; editor visibility toggles via `input:placeholder-shown::-servo-text-control-inner-editor { display: none }` in layout/stylesheets/servo.css. NEXT DISCRIMINATOR (cheap, not yet run): type in si2, then force `si2.value = si2.value` via a JS button — if text appears, the typing-path sync is broken DOM-side; if not, layout-side re-traversal of nested UA shadow trees is broken. Also untested: whether `update()` in text_input_widget runs at all during typing in shadow context (instrument with a println — one build cycle). Symptom-index: "input in shadow DOM: focus+events fine, typed text invisible, JS-set text fine" → typing-path sync vs nested-UA-shadow re-layout, see endgame-27.
-||||||| parent of ee587efae6b (memory: gmail marketing click verified — defect fully closed)
 
 sec1zt42 — gmail marketing-page Sign-in click: VERIFIED NAVIGATES (caveat closed)
 The marketing page DID reproduce this run (fresh-profile variance): the Sign in link is exactly as
@@ -2871,7 +2838,6 @@ target=_blank class was the whole cause.
 sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
 
 ## ROOT CAUSE + FIX: shadow-input typed-text defect (endgame-28). println discrimination on instrumented build: typing in light DOM produces UA-WIDGET-SYNC lines, typing in shadow DOM produces NONE — the input-event-driven value_changed never runs in shadow context. Mechanism: Event::dispatch_inner default-action block (event.rs) invoked vtable.handle_event on `self.GetTarget()` for all non-keyboard events — but composed events (the typing input event is composed) are RETARGETED to the outer shadow host during dispatch, so GetTarget() returns the host element, not the input; vtable_for(host) is not a text control, value_changed never fires, the UA widget character data never syncs, typed text never reaches layout. Keyboard events were already special-cased to original_target with a comment describing exactly this principle ("the default action should use the element the event was originally fired on") — the fix generalizes that to ALL events (the light-DOM behavior is unchanged since no retargeting occurs there). Symptom-index final: "input inside shadow DOM: focus+keydown+input events all correct but typed text invisible" → event.rs dispatch_inner default-action retargeting, NOT editing.rs, NOT focus, NOT layout. UPSTREAMABLE — strong funding-model candidate (real-world impact: x.com login, most polymer/lit apps).
-||||||| parent of 95f7851eaf1 (memory: modifier-tracking + egui shift-bracket mechanisms)
 
 sec1zt45 — Symptom: shell keyboard shortcuts using ctrl/shift silently dead → check: WHERE modifiers state is tracked
 feather shell-new tracked winit ModifiersChanged only inside the page-input forwarding path, which
@@ -2882,8 +2848,6 @@ the shifted brace character "{" which has no egui Key variant, so consume_shortc
 Browser-style ctrl+shift+[/] bindings must be intercepted at the winit layer matching the brace
 characters directly. Also symptom-indexed: "ctrl+t appears dead on a blank New Tab" is NOT a defect —
 the shell dedupes blank New Tabs by design (focuses the existing one); verify shortcuts on non-blank tabs.
-||||||| parent of 7e7c08179 (memory: shadow-input root cause — default-action retargeting (endgame-28))
-||||||| parent of ef2680ee8f9 (memory: shortcut mission closeout + verified matrix)
 
 sec1zt46 — keyboard-shortcut mission closeout + verified-working matrix
 Merged: feather#163 (tab-switch shortcuts) + #164 (winit interception + modifier-tracking fix) + #165 (docs).
@@ -2911,7 +2875,6 @@ papercut tails: progress-affordance visibility, Cmd+Shift+T (needs closed-tab tr
 ## endgame-28 VERIFIED + LANDED: event.rs original-target fix committed as bdd924c00 (println-free). Verified: typed text renders in minimal shadow-input repro ("WORKS" with caret) AND real x.com login accepts typed email. Defect class closed. Upstreamable as written — the commit message is upstream-shaped.
 
 ## endgame-28 regression check: alpha gate green post-fix — YouTube search renders unassisted, click-through to watch + ad playback + live chat all intact. The original-target generalization is safe on core paths.
-||||||| parent of 62e85e1190c (memory: text-overflow implementation plan)
 
 sec1zt49 — text-overflow implementation plan (execution starting)
 Target files: components/layout/flow/inline/line.rs (line breaking/trimming), inline_box.rs, text_run.rs.
@@ -2984,7 +2947,6 @@ exist in current servo). Upstream stylo ALREADY implements text-overflow complet
 computed value, longhands.toml, parsing+cascade — it's firefox-derived). Scope collapses to the
 layout half only: read the computed text-overflow in inline layout, truncate at the overflow boundary,
 render the ellipsis glyph. No style-system work needed. Estimated effort drops from days to hours.
-||||||| parent of 2c195280e (memory: dogfood-ui-1 — five shell UI defect fixes + patterns)
 
 ## dogfood-ui-1 — first-dogfood shell UI fixes (2026-11-26, macOS lane)
 
@@ -3031,7 +2993,6 @@ feather PR #175, each verified live. Symptom-index entries:
   copies of huge servo crates (3x libscript rlib @200MB). Purge pattern:
   group by crate-stem+ext, keep newest, delete rest — freed 2.88GB, no
   rebuild breakage (cargo rebuilds only if actually referenced).
-||||||| parent of bd65e51bfc7 (text-overflow: ellipsis — layout implementation in progress + pref enablement)
 
 ## sec1zt56 — text-overflow implementation IN PROGRESS (2026-11-26, linux lane)
 Implementing layout-side text-overflow: ellipsis. Design decisions made:
@@ -3076,12 +3037,10 @@ REPRODUCTION PROTOCOL for live stall (user or lane): run with FEATHER_ACTIONS=1 
 
 ## sec1zt66 — youtube thumbnails: NOT a defect (negative result)
 Initial search-results screenshots showed missing/black thumbnails — investigation: img elements fully load (complete:true, naturalWidth 720, visible:true), computed style chain healthy (opacity 1, visible, correct 500x280 rect), and later screenshots show thumbnail content painting correctly including the first one. Verdict: progressive image load/decode latency on first paint, not a defect. Symptom index — Symptom: images black/missing on first paint then appear later → check: decode-in-flight latency before assuming a rasterization defect; verify img.complete + naturalWidth + computed style before further work. Bonus index: youtube search results fully functional end-to-end on Linux incl. thumbnail paint, channel avatars, duration badges.
-||||||| parent of 9dae65d6d (memory: f2 verification design + mid-flight checkpoint)
 
 ## f2-verification-1 (2026-11-26, macOS lane): marathon campaign mid-flight
 Post-merge verification design: 12-round sustained mixed-use marathon (8 heavy sites/round, cmd+l omnibox navigations — cmd+t does NOT auto-focus the omnibox, typed urls go to the page: testing gotcha indexed; page scroll keys, aggressive tab churn, tab cycling) on the oscillation-guard build, instrumented FEATHER_ACTIONS+INPUT+WEDGE. First 2min checkpoint: 125 actions applied, 5 legit renavs, ZERO loop suppressions, zero panics, CPU 0.0 idle — healthy.
 ANALYSIS for closure honesty: the writeback-convergence design makes oscillation rare in practice — the guard is insurance against a documented historical wedge mechanism, not a proven fix for the reported stall (which never reproduced in-session on ANY build). Correct closure position: guard+instrumentation in place, sustained scripted use healthy, decisive test is the user's next live dogfood with the instrumented build. Ledger statuses refreshed for F1/F3/F4/F5/F8/F14 (fixed in merged PRs, never updated by the original authors).
-||||||| parent of d96d9fa05f4 (memory: sec1zt67 ctrl+shift+T in-progress state)
 
 
 ## sec1zt67 — ctrl+shift+T reopen-closed-tab: IN-PROGRESS state (session context exhausted mid-debug)
@@ -3099,7 +3058,6 @@ ANALYSIS for closure honesty: the writeback-convergence design makes oscillation
 **ROOT CAUSE of the no-visible-reopen**: Action::Open NAVIGATES THE ACTIVE TAB — does not open a new one. The first ctrl+shift+t actually worked but destroyed the page the user was on (favicon swap observed in rt4 was exactly this). LATENT DEFECT affecting open_external_url too — single-instance forwarded urls navigate the current tab rather than opening new ones; #182 verification passed only because the initial tab was a NewTab. ReopenClosedTab fixed to construct Tab::new(id, Page::Web) directly and push to tabset. Debug eprintlns removed for PR.
 **Symptom index**: Symptom: shortcut fires, state mutates, but no visible new tab appears → check: whether the action you reuse navigates the active tab vs creating one (Action::Open navigates; there is no open-in-new-tab action in state.rs).
 **Status**: PR open on devin/1795708996-reopen-closed. Live visual verification incomplete — key fires + recording verified + open-semantics root-caused; end-to-end visual pass flaky due to xdotool coordinate guessing on relaunched sessions. Follow-up: open_external_url should use the same new-tab path.
-||||||| parent of c25500afc (memory: f9 maps evidence — boot stall repro, console errors, activity suspects, engine-state correction)
 
 ## f9-maps-1 (2026-11-26, macOS lane): live repro + console evidence + activity-logic suspects
 F9 CONFIRMED live on current main WITH document.all+rIC+shadow-input fixes: maps.google.com renders map tiles via RASTER FALLBACK (25 img elements, zero canvas elements in DOM, zero shadow hosts) but UI chrome is never created — no #searchboxinput, no #pane, no .app-view-container; total DOM just 148 elements (boot stalls before UI construction). hidden_count=0 — NOT the youtube hidden-stamp pattern.
@@ -3108,7 +3066,6 @@ ACTIVITY-LOGIC ANALYSIS: is_fully_active = is_active() && (top_level || activity
 ENGINE-STATE CORRECTION (important, supersedes earlier panic): document.all IS on feather-engine at components/script/dom/html/htmlallcollection.rs (119e502e6) and rIC fix IS present as 67207dcbd (content-identical cherry-pick of 933f453ad — the original hash is dangling but nothing is lost). Current builds have all three engine fixes. Verified live: YouTube alpha gate holds on merged main.
 DEVTOOLS DEFECT (upstreamable): devtools/actors/worker.rs:141 unwrap panics spam repeatedly (33+ in minutes) once a devtools client connects — worker actor message handling broken; also "packet length missing" noise on client disconnect. Devtools protocol client note: evaluateJS replies arrive wrapped as {"Ok":{...}} not bare — parse accordingly; attach returns unrecognizedPacketType (harmless, evaluation works without it). Working client at /tmp/dtev.py+evq.py pattern (ephemeral — recreate from this note: TCP length-prefixed `len:{json}`, skip root traits, listTabs→tabs[0].actor, getTarget→frame.consoleActor, evaluateJS).
 F6/F7/F15 negatives this session: scrolling verified working end-to-end (wikipedia long-doc), localhost works, omnibox cmd+a select-all works — all three likely Windows-specific or incidentally fixed; recorded in ledger (PR #190).
-||||||| parent of ce0e1a7a710 (memory: sec1zt69 seek-stall flow evidence + harness bisection)
 
 
 ## sec1zt69 — MSE seek-stall: controlled repro + flow evidence + pipeline-level deltas exonerated (2026-11-26, linux)
@@ -3269,7 +3226,6 @@ Required config: dom_serviceworker_enabled=true (shell pref) — gates `caches` 
 
 ## sec1zt82 — MSE backward-seek: in-band resequencing BREAKTHROUGH — first frame presents post-seek
 Replaced appsrc recreation with in-band injection (pushed as media commit). Mechanism: inject stream-start+segment into the appsrc src pad at first post-seek push — streaming task guaranteed idle then, no §1q wedge. VERIFIED: zero panics, decoder re-prerolls, FIRST FRAME PRESENTS AT EXACT SEEK TARGET with correct position display. Symptom index: 'gst_event_new_caps null-ptr crash event.rs:149' → check: caps must be fixed, ANY caps invalid in caps events — omit caps event when caps are ANY (typefind re-detects). 'post-seek freeze with one frame presented' → check: running-time domain mismatch — frames dropped as too-late, NOT a flow problem. REMAINING HALF (well-defined): segment base/offset or clock rebase so media timestamps map into post-seek running time — frames after the first present. Note harness caveat: mseseekA re-appends the whole file from byte 0, so post-seek frames carry early bitstream timestamps — real MSE players append fragments AT the seek position; the correct fix must handle both. All instrumentation is stderr-logged; env vars SERVO_MSE_RECREATE (old path), SERVO_MSE_GSTSEEK, SERVO_MSE_NOFLUSH gate experimental pieces.
-||||||| parent of 574383c67 (memory: matrix harness state + devtools framing contract)
 
 ## matrix-harness-1 — scenario matrix landed, harness alpha state (2026-11-26)
 - tests/scenarios/ merged (feather PR #201): 13 mechanism-level probe pages + matrix.py harness + README documenting scenario→mechanism mapping.
@@ -3278,7 +3234,6 @@ Replaced appsrc recreation with in-band injection (pushed as media commit). Mech
 
 ## sec1zt83 — session closeout state (2026-11-26, linux)
 SHIPPED: Cache API end-to-end (engine adf65bf76d1 + feather#200 pref, merged) — Discord login boots fully, wasm-bindgen cache-storage class fixed. MSE seek: in-band resequencing breakthrough — first frame presents at exact seek target, zero panics; remaining half is running-time mapping (segment base/offset or clock rebase — WebKit-style custom source is the principled answer). NEXT concrete step for seek continuation: examine how matroskademux derives its output segment from input — the injected bytes-format segment may need format-correct base, OR test with a harness that appends fragments AT the seek position like real players (mseseekA re-feeds from byte 0 — possibly an artifact). YouTube live test inconclusive this run (video rs:0 no data — possibly botwall again). Disk 51GB free.
-||||||| parent of eef12fa46 (memory: matrix harness hang state)
 - matrix-harness-1 addendum: core protocol validated live (banner + listTabs work against a running instance). BUT the full automated run hangs somewhere mid-iteration (>5min, no completion; output prints only at end). Suspects: evaluateJS reply never arrives after location.href navigation and socket timeouts interact badly with the retry/deadline loops, OR console actor resolution stalls on certain page states. NEXT SESSION: instrument matrix.py with per-step stderr logging, reproduce, fix. The probe pages themselves are unaffected (manually verifiable).
 
 ## sec1zt84 — seek hunt: negative results on stream-id/group-id reuse + TIME segment — architectural verdict CONFIRMED
@@ -3286,7 +3241,6 @@ Two more mechanism-level iterations, both insufficient: (1) injected stream-star
 
 ## sec1zt85 — Google Maps boot stall: NON-REPRO (2026-11-26, linux)
 google.com/maps boots fully in feather: complete vector map render (roads/labels/traffic layer), search box, sign-in, zero JS errors, 4 canvases live. Whatever caused the reported stall is fixed by the recent engine work (document.all/cache-api/text-overflow candidates) or was environmental. If it recurs, capture: does the canvas paint tiles (webgl organic validation per memory line 1522 passes), is the stall interaction-specific (pan/zoom) rather than boot.
-||||||| parent of 9c95ef620 (memory: xclick repro negative)
 
 ## xclick-1 — x.com clickable-text glitch repro attempt (2026-11-26, honest negative)
 - Round-3-remainder hunt: "clicking text items glitches" on x.com. REPRO ATTEMPT NEGATIVE on the signup flow: clicking "Continue with phone" opens the modal correctly; clicking the phone input and typing works perfectly (text formats, Continue activates). Neither buttons nor text inputs glitch in the unauthenticated flow.
@@ -3338,10 +3292,8 @@ only. Next step if resumed: instrument yt-core-image custom element reactions, o
 YouTube's IO callbacks fire at all post-scroll (add a probe IO on the same elements — if the probe
 fires but src doesn't populate, framework-internal confirmed; if probe doesn't fire either, the
 observer-root geometry on youtube specifically is the lead).
-||||||| parent of a527049da (memory: harness progress)
 - matrix-harness-2 (2026-11-26): hang FIXED — root cause was location.href navigation never replying to evaluateJS + blocking recv; now fire-and-forget + socket timeouts + reconnects, harness completes all 13 pages end-to-end. REMAINING narrowed bug: evaluateJS results never arrive even on stable pages (every collection times out; listTabs/getTarget verified working). Next: manually probe evaluateJS reply format against a live instance — compare with /tmp/dt.py session transcripts; possibly reply key differs or consoleActor resolution picks a worker actor.
 - matrix-harness-3 (2026-11-26): eval replies flow now (Ok-envelope unwrapped; navigateTo primitive works and acks) — BUT two live-probed facts define the remaining bug: (1) evaluateJS SANDBOX quirk — even READING location.href returns None, strongly suggesting eval runs in a sandbox/scope that isn't the page's window (or location access specifically broken); (2) navigateTo DROPS the devtools connection entirely (EOFError right after the ack) — harness reconnects, but reconnection timing vs page load is racy. Symptom: every page collects the FIRST page's results (visibility probes everywhere) — either eval targets a stale sandbox or MATRIX_RESULTS lookup hits the wrong global. NEXT: eval `typeof window` / `typeof document` / `1+1` in sequence after nav+reconnect and compare against pre-nav; check servo's console.rs whether evaluateJS uses a sandbox global (grep components/devtools/actors/console.rs for sandbox/compile).
-||||||| parent of 443c970735d (memory: sec1zt90 prefers-color-scheme shipped)
 
 sec1zt90 — prefers-color-scheme SHIPPED (feather#205, 2026-11-26, linux lane):
 Sites were locked light because feather never called the engine's existing theme API. Mechanism
@@ -3415,8 +3367,6 @@ suspect, redo carefully. NEXT: ground-truth A/B — load google.co.uk/search?q=t
 chromium via playwright (CDP localhost:29229), dump center_col/parent-chain computed styles +
 matched rules, diff against servo's computed values. The first divergent computed property up
 the chain localizes the broken mechanism.
-||||||| parent of aa2142d13 (memory: first real grid + harness breakthrough chain)
-=======
 
 ## matrix-harness-4 — FIRST REAL GRID PRODUCED (2026-11-26, breakthrough)
 - Grid: 53/61. REAL engine gaps found: WebGL absent in shell-new (shell had it via #112), SVG-in-img rasterization broken (DOM fine, raster transparent), FontFace constructor missing, WebRTC absent. Alpha-gate fixes all hold green. Baseline at feather docs/wiki/SCENARIO-MATRIX.md, PR #206.
