@@ -3500,6 +3500,15 @@ impl Document {
         if !self.rendering_update_reasons.get().is_empty() {
             return true;
         }
+        // Pending idle callbacks need rendering-update ticks to run on: the v1
+        // rIC implementation flushes them at the end of frame callbacks, so a
+        // quiet page (no input, no animation, no renderer ticks) would starve
+        // them forever. Treating pending idle callbacks as a rendering-update
+        // need keeps the script thread's timer-based update loop self-sustaining
+        // until they drain. (YouTube hydration starvation root cause.)
+        if !self.idle_callback_list.borrow().is_empty() {
+            return true;
+        }
         if self.event_handler.has_pending_input_events() {
             return true;
         }
