@@ -3643,3 +3643,9 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 ## sec1zt114 — post-wall google-properties sweep (2026-11-26)
 - Google Sheets (docs.google.com): FULLY RENDERS — complete spreadsheet grid, toolbar, formula bar, data rows, zero /sorry. One tradeoff artifact visible: 'This browser version is no longer supported' banner — google UA-sniffs and Feather/1.0 is an unknown browser. Sheet is still usable. This is the honest-UA cost showing up in-product: walls down, but unsupported-browser banners/nudges appear on UA-sniffing properties. OPEN POLICY QUESTION for coordinator: accept banners on google.*, or hybrid policy (honest UA only on the walled entry endpoints /search + accounts, chrome-ish UA on docs/sheets subapps?) — needs evidence whether docs endpoints themselves wall under chrome UA (they may never have been the wall trigger — /search was).
 - gmail: mail.google.com → accounts signin flow unwalled.
+
+## svg-canvas-source-CLOSED + matrix cross-lane validation (2026-11-26)
+- The svg-canvas-source gap is CLOSED — engine lane implemented rasterize_vector_for_canvas through the image cache (commits d7ad37dab/248425441). Matrix caught it autonomously: grad pixels went from transparent to correct gradient interpolation. PROOF of the matrix doctrine: cross-lane engine fixes surface as grid movement without coordination.
+- Probe lesson: gradient sampling at the midpoint hits exactly 50% interpolation — thresholds must sample asymmetric regions.
+- Grid state close to green-wall: remaining reds ALL explained — webgl x2 environmental (no GPU on VM), webrtc known-large, backdrop-filter unimplemented, range-geometry architectural-documented, cookiestore deliberately reverted, gamepad/webgpu feature-gated-not-enabled.
+- #221 merged (execCommand+credentials in main), #228 merged (Ahem fixture). platform-apis greens on next current-binary grid.
