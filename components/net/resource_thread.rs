@@ -749,8 +749,14 @@ impl CoreResourceManager {
         // Step 11.2. Otherwise, set response to a network error.
         let response = response
             .get_network_error()
-            .map(|_| {
-                Response::network_error(NetworkError::ResourceLoadError("Failed to preload".into()))
+            .map(|e| {
+                // Preserve the underlying error in the message: the discord.com
+                // cold-start investigation hit dozens of these with the detail
+                // discarded, leaving the fetch failure mode invisible.
+                Response::network_error(NetworkError::ResourceLoadError(format!(
+                    "Failed to preload: {:?}",
+                    e
+                )))
             })
             .unwrap_or(response);
         let mut preloaded_resources = preloaded_resources.lock().unwrap();
