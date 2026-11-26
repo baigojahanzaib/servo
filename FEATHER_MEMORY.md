@@ -2718,3 +2718,33 @@ The document.all mission is COMPLETE. Verification evidence: screenshots + eval 
 devin-d3790f631f184a44862d36d5fb5f39e4.
 
 sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
+||||||| parent of 54bbe9043a5 (memory: document.all named-getter verification)
+youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
+with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
+working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
+readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
+planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
+search, watch, playback. This closes the alpha-critical YouTube cluster.
+
+sec1zt36 — post-document.all regression sweep (negative results + one environmental)
+- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
+- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
+- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
+  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
+  chase engine causes.
+youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
+with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
+working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
+readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
+planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
+search, watch, playback. This closes the alpha-critical YouTube cluster.
+
+sec1zt36 — post-document.all regression sweep (negative results + one environmental)
+- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
+- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
+- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
+  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
+  chase engine causes.
+
+sec1zt37 — document.all named-getter verified: document.all['id'] returns exact element (identity
+match confirmed on github.com, live length 2782). Spec surface complete except legacy call-form.
