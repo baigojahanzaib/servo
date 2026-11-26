@@ -8,11 +8,13 @@ use std::sync::Arc;
 
 use app_units::Au;
 use bitflags::bitflags;
-use fonts::{ShapedTextSlice, TrailingWhiteSpace};
+use fonts::{FontRef, ShapedText, ShapedTextSlice, TrailingWhiteSpace};
 use itertools::Either;
 use servo_base::text::Utf32CodeUnits;
 use style::Zero;
+use style::computed_values::overflow_x::T as ComputedOverflow;
 use style::computed_values::position::T as Position;
+use style::values::specified::text::TextOverflowSide;
 use style::values::computed::BaselineShift;
 use style::values::generics::box_::BaselineShiftKeyword;
 use style::values::specified::align::AlignFlags;
@@ -583,6 +585,56 @@ impl LineItemLayout<'_, '_> {
         }
     }
 
+    /// Truncate the given glyph slices so that their total advance, including a
+    /// trailing U+2026 ellipsis shaped in the given font, fits within `available_advance`.
+    /// Returns the truncated glyph slices (with the ellipsis appended), their total
+    /// advance, and the number of characters of the original text retained, or `None`
+    /// if the font does not have a glyph for the ellipsis character.
+    fn truncate_glyphs_for_text_overflow(
+        &mut self,
+        font: &FontRef,
+        slices: &[Arc<ShapedTextSlice>],
+        available_advance: Au,
+    ) -> Option<(Vec<Arc<ShapedTextSlice>>, Au, Utf32CodeUnits)> {
+        let ellipsis_glyph_id = font.glyph_index('\u{2026}')?;
+        let ellipsis_advance = Au::from_f64_px(font.glyph_h_advance(ellipsis_glyph_id));
+        let ellipsis_slice = Arc::new(ShapedTextSlice::whole(ShapedText::single_glyph(
+            '\u{2026}',
+            ellipsis_glyph_id,
+            ellipsis_advance,
+            false, /* is_rtl */
+        )));
+
+        let mut remaining_budget = (available_advance - ellipsis_advance).max(Au::zero());
+        let mut truncated_slices = Vec::new();
+        let mut retained_characters = Utf32CodeUnits(0);
+        for slice in slices {
+            if remaining_budget <= Au::zero() {
+                break;
+            }
+            if slice.total_advance() <= remaining_budget {
+                remaining_budget -= slice.total_advance();
+                retained_characters += slice.character_count();
+                truncated_slices.push(slice.clone());
+                continue;
+            }
+            let (truncated_slice, retained_in_slice) = slice.truncate_to_advance(remaining_budget);
+            retained_characters += retained_in_slice;
+            if truncated_slice.glyph_count() > 0 {
+                truncated_slices.push(truncated_slice);
+            }
+            remaining_budget = Au::zero();
+        }
+
+        let mut total_advance: Au = truncated_slices
+            .iter()
+            .map(|slice| slice.total_advance())
+            .sum();
+        total_advance += ellipsis_advance;
+        truncated_slices.push(ellipsis_slice);
+        Some((truncated_slices, total_advance, retained_characters))
+    }
+
     fn layout_text_run(&mut self, text_item: TextRunLineItem) {
         if text_item.text.is_empty() && !text_item.is_empty_for_text_cursor {
             return;
@@ -602,6 +654,45 @@ impl LineItemLayout<'_, '_> {
             inline_advance += self
                 .justification_adjustment
                 .scale_by(number_of_justification_opportunities as f32);
+        }
+
+        // If the inline formatting context root establishes a scroll container (or clips)
+        // with `text-overflow: ellipsis` at the inline end edge, truncate the glyphs of
+        // this run so that they fit within the line box width, appending an ellipsis
+        // shaped in the font of this run. Note that this is a simplified implementation:
+        // it only handles the common case of horizontal writing modes, truncating whole
+        // glyphs in storage order, and does not truncate atomic inline-level content.
+        let mut glyphs = text_item.text;
+        let mut character_range_in_dom_node = text_item.character_range_in_dom_node.clone();
+        let containing_block_style = self.containing_block().style;
+        if containing_block_style.writing_mode.is_horizontal() {
+            let text_overflow = &containing_block_style.get_text().text_overflow;
+            let overflow_is_clipped = matches!(
+                containing_block_style.get_box().overflow_x,
+                ComputedOverflow::Hidden |
+                    ComputedOverflow::Scroll |
+                    ComputedOverflow::Auto |
+                    ComputedOverflow::Clip
+            );
+            let line_box_inline_size = self.containing_block().inline_size();
+            let inline_start = self.current_state.inline_advance;
+            if overflow_is_clipped &&
+                matches!(text_overflow.second, TextOverflowSide::Ellipsis) &&
+                inline_start + inline_advance > line_box_inline_size
+            {
+                if let Some((truncated_glyphs, truncated_advance, retained_characters)) = self
+                    .truncate_glyphs_for_text_overflow(
+                        &text_item.info.font_info.font,
+                        &glyphs,
+                        line_box_inline_size - inline_start,
+                    )
+                {
+                    glyphs = truncated_glyphs;
+                    inline_advance = truncated_advance;
+                    character_range_in_dom_node.end =
+                        character_range_in_dom_node.start + retained_characters;
+                }
+            }
         }
 
         // The block start of the TextRun is often zero (meaning it has the same font metrics as the
@@ -636,9 +727,9 @@ impl LineItemLayout<'_, '_> {
                     run_data: text_item.text_fragment_run_data,
                     font_metrics: font_metrics.clone(),
                     font_key,
-                    glyphs: text_item.text,
+                    glyphs,
                     justification_adjustment: self.justification_adjustment,
-                    character_range_in_dom_node: text_item.character_range_in_dom_node,
+                    character_range_in_dom_node,
                     is_empty_for_text_cursor: text_item.is_empty_for_text_cursor,
                 })),
                 content_rect,

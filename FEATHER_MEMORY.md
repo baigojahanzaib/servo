@@ -3031,3 +3031,14 @@ feather PR #175, each verified live. Symptom-index entries:
   copies of huge servo crates (3x libscript rlib @200MB). Purge pattern:
   group by crate-stem+ext, keep newest, delete rest — freed 2.88GB, no
   rebuild breakage (cargo rebuilds only if actually referenced).
+||||||| parent of bd65e51bfc7 (text-overflow: ellipsis — layout implementation in progress + pref enablement)
+
+## sec1zt56 — text-overflow implementation IN PROGRESS (2026-11-26, linux lane)
+Implementing layout-side text-overflow: ellipsis. Design decisions made:
+- Property already fully in stylo (cascade/parse) behind runtime-flippable pref `layout.css.text-overflow.enabled`; added servo pref `layout_css_text_overflow_enabled` default TRUE + stylo mapping in config/prefs.rs. First set() always syncs because Default != const_default (user_agent).
+- Implementation point: `layout_text_run` in flow/inline/line.rs — inline_advance vs containing block inline size. IFC containing block style+width accessible via `self.containing_block()`. KEY FACT: glyphs in ShapedText are stored in PHYSICAL left-to-right order (per ShapedTextSlicer comment) — truncating the end of the glyph range truncates the visual end for horizontal text in both directions.
+- text-overflow lives in NON-INHERITED style struct: access `style.get_text().text_overflow` NOT get_inherited_text().
+- fonts primitives added in glyph.rs: `ShapedText::single_glyph` (synthetic one-glyph shaped text for ellipsis), `ShapedTextSlice::whole` constructor, `ShapedTextSlice::truncate_to_advance` (walks glyphs accumulating advance, narrows glyph_range, recomputes caches).
+- Ellipsis shaped via font.glyph_index('\u{2026}') + glyph_h_advance (both pub on Font). If font lacks U+2026: no truncation at all (v1 limitation — should fall back to clipping behavior eventually).
+- v1 documented limitations: horizontal writing modes only; atomic inline content (images/inline-blocks) not truncated; width budget uses IFC containing block content-inline-size rather than the exact padding-box clip edge; string values of text-overflow unsupported; justification adjustment not recomputed after truncation; nested cases where the ellipsis-applying element is not the IFC root not handled.
+- Check overflow_x in (Hidden|Scroll|Auto|Clip); end edge = TextOverflowSide::Ellipsis via `.second` (correct for ltr single+double value forms).

@@ -353,6 +353,21 @@ impl ShapedText {
         self.character_count
     }
 
+    /// Create a [`ShapedText`] containing a single glyph for a single character. This is
+    /// used for synthetic content that is not part of the DOM text, such as the
+    /// `text-overflow` ellipsis.
+    pub fn single_glyph(character: char, glyph_id: GlyphId, advance: Au, is_rtl: bool) -> Arc<Self> {
+        let glyph = ShapedGlyph {
+            glyph_id,
+            string_byte_offset: 0,
+            advance,
+            offset: None,
+        };
+        let mut shaped_text = ShapedText::new(1, is_rtl);
+        shaped_text.add_glyph(character, &glyph);
+        Arc::new(shaped_text)
+    }
+
     /// Adds glyph that corresponds to a single character (as far we know) in the originating string.
     #[inline]
     pub(crate) fn add_glyph(&mut self, character: char, glyph: &ShapedGlyph) {
@@ -671,6 +686,74 @@ impl ShapedTextSlice {
     /// An iterator over the glyphs represented by this [`ShapedTextSlice`].
     pub fn glyphs(&self) -> impl DoubleEndedIterator<Item = GlyphInfo<'_>> + use<'_> {
         self.shaped_text.glyph_slice(self.glyph_range.clone())
+    }
+
+    /// Create a [`ShapedTextSlice`] encompassing all glyphs of the given [`ShapedText`].
+    /// This is used for synthetic content such as the `text-overflow` ellipsis.
+    pub fn whole(shaped_text: Arc<ShapedText>) -> Self {
+        let mut total_advance = Au::zero();
+        let mut character_count = Utf32CodeUnits(0);
+        let mut total_word_separators = 0;
+        for glyph_info in shaped_text.glyphs() {
+            total_advance += glyph_info.advance();
+            character_count += glyph_info.character_count();
+            if glyph_info.char_is_word_separator() {
+                total_word_separators += 1;
+            }
+        }
+        Self {
+            glyph_range: 0..shaped_text.glyph_count(),
+            shaped_text,
+            total_advance,
+            character_count,
+            total_word_separators,
+            trailing_white_space: TrailingWhiteSpace {
+                hangable: GlyphCountAndAdvance::new(0, Au::zero()),
+                removable: GlyphCountAndAdvance::new(0, Au::zero()),
+            },
+            all_white_space: false,
+        }
+    }
+
+    /// Create a copy of this slice truncated so that its total advance is at most
+    /// `max_advance`, dropping whole glyphs from the end of the stored glyph range.
+    /// This is used to implement `text-overflow`, truncating line content that
+    /// overflows its container. Returns the truncated slice along with the number of
+    /// characters of the original text that it still represents.
+    pub fn truncate_to_advance(&self, max_advance: Au) -> (Arc<Self>, Utf32CodeUnits) {
+        let mut advance = Au::zero();
+        let mut character_count = Utf32CodeUnits(0);
+        let mut word_separators = 0;
+        let mut retained_glyph_count = 0;
+        for glyph_info in self.glyphs() {
+            if advance + glyph_info.advance() > max_advance {
+                break;
+            }
+            advance += glyph_info.advance();
+            character_count += glyph_info.character_count();
+            if glyph_info.char_is_word_separator() {
+                word_separators += 1;
+            }
+            retained_glyph_count += 1;
+        }
+
+        if retained_glyph_count == self.glyph_count() {
+            return (Arc::new(self.clone()), character_count);
+        }
+
+        let mut truncated = self.clone();
+        truncated.glyph_range =
+            self.glyph_range.start..self.glyph_range.start + retained_glyph_count;
+        truncated.total_advance = advance;
+        truncated.character_count = character_count;
+        truncated.total_word_separators = word_separators;
+        // Trailing white space information is only relevant while lines are being
+        // constructed. Truncation happens after line layout, so it no longer matters.
+        truncated.trailing_white_space = TrailingWhiteSpace {
+            hangable: GlyphCountAndAdvance::new(0, Au::zero()),
+            removable: GlyphCountAndAdvance::new(0, Au::zero()),
+        };
+        (Arc::new(truncated), character_count)
     }
 
     fn split_off_count(&mut self, trimmed_glyph_count: usize) -> Arc<Self> {
