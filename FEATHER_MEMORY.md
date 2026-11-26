@@ -1055,7 +1055,6 @@ Evidence negatives: zero ERROR/panic lines in stderr (log ends mid-normal-networ
 ### Symptom index additions (per standing rule)
 - Symptom: feather process silently disappears while scrolling a heavy real site (amazon verified; no panic output, no WER event, no exception capture) → check: multiprocess/threading races in script/layout/compositor (PRIME SUSPECT — timing-sensitive heisenbug confirmed by procdump-attachment survival; access violation in native code or silent abort suspected but unproven), OOM (ruled out — dies at <1GB RSS), gstreamer media lifecycle including offscreen-eviction teardown/resume churn (ruled out — reproduces with gstreamer entirely absent from PATH), tab-switch Ctrl+Tab injection (ruled out — reproduces with pure scrolling in a single tab), panic=abort with output loss (ruled out-ish — stderr file capture shows nothing, but a panic inside a thread whose abort precedes flush cannot be fully excluded; the heuristic evidence argues native), Windows Error Reporting pipeline (ruled out as EXPLANATION — LocalDumps configured correctly yet nothing captured, consistent with deliberate abort/ExitProcess paths).
 - Open follow-up: stock servoshell control test (does upstream servo crash identically? — discriminates feather-shell vs engine), then instrumented/debug-engine build for the exception identity. Until characterized, treat ALL heavy-site long-scroll measurement processes as crash-prone: capture stderr always, verify process aliveness before trusting a measurement tail.
-||||||| parent of 551002bcb5e (docs: MSE seek design + symptom index (§1t))
 
 ## §1t — MSE seek implementation (Linux lane, 2026-11-25)
 
@@ -1161,7 +1160,6 @@ REPRO HARNESS (exact): session.json single tab amazon/reddit; launch feather-cra
 
 ## Symptom: claude.ai turnstile still loops with FULL real stack (SAB + Atomics.wait/notify + OffscreenCanvas-2d + WebGL 1/2 all verified present)
 → check: worker-offscreen-WebGL null return (prime suspect if payload runs GL work in a worker unguarded), wasm threads atomics (inconclusive — probe encoding was broken), fingerprint surface beyond JS (TLS/HTTP2 — out of scope per Google decision), behavioral signals. NOTE: four necessary APIs fixed and upstreamable regardless; sufficiency unprovable from outside.
-||||||| parent of 2eb676bd68b (docs: fmp4 indexing + corrected suspect ranking (§1v))
 
 ## §1v — fmp4 buffered indexing + timestampOffset empirical correction
 
@@ -1188,7 +1186,6 @@ Symptom: silent heap-corruption death (0xC0000374 / pageheap AV) on heavy sites,
 → prime remaining suspects (core integration loop): ServoBuilder opts/config differences, multi-webview infrastructure, hidpi scale-factor handling, embedder_traits usage differences, the winit ApplicationHandler shell-servo glue itself.
 → bisect status: STALLED on measurement noise — death-time variance uncharacterized, each knockout test costs 6min. Next step recommended: full debug=2 build for a real capture stack, or replicate baseline 3x to calibrate variance before further knockouts.
 → harness facts: repro = work/feather-crash.exe + session.json reddit single-tab idle, dies ~60-75s; example.com survives 255s+ (content-driven); capture module crashdump.rs uncommitted in feather shell tree; full pageheap ACTIVE on feather-crash.exe in registry.
-||||||| parent of e17213bdb (FEATHER_MEMORY: webgl-spoof experiment verdict — nondeterministic, attribution ambiguous)
 
 ## Symptom: claude.ai turnstile — nondeterministic pass/loop with full real stack + WebGL string spoof
 → check: WebGL RENDERER/VENDOR masked strings (status: spoofed locally to ANGLE-Metal/Google-Inc. values, verified live — NOT PUSHED, experiment only; verdict: insufficient alone, cold-state still loops), cf_clearance cookie hypothesis (status: plausible — the one observed pass occurred with accumulated storage present; a clearance from background-running challenge machinery can't be ruled out, so attribution to the spoof is ambiguous), turnstile internal machinery (status: runs DEEP — service worker + caches + IndexedDB + localstorage all registered under challenges.cloudflare.com origin; the payload executes fully rather than dying on API checks), verdict class (status: nondeterministic — passed once after minutes of runtime, loops other times; server-side risk scoring on aggregate signals means remaining tells are statistical/behavioral + TLS, a different work class than API presence).
@@ -1212,7 +1209,6 @@ Symptom: heap death on heavy sites.
 → FIX IN TESTING (feather shell, uncommitted): webview_needs_paint Cell flag — set in notify_new_frame_ready, gates webview.paint() in redraw. Acceptance test: 5x reddit-idle 420s runs (baseline never survived once). Also restores ucm + favicons + keeps ControlFlow::Wait (servoshell parity, battery win).
 → mechanism theory being tested: rAF-active pages (reddit ad/tracker loops) sustain a composite feedback cycle whose rate is shell-determined; rate scales memory churn; churn scales hit probability of the structured-clone race/UAF. Explains: content-dependence, input-independence, loose time-bomb clustering, shell-specificity.
 → if fix passes: race still exists in engine but becomes unreachable in practice — document as mitigated-not-fixed; upstream-quality repro still valuable. If fix fails: gating stays as pure battery win; hunt resumes on webview-lifecycle/delegate behaviors.
-||||||| parent of 9174c2a5e (FEATHER_MEMORY: video CPU diagnosis — repaint path dominant, media path minor)
 
 ## Symptom: feather burns ~84% of one core playing 720p video (Safari: ~4%)
 → check: vtdec hardware decode (status: ruled out — gst-launch decode-only baseline measures ~1% CPU; hardware decode confirmed active), gst-side videoconvert YUV→BGRA software conversion (status: real but minor — decode+convert pipeline totals ~9.6% CPU in isolation, so ~9 points of the 84), per-pixel frame copies/texture upload (status: ruled out as DOMINANT — 320×180-native video at same display size still burns 75.7%; cost does not scale with frame pixels), display-size rasterization of video rect (status: ruled out — 320px-wide display of same video still 84%), COMPOSITOR/REPAINT PATH (CONFIRMED DOMINANT CAUSE — a plain 30fps rAF background-color animation with NO video/decode/upload/gst involvement burns 77.1%; feather pays ~2.5ms+ main-thread CPU per repaint regardless of what changed. Video is just a 30fps invalidator; ALL animated content pays this — CSS animations, rAF, transitions). window-size scaling partial (500×400 window ~50% vs large window ~84% — consistent with viewport-proportional rasterization plus per-frame constant). open suspects within the repaint path: full display-list rebuild per frame vs tile caching failure (webrender), egui shell chrome repainting in lockstep with content, deprecated macOS GL translation layer cost (glrFlushDrawFramebufferToIOSurface/glTexSubImage2D visible in profile — GL-on-macOS is CPU-translated), main-thread serialization of rasterize+composite.
@@ -1243,7 +1239,6 @@ Symptom: feather pays ~7-8ms+ CPU per composite frame; animated content capped b
 → KEY UNKNOWN: whether multithreaded SIMD swgl rasterization is actually cheaper than Apple's GL-shim draw processing for servo workloads. Firefox public data: SW-WR competitive with GPU-WR on many pages, sometimes faster on weak GPUs — but apple-silicon CPU is fast, so plausibly a large net win vs 78%-CPU-draw-submission status quo. UNKNOWN until measured.
 → CHEAPEST VALIDATION EXPERIMENT (design): stand-alone harness linking swgl + gleam shim rendering representative display lists (solid-color fullscreen rects, text runs, rounded corners) comparing CPU-cost-per-frame vs the measured 7.76ms+ webrender-through-Apple-GL baseline. Est. 1-2 days just to validate, before any servo integration.
 → ESTIMATE if validated: gleam-swgl bridge + painter rewiring + feather present path = days-to-week, comparable uncertainty to ANGLE but all-Rust (no chromium build surgery). Does NOT benefit webgl/canvas GL content — only compositing/rasterization.
-||||||| parent of 8b2c6cff0e6 (docs: timestampOffset + live duration verification (§1w))
 
 ## §1w — timestampOffset + live duration (2026-11-25)
 
@@ -1318,8 +1313,6 @@ Verified mechanisms (function-indexed, for future lanes):
 Stage-1 known gaps (deliberate, per scoping doc): no focus/selection relevance term, no
 contain-intrinsic-size consumption (skipped elements lay out at natural size), no memory win
 yet (layout runs — Stage 2 is eviction), dynamic cv toggling and print path untested.
-||||||| parent of c0341b30e (FEATHER_MEMORY: SW-WR validation verdict + integration facts)
-||||||| parent of 1b01fe497 (FEATHER_MEMORY: SW-WR validation verdict + integration facts)
 
 ## Symptom index addendum 8 — SW-WR validation verdict + integration facts (2026-11-25)
 → VERDICT: webrender-over-swgl composites a representative 1440x900 animated frame at ~1.05ms aggregate CPU vs 7.76ms+ through Apple GL translation — ~7x win, multithreaded (sustained 690fps harness vs 31fps feather anim). SW-WR is the validated direction for macOS repaint cost; ANGLE shrinks to webgl-only scope. Harness: /tmp/swwr-val (standalone cargo project, webrender 0.70 + feature sw_compositor).
@@ -1343,7 +1336,6 @@ KNOWN INTEROP GAPS (v1 accepted, documented):
 VERIFICATION: (1) repaint-cost suite re-run — anim.html CPU must drop from ~77% toward single digits; (2) pixel-diff vs GL-rendered reference pages (screenshot comparison on a few stable test pages); (3) video playback still works; (4) crash-gate: reddit idle repro (same standard as always).
 
 ESTIMATE: core context + painter glue 1-2d, shell present adaptation half day, verification half day. THEN SAB-clone implementation.
-||||||| parent of ee1e33c06c8 (docs: timeout-regression bisect verdict — no regression, wedge artifacts (§1x))
 
 ## 1x. Timeout-"regression" bisect verdict: NO regression — crawl artifacts of the pre-wedge-fix binary (2026-11-25)
 
@@ -1368,7 +1360,6 @@ Residual genuine fails, identical in stock → upstream class, not feather bugs:
 - Symptom: servoshell process vanishes mid-crawl (webdriver port goes connection-refused, rows flip to instant-error at 0ms) → check: structuredclone.rs SameProcess scope (confirmed cause historically — reverted; the UAF mechanism is documented in §1u/line 1276), any future re-implementation of shared-memory cloning that copies serialized bytes out of SM ownership.
 - crawl.py now exits for restart on nav_error/driver_error too, not just timeout (`--stop-on-timeout` semantics widened); xrun.sh implements the 3-strikes consistent-failure attribution loop.
 - Timeout-bisect verdict from §1x stands: arena purge (7d02b70553b), download spool (92080fd7), hidden-doc GC (826f3a5) all ruled out — post-fix parity with stock on every repro site.
-||||||| parent of 543590bf2 (FEATHER_MEMORY: SW-WR outcome — negative-result measurement chain + symptom index)
 
 ## SW-WR integration outcome + symptom index (2026-11-25, macOS lane)
 
@@ -1434,7 +1425,6 @@ real CPU, not vsync blocking. Anim achieves only ~19 of 30 target fps — main t
   FEATHER_NOPAINT / FEATHER_SWWR_NOREAD / FEATHER_SWWR_NOUPLOAD (isolation switches —
   caveat: NOPAINT removes the pipeline throttle so frames run unthrottled; do not interpret
   its absolute CPU as upstream cost).
-||||||| parent of c51f942c2fb (docs: timeout-wedge regression verdict — not live on Linux, trap index (§1z))
 
 ## 1z. Timeout-wedge "regression" verdict: NOT live on Linux HEAD — full survival chain verified (2026-11-25)
 **Claim tested**: "any single timed-out page load permanently kills the browser session" — ordered bisected among arena purge / download spool / hidden-doc GC.
@@ -1468,7 +1458,6 @@ Invariants future lanes must not break:
 - SameProcess streams never leave SM ownership as bytes. The registry key is single-consumer: any path that deserializes the SAME StructuredSerializedData more than once (performance entries per getEntries, history state per navigation) MUST use DifferentProcess — multi-read of a carried buffer panics on second read by design.
 - BroadcastChannel fanout uses DifferentProcess: SAB-over-broadcast throws DataCloneError (interim deviation; proper fix is per-recipient serialization).
 - clone_for_broadcast copying sm_buffer_key would double the ownership — the warn guard there must stay.
-||||||| parent of 959e26fea41 (docs: correct webdriver default-timeout trap + final wedge-bisect verdict (§1za))
 
 ## §1za. Correction: webdriver default page-load timeout exists (300s, spec-compliant) — and the final wedge-bisect verdict (2026-11-25)
 
@@ -1478,7 +1467,6 @@ Final verdict on the timeout-regression bisect order (3x repeated): the wedge do
 
 Symptom index additions:
 - Symptom: "one timed-out page load permanently kills the session" reported by any harness → check IN ORDER: (1) was the harness binary built before 7d150c23be2 (bounded IPC waits, the REAL wedge fix — pre-fix binaries genuinely wedge, dispatcher thread parks forever)? (2) does the harness POST explicit /timeouts — if not, the nav command sits for the full 300s spec default looking dead? (3) is the "wedge" actually process death — roblox-class crash (pre-SameProcess-revert binary)? (4) ONLY THEN suspect engine regressions. On Linux HEAD all four checked: negative, negative, negative, negative.
-||||||| parent of bbe91d60b (memory: metal stage-2 verdict evidence + webgl-null mechanism)
 
 ## Metal stage-2 evaluation (verdict doc feather PR #122)
 
@@ -1501,7 +1489,6 @@ Mechanism notes for future lanes:
 - webgl frames in software mode register as ExternalImageType::Buffer; the outer handler in shared/paint/lib.rs must pass RawData through with UNFLIPPED texel rect (GL textures use flipped uv, memory buffers are already flipped at readback).
 - JS readPixels returning 0,0,0,0 after present is SPEC-CORRECT when preserveDrawingBuffer=false (default) — not a bug.
 - WebGL thread surfaces are IOSurface-backed on macOS — a zero-copy optimization over glReadPixels exists but is unwired; current readback cost is one copy per canvas-frame.
-||||||| parent of 7f2f74a47c1 (docs: real-YouTube seek verification failures + instrumented facts (§1zb))
 
 ## §1zb. Real-YouTube seek verification — harness-verified seek FAILS on real content (2026-11-25/26)
 
@@ -1519,7 +1506,6 @@ Symptom index additions:
 - Symptom: position frozen at exactly X.001 while playback feeding continues (rs 4, no error) → check: post-flush-recreate position derivation in servomse/mse_source.rs (owns the gst segment base after appsrc recreation — prime suspect: recreated appsrc emits segment starting at/near 0 and position mapping clamps or mismatches), video track decode stall after seek (first-frame-only decode if post-seek media doesn't align), per-track position selection logic in servo-media player (which track provides position and whether it re-bases after recreate). NOT the network layer (appends verified flowing), NOT timestampOffset handling (YouTube uses 0 always).
 - Symptom: buffered ranges disagreeing with playback position on real YouTube (index ahead OR behind position) → check: tfdt-scanning indexer vs multi-init quality-switch streams (YouTube switches init segments across bitrates — each quality has own init; indexer may mis-parse across the switch), appendWindow clipping unimplemented?, the X.001 offset pattern suggesting +1ms frame-duration artifacts. WebM indexer verified accurate on uniform content — fMP4 multi-init real-world content is the untested class.
 - Symptom: media error + emptied events immediately after seek-to-zero → check: seek_reset path with target 0 / pipeline state when seek arrives while previous recreate still in flight (three rapid seeks in probe), error propagation from qtdemux on re-fed init segments.
-||||||| parent of 6dd0dce96 (memory: metal default-on milestone)
 
 ## Metal default-on milestone (feather PR #123, 2026-11-25)
 
@@ -1540,7 +1526,6 @@ Symptom: macOS "Developer Tools Access" password dialog appears during automatio
 Symptom: bench harness `wait` with no arguments in a script that launched feather with `&` hangs forever (waits on feather itself) → check: harness backgrounding structure. Never bare `wait` in bench scripts.
 
 Symptom: webgl-heavy content dramatically worse in swgl/metal mode than GL mode (83% vs 62% CPU at 800x600 canvas) while small canvases are fine → FIXED (single-shot readback): the readback bridge issued one read_pixels PER SCANLINE for the vertical flip; driver-call overhead scales with rows, not bytes. Rule: never loop GL driver calls per scanline when a single full-frame read plus in-memory transform works — driver round-trip cost dominates memory bandwidth on unified memory. Also indexed: IOSurface zero-copy evaluated and deprioritized — the memcpy is nearly free on unified memory and stride-padding makes it inexpressible in webrender's tight-packed RawData path anyway.
-||||||| parent of a54647b2f56 (media: streaming EBML indexer — cross-append cluster parsing fixes real-YouTube buffered + forward seek)
 
 ## §1zc. Streaming EBML indexer — real-YouTube buffered fixed, forward seek works, backward stall isolated (2026-11-26)
 
@@ -1580,7 +1565,6 @@ FIX LANDED: mse_position_offset in player.rs — the MediaSource-branch seek sto
 REMAINING BLOCKER (the last one for real-YouTube seek): post-seek playback RESUME is flaky-to-dead. Instrumented facts: seek completes (seeking flag clears), data flows (YouTube re-appends verified), but position pinned at exactly the target and never advances in most runs — the pipeline accepts re-fed bytes without producing advancing playback. Rare runs do advance — race flavor. Seek-to-0 additionally hard-errors the pipeline (error+emptied events — probably the same stall cascading into YouTube's recovery teardown). This is a gst pipeline-state problem inside the flush+recreate design: re-preroll, multiqueue/decodebin3 state after flush, or segment/clock re-derivation on the recreated appsrc. NEXT INSTRUMENTATION PLANNED: GST_DEBUG pad probes on the recreated appsrc output + demux output post-seek — count buffers actually flowing vs dropped, compare working vs stalled runs.
 
 Disk hygiene (user standing rule): pruned 31GB — feather shell debug/incremental (27G) + stock servo target tree (4.4G, binary preserved at /tmp/stock-servoshell). Free space 7.2G→38G.
-||||||| parent of 60c51177f (memory: webgl2 dogfood findings — black-skinning defect, invariant-cost profile, webgl2 verified)
 
 ## Heavy webgl2 dogfooding (2026-11-26, feather docs/webgl2-heavy-dogfood.md)
 
@@ -1654,7 +1638,6 @@ Cross-check rows: jemalloc-heap-allocated 777 / active 798 / mapped 885; smaps a
 **Symptom index — symptom: single idle reddit tab RSS >1GB → check: net image_cache enforcement (prime suspect — cap measurably violated, 309/128MB), double-ownership of decoded surfaces net-cache vs webrender (confirmed structural, 2x copies), DOM text-node mass on shreddit (confirmed 272MB — content-visibility addresses layout not DOM), JS heaps (ruled out as dominant — only ~160MB all realms), layout trees (ruled out — 51MB).**
 
 **Measurement caveats**: measurement-race crash (MessagePort concurrency) NOT hit in 3+ consecutive reddit dumps on Linux — treat as rare. vsize/total-row sums are hierarchical double-counting — never sum all rows; attribute per leaf categories. The url() rows key by document — reddit shows google-recaptcha webworker (29MB malloc + 20MB non-heap!) and accounts.google.com iframes as separate realms — third-party JS is ~90MB of the JS total.
-||||||| parent of ae8dce0ef (memory: black-skinning root cause — unsized RG internalformat rejection, fix verified)
 
 ## Black-skinning root cause + fix (Nov 26, mac lane) — SOLVED
 
@@ -1678,7 +1661,6 @@ rg16fprobe.html, glbtestlive.html. DIAGNOSTIC LESSON: bisecting the three.js VER
 cracked it in 4 steps when mechanism-guessing was stalled; for library-dependent rendering defects, bisect
 the library version FIRST. Also: the texImage InvalidEnum error appeared in WORKING versions too (r183) —
 error-presence is not proof of causation; verify against a passing baseline before chasing.
-||||||| parent of 46ac4ea01a9 (docs: sec1zi — image-cap verdict: structurally toothless (100% pinning), memory is DOM/WR-owned, no hours-scale win exists)
 
 ## sec1zi — image-cache cap verdict: structurally toothless, memory is DOM/WR-owned (2026-11-26)
 
@@ -1713,7 +1695,6 @@ Mechanism chain: scrolling is innocent but causally adjacent — moving through 
 Ruled out: pure create/destroy lifecycle churn — a synthetic MSE teardown loop (460 rapid cycles of video+MediaSource+appendBuffer+abort+remove) survives cleanly. Garbage-fed pipelines never reach the playing state though — the fatal window likely requires a LIVE pipeline mid-teardown (bus messages in flight while dispose finalizes the bus).
 
 Fix options in cost order: (a) intentional-leak mitigation — skip run_dispose when inner is non-unique (the dragons condition is already detected! currently only debug_asserted, compiled out in release) — bounded memory cost per torn-down video, eliminates the whole class; (b) serialize teardown — NULL state + bus drain before dispose, ordering complexity; (c) true root-cause of the violating refholder — 1-2 days gst/glib internals, uncertain. NOTE: the dragons detection already exists in-code — option (a) is small and surgical.
-||||||| parent of 869a38f4e (memory: hw video decode investigation — vtdec active, vp9 gap measured marginal)
 
 ## Hardware video decode investigation (Nov 26, mac lane) — vtdec already active; vp9 gap measured marginal
 
@@ -1736,7 +1717,6 @@ The vp9 gap is real but marginal (~7pp of ~47-59% playback CPU); upgrading bundl
 for vtdec-vp9 is the only available lever and is risky while the vp9/gst threading crash (youtube,
 indexed for the Linux lane) is unresolved — a newer gst may also change that crash's behavior either way.
 Deprioritized behind the compositing-cost program which dominates video CPU regardless of codec.
-||||||| parent of f395e941df8 (media: intentional-leak mitigation for player teardown use-after-finalize)
 
 ## sec1zl — teardown-crash FIX landed: intentional-leak mitigation, 10/10 gate (2026-11-26)
 
@@ -1778,7 +1758,6 @@ Implemented (env-gated FEATHER_IMGMEM=1, default off): eviction unit now deletes
 Verification: compile-clean; forced eviction on r/pics (20MB budget) — evictions fire, 6 re-uploads observed in one scroll cycle, zero crashes, 236 imgs present. BUT the visual gate exposed the predicted gap exactly: visible post image renders BLACK after eviction cycle — because re-upload only triggers on cache READ, and painted images are never re-read (layout resolves keys once at display-list-build time; scrolling does not rebuild). Keys are baked into display lists; the re-uploaded data never reaches already-built lists' visible images unless a reflow happens.
 
 CONSEQUENCE (design validation, not surprise): the step ordering in sec1zn is MANDATORY — eviction must not target visible images, which requires the geometric viewport verdict (step b) BEFORE eviction is safe to enable for real. The black-flash is not a bug in 2a; it is 2a operating exactly as designed without its prerequisite. Stage 2b (geometric verdict, shared with cv-wip) is the next implementation and is the true core of stage 2. Mechanical pieces confirmed working and retained: eviction-unit atomics, re-decode re-upload path, same-key reuse (validates that WR accepts re-adding a deleted key — was an open question).
-||||||| parent of 2a9a2cd88 (memory: energy bakeoff symptom index — video gap, idle win, vm power-sensor negative)
 
 ## Energy bakeoff (2026-11-26, macOS VM) — symptom index entries
 
@@ -1789,7 +1768,6 @@ Symptom: energy measurement on macOS VMs → check: powermetrics cpu_power sampl
 Symptom: browser idle battery drain → check: paint-gating + Metal present path (status: verified fixed — feather idle measures 0.1 CPU ms/s and ZERO package-idle wakeups vs chrome 12.0/3.6 safari 5.0/15.7; an idle feather genuinely does nothing).
 
 Harness: feather repo shell/tools/ebench/ (measure.sh parse.py runall.sh) — reruns the full 12-cell matrix in ~65min on any mac.
-||||||| parent of 2fb7ed59ce8 (memory: make byte-swap real — sole-owner residency, Drop-balanced accounting (stage 2a-fixed))
 
 ## sec1zp — byte-swap made REAL: sole-owner residency; measured -1GB on reddit deep-scroll; corruption gap confirmed (2026-11-26)
 
@@ -1823,7 +1801,6 @@ Symptom: high CPU/energy in video playback → check: videoconvert NV12→BGRA p
 Symptom: video colors wrong (green/purple shift, washed out) after pipeline changes → check: YuvColorSpace/ColorRange hardcoded Rec709+Limited in layout/display_list/mod.rs push_yuv_image (correct for HD h264; wrong for SD BT.601 content — if SD video looks wrong, this is why; proper fix parses gst colorimetry caps), chroma plane order in VideoFrameData::NV12 (verified correct for vtdec output), UV plane dimensions (RG8 half-width half-height — a full-width UV mistake shows as horizontal chroma doubling).
 
 Measurement lesson: copy-pass elimination measured HALF its predicted win (22% vs ~50%) because per-pixel conversion compute merely moves from videoconvert into the rasterizer shader — only memory bandwidth and extra passes are truly saved. When costing pipeline optimizations, separate compute (often conserved) from bandwidth/passes (actually eliminated).
-||||||| parent of 5b347607a85 (memory: stage 2b — geometric eviction verdict + scroll-driven re-upload)
 
 ## sec1zr — stage 2b LANDED: geometric eviction verdict + scroll-driven re-upload; scrollback corruption FIXED (2026-11-26)
 
@@ -1840,7 +1817,6 @@ Symptom index: symptom "image black after scrollback (FEATHER_IMGMEM)" -> status
 Attempted stage-3 cheap core: moving the re-upload batch (reverse-index build + re-decode + add_image) off the layout/scroll thread onto the cache thread pool. Result: webrender render_api RecvError panic then pthread_mutex_destroy/signal-11 during active scrolling — the WR render backend dies when image updates arrive from pool threads mid-scroll. Mechanism unproven but the timing correlation is exact (sync path never crashes across all prior verification runs; async crashed on first deep-scroll test). Candidate mechanisms: (a) paint_api/CrossProcessPaintApi add_image not safe from arbitrary pool threads in single-process mode; (b) concurrent in-flight batches racing WR texture-cache updates; (c) pool-thread re-decode lifetime interacting with WR frame rendering. NOT investigated further — cost/benefit poor because the sync path is verified-correct and the jank it risks is unmeasured.
 DECISION: sync re-upload is the shipped design. Re-pin/re-decode scroll-path jank is a DOCUMENTED RESIDUAL — if user-visible jank is reported on slow devices, the correct stage-3 is a properly-designed async pipeline (bounded queue, single dedicated re-decode thread, generation-tagged uploads), not a thread-pool spawn.
 Symptom index: symptom "webrender RecvError panic + signal 11 during scrolling" -> check: image updates arriving from non-layout threads (prime suspect when FEATHER_IMGMEM re-uploads are pool-offloaded — reverted); NOT the gstreamer teardown class (different signature: no gst assertions precede).
-||||||| parent of 2749277e5 (memory: pre-alpha dogfood symptom index — coordinate defect, action stall, video handoff)
 
 ## Pre-alpha dogfood (2026-11-26, shell-new macOS) — symptom index entries
 
@@ -1861,7 +1837,6 @@ Symptom: SPA renders but never becomes interactive though JS partially runs (ana
 Symptom: cannot diagnose engine JS failures in embedding → console output and uncaught exceptions invisible in shell-new (nothing surfaces); servo's devtools server exists behind devtools_server_enabled pref but shell doesn't wire it; diagnosis requires blind localhost-probe pages — highest-leverage tooling fix available.
 
 Lesson: probe pages testing typeof/guarded-call behavior loaded in the target browser beat log spelunking when no console exists — write results visibly into the DOM, click page once to force the first paint (F4 invalidation gap).
-||||||| parent of 251f095a8d6 (memory: stage 4 — hysteresis margins + 256MB default budget; video-plane crash root-caused (independent defect))
 
 ## sec1zt — stage 4 landed (hysteresis + budget tuning) + VIDEO-PLANE CRASH root-caused (independent of imgmem) (2026-11-26)
 
@@ -1987,8 +1962,6 @@ Symptom index: symptom "js/dom/text-nodes rows hundreds of MB" -> check: page co
 Post-everything measurement (planar video + seek-ack fix + MSE quota, feather debug build, idle r/pics, 5 consecutive 60s memdumps): image-cache converges 711MB transient → **267MB flat at cap** across 4 steady-state dumps — eviction convergence confirmed in the wild; the 711 first-dump was the initial decode-burst transient before eviction catches up (bounded, self-correcting — but worth knowing: eviction lags burst loads). SourceBuffer **68MB flat** across all steady-state dumps — bounded consistent with quota enforcement (though under the 100MB 2-track cap, so enforcement not definitively stress-proven in the wild — the synthetic paused-append test remains the proof). RSS 1474MB idle — vs sec1zj-era 1162MB: the delta is media/gst preload cost + encoded retention growth, all now bounded.
 
 Remaining open engineering item, deliberately not attempted: playerleak deferred-dispose-retry. Risk assessment: the dragons-condition refcount semantics are subtle (glib clone counting unverified), a wrong implementation resurrects the use-after-finalize crash class (alpha-critical) — risk-adjusted ROI poor vs the few-MB leak cost. Documented for a future careful session.
-||||||| parent of d27770055 (memory: youtube hidden-attribute root cause chain)
-||||||| parent of 4860cfd90 (memory: youtube final unhide chain + replacement mechanism + tooling patterns)
 
 ## YouTube boot instability — OOM + define_properties panic (2026-11-26, macOS lane, round 3)
 
@@ -1999,7 +1972,6 @@ CONFIRMED ENGINE DEFECT regardless of memory: `define_guarded_properties` in scr
 Unifying theory for the YouTube hidden-attribute stall: boot corruption from memory pressure explains the run-to-run variance — full boot (video test), stuck-hidden boot (most common), crash boot. The final unhide step may be a victim of corruption rather than a missing primitive. Ruled out for the unhide this round: yt-navigate event chain (all events fire correctly on both watch AND search navs — start/player-updated/finish/page-data-updated), scheduler.postTask (unused by YouTube entirely), Trusted Types, CE machinery.
 
 Meaningful functionality baseline established: watch→watch SPA navigation flawless, miniplayer works, autoplay chain works, video playback correct post-planar-fix (F3 confirmed fixed end-to-end on real YouTube MSE).
-||||||| parent of 0d6c6745b5d (memory: sec1zt3 — gst pipeline mass is the RSS-dominant frontier)
 
 ## sec1zt3 — THE NEXT MEMORY FRONTIER: gst decode-pipeline mass is RSS-dominant and reporter-invisible (2026-11-26)
 
@@ -2015,7 +1987,6 @@ Deep-scroll verification with ALL fixes (eviction ON, r/pics video-heavy, scroll
 Symptom index: symptom "RSS huge but memreport categories all bounded/small on video-heavy pages" -> check: gst pipeline frame memory FIRST (system-malloc invisible to jemalloc rows — verification must use RSS not memreport), multiqueue/decoder bufferpool retention in paused/preloaded pipelines. NOT image cache/eviction regression — verify categories before suspecting them.
 
 OPEN MISSION-CLASS questions: (1) how many concurrent gst pipelines does a feed scroll accumulate and when do they die (shreddit virtualization destroys post elements — does teardown actually happen?); (2) multiqueue/decoder pool sizes per pipeline — the multiqueue default buffers are time-based not byte-capped for video; (3) whether preloaded-but-never-played videos can be prevented from prerolling deep frame buffers at all (decode-on-play activation — the natural architectural fix, echoes the image-memory lesson: the only real win is not decoding what isn't visible).
->>>>>>> 0d6c6745b5d (memory: sec1zt3 — gst pipeline mass is the RSS-dominant frontier)
 
 ## sec1zt4 — RSS forensic numbers: the 5GB gap decomposition starting point (2026-11-26 continuation of sec1zt3)
 
@@ -2036,12 +2007,10 @@ Decisive test: identical r/pics 15×1500px deep-scroll with MALLOC_ARENA_MAX=2 e
 ## sec1zt8 — residual forensics post-arena-cap: the giant mmap is NOT arenas (2026-11-26)
 
 Post-cap measurement (MALLOC_ARENA_MAX=2, r/pics scrolled, RSS 4.5GB): a **single 2.6GB contiguous anonymous rw-p mmap** persists plus [heap] 173MB and several 100-250MB mmaps. Since arenas are now capped, the giant contiguous mmap CANNOT be glibc thread arenas — revised attribution: most likely **jemalloc's own extent regions** (jemalloc mmaps large contiguous chunks; heap-mapped was ~2GB in the uncapped measurement, consistent scale) — meaning the residual giant-mmap mass IS inside jemalloc accounting after all, and the real question becomes the sec1zt4 second gap: jemalloc-heap-allocated 1.68GB vs sum-of-category-rows — i.e. LIVE-but-unaccounted allocation inside the Rust heap, not retention. Suspects for unaccounted live jemalloc mass: (a) mozjs GC/JS objects measured only partially by gc-heap rows; (b) layout/script structures outside the reporter tree; (c) WR internal structures. RESUMPTION: compare jemalloc-heap-allocated vs heap-mapped and category-sum at matched timestamps; if allocated≈1.7GB ≈ giant mmap, the frontier is 'unaccounted live rust heap' — use heaptrack or jemalloc prof (MALLOC_CONF=prof:true) for definitive attribution. The arena-cap fix (feather#153 merged) already removed 3.2GB; the residual ~4.5GB decomposes as ~2GB jemalloc (partially unaccounted) + [heap]+glibc ~0.7GB + remainder TBD.
-||||||| parent of a49fec672 (memory: youtube boot instability — OOM + define_properties panic, unifying theory)
 
 ## js_mem_max 192MB was the YouTube boot-crash cause — raised to 1GB (2026-11-26, macOS lane)
 
 The shell's `js_mem_max=192` runaway cap (kept from memory-pressure work, predates heavy-SPA dogfooding) hard-caps SpiderMonkey — YouTube boot exceeds it: uncaught 'out of memory' in the main module + define_properties unwrap panic at interface.rs:434 killing the pipeline. Explains boot variance: full/wedged/crashed depending on when the ceiling hit. Fixed in shell-new: 1GB default, FEATHER_JS_MEM_MAX env override. HONEST NEGATIVE: the hidden-attribute stall is NOT memory-caused — clean 1GB boot still ends stuck-hidden with 19 renderers built; that defect is deterministic logic, memory was only crash/wedge variance. Rule for future memory work: caps tuned against lightweight sites silently break heavy SPAs — verify against YouTube before adopting memory ceilings.
-||||||| parent of 090076e5d0b (memory: sec1zt9 — memory program closeout 7.4GB→1.46GB)
 
 ## sec1zt9 — MEMORY PROGRAM CLOSEOUT: combined eviction+arena-cap measurement (2026-11-26)
 
@@ -2067,8 +2036,6 @@ Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identic
 | **combined (feather shell default config)** | **1.46GB FLAT** |
 
 **−5.9GB, 80% reduction, zero panics, zero playerleaks.** Settled flat (1458→1462→1463MB across minutes). Non-obvious interaction: combined is far better than either lever alone — eviction frees jemalloc image mass fast enough that less churn crosses into glibc arenas, and capped arenas can't retain what little gst churn remains. IMPORTANT nuance for all lanes: eviction-only measurements were nearly useless against RSS BECAUSE the freed masses were being re-captured by arena retention — the two levers are multiplicative, and any future memory fix must be measured with BOTH active or its effect will be invisible. This is the closeout number for the memory program; residual 1.46GB decomposes as bounded jemalloc live set (DOM/text/XHR/sourcebuffer categories documented in sec1zr-zs) + gst working set — the unaccounted-jemalloc question of sec1zt8 is largely ANSWERED by this measurement: most of the 'unaccounted' mass was arena retention after all.
->>>>>>> 090076e5d0b (memory: sec1zt9 — memory program closeout 7.4GB→1.46GB)
-||||||| parent of 24964296b (memory: js_mem_max resolution + honest negative on hidden stall)
 
 ## Devtools server wired into shell-new — diagnostic capability unlock (2026-11-26, macOS lane)
 
@@ -2099,7 +2066,6 @@ Framework manipulates hidden via PROPERTY assignment (`el.hidden =`), not setAtt
 - YTD-TWO-COLUMN-SEARCH-RESULTS-RENDERER: hid=1 via qJC at T1469 — never followed by hid=0. The framework actively hides it (not just SSR-stamped) and the clearing qJC call never runs.
 - Caveat: replacement-via-innerHTML stamping would bypass the property setter (hidden attribute in parsed markup), so replacement-time stamping is invisible to this probe; identity correlation with mutation log not yet done.
 - NEXT LAYER: what calls qJC(hidden=false) for the results renderer in Chrome — get caller chain of qJC by capturing full stack (probe currently stores only frame 2; deepen to full stack) or find the completion signal qJC awaits (search-response processing completion event?). qJC is minified inside ytmainappweb kevlar_base bundle — grep-able in the fetched JS.
-||||||| parent of f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
 
 ## sec1zt10 — YouTube OOM/define_properties theory VERIFIED + fixed (2026-11-26)
 
@@ -2129,8 +2095,6 @@ Verification of the macOS lane's unifying theory (memory-pressure boot corruptio
 5. Caveat: the `[interface]` warning never fired in the induced-pressure runs — the interface-definition path apparently wasn't the failure point under this pressure pattern (OOMs hit script execution instead). The fix is verified by construction + general survival, not by direct observation of that path firing. If YouTube instability persists on memory-constrained devices after this, the next suspect is NON-interface OOM corruption of boot state (page-level, not engine-fixable beyond what browsers normally do).
 
 **Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
->>>>>>> f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
-||||||| parent of 5649a3f84 (memory: hidden-property probe — qJC helper identified, unhide never fires)
 
 ## RULED OUT: IntersectionObserver initial-callback hypothesis (2026-11-26, macOS lane)
 
@@ -2144,7 +2108,6 @@ The binding contract (from kevlar_base bundle source): `<ytd-two-column-search-r
 Live probe on stuck page: ytd-search NOT hidden, data.contents present (full response), data.hideContents UNDEFINED (=falsy). Even a single binding evaluation with current data yields hidden=false. Yet elHiddenAttr=true persists. CONCLUSION: the hidden binding on the post-response replacement element NEVER evaluates — not a timing issue, a dead binding.
 
 PRIME FINAL THEORY (untested, next experiment named): the replacement subtree is created through an innerHTML fallback path rather than Polymer templating — elements arrive upgraded but binding-inert (data arrives via direct property assignment, not binding propagation). In Chrome a FEATURE-DETECTION gate selects the template path (live bindings); servo presumably fails that check. Candidate gates in bundle: window.ShadyDOM detection, HTMLTemplateElement/CE capabilities, 'polymer_yticon_killswitch'-style flags. NEXT EXPERIMENT: grep /tmp/ytbase.js for the render-path feature gates (search: ShadyDOM, template binding instantiation, disable-upgrade) and identify which check servo fails. The scheduler theory is dead: detached-textnode MutationObserver sentinel pattern verified working in servo (motest.html: all 4 patterns FIRED incl. YouTube's exact one). IO innocent. Data pipeline innocent. Everything downstream of the dead binding is explained.
-||||||| parent of 1b14407c526 (memory: sec1zt11 — youtube invisible-results narrowed to replacement re-binding)
 
 ## sec1zt11 — YouTube invisible-results investigation, Linux round: mechanism narrowed to data-binding-never-populates (2026-11-26)
 
@@ -2180,7 +2143,6 @@ Mechanism hunt for the invisible-results defect (results in DOM but nothing pain
 - `__data` presence as init discriminator: EVEN THE MASTHEAD (which renders fine) lacks `__data` — it's a Polymer-2-ism modern YouTube doesn't use; macOS lane's init theory partially red-herring. The operative evidence of non-init is img src=none (data never populated), not __data.
 
 **Live suspect chain**: youtubei response processing → framework data-sync into elements never happens for feed elements. The visibility flip (display none→flex on two-column container, hidden clearing) is data-binding-driven — since binding never populates, everything downstream stays collapsed. Next probe directions: (a) does the ytd-search element itself hold response data (.data or framework equiv) — isolates response-processing vs per-element binding; (b) what JSAPI/feature does the data-sync path need — candidates in missing-API class (per cfdcbc39 hydration-stall index): dynamic import()/chunk loading for the framework's lazy data module, or observable/atomic update primitives. NOTE the boot instance DOES get unhidden at T+1952 then replaced — meaning the FIRST element's data-binding DID populate — so response-processing works at least once; the failure is specific to post-replacement re-binding. That narrows it: replacement-time re-hydration trigger, not the data pipeline itself.
->>>>>>> 1b14407c526 (memory: sec1zt11 — youtube invisible-results narrowed to replacement re-binding)
 
 ## sec1zt12 — YouTube invisible-results DEFINITIVE isolation: single-attribute defect (2026-11-26)
 
@@ -2189,7 +2151,6 @@ Decisive force-removal experiment on Linux, live youtube search page: `ytd-two-c
 **The entire invisible-results defect reduces to ONE attribute**: hidden never cleared on the replacement two-column element. Corrections to prior interpretations: (a) img src=none pre-unhide was LAZY-population-on-visibility, NOT missing data — data binding DID populate the replacement elements; (b) the init theories are dead — everything works except the final attribute flip. The open crux, precisely: data binds on the replacement yet hidden never clears — so hidden is NOT data-binding-driven on the replacement; it's a static SSR stamp whose removal logic fired exactly once on the BOOT element (T+1952ms per macOS) BEFORE hydration swapped in the replacement. In real browsers the ordering must differ (replacement completes before unhide fires, or unhide refires). This is a TIMING/ORDERING race between hydration replacement and the visibility-flip trigger — servo-specific ordering exposes it. Next investigation target: what mechanism fires the T+1952 unhide on the boot element — if it's a one-shot data-ready watcher keyed to element identity, the replacement never re-triggers it; the engine-level question is why hydration ordering differs in servo (custom-elements/reactions timing, or rAF/idle-callback scheduling order — both areas where servo's timing is approximate per sec notes on rIC). Workaround-class fix if root cause stays elusive: none generic — it's a youtube-framework-specific race.
 
 Experiment artifacts: /tmp/ytsession holds a live webdriver session id pattern for reuse (single-session limit workaround — reuse don't recreate); force-flip probe script pattern in session history.
-||||||| parent of 6a02aecc0 (memory: hidden binding dead on replacement — feature-gate theory named, scheduler/IO/data all exonerated)
 
 ## YouTube hidden-stall — BINDINGS EXONERATED, final layer (2026-11-26, macOS lane)
 
@@ -2214,7 +2175,6 @@ THE FIX (scoped): servo's rIC must fire when the event loop is idle, INDEPENDENT
 Implementation sites identified: Document::request_idle_callback/run_the_idle_callbacks in components/script/dom/document/document.rs (~lines 2105-2185). Current design: idle callbacks only run inside the animation-frame tick; keepalive via request_animation_frame(AnimationFrameCallback::IdleCallbackTick) — starves when no frames produced.
 
 KEY DISCOVERY: script_thread ALREADY has frame-independent timer infrastructure — `schedule_update_the_rendering_timer_if_necessary(delay)` (components/script/event_loop/script_thread.rs ~line 1088) using TimerEventRequest with a native Box closure callback that sets needs_rendering_update atomic. This proves: native closures CAN be scheduled as timer callbacks without JS handles. THE FIX: when idle callbacks are pending in any document, the script thread should schedule a ~4-16ms timer whose callback forces an idle-callback flush (either by setting needs_rendering_update to force a tick, or directly invoking document.run_the_idle_callbacks for each document with pending callbacks). Simplest correct-shaped version: in request_idle_callback, in addition to the rAF keepalive, post a ScriptThread timer via the window's script-thread access that re-checks/flushes after 16ms; chain while callbacks pending. Everything else (the run logic, deadline semantics) already works — proven correct when ticks occur.
-||||||| parent of 5768d10301e (memory: sec1zt13 — permanent unhide failure, UA-independent, rIC bisect proposal)
 
 ## sec1zt13 — unhide timing evidence: permanent deterministic failure, UA-independent (2026-11-26)
 
@@ -2222,8 +2182,13 @@ Aging experiment: youtube search boot sampled at T+5/20/50/80s — hidden stays 
 ## sec1zt13 — unhide timing evidence: permanent deterministic failure, UA-independent (2026-11-26)
 
 Aging experiment: youtube search boot sampled at T+5/20/50/80s — hidden stays stamped on ytd-two-column-search-results-renderer the ENTIRE time, renderer height 0 throughout. **Not a late-timing issue — the unhide never fires at all in servo, deterministically.** Also: instance-identity polling (T+5.7→22s) shows a SINGLE persistent element instance — no replacement observed in that window, meaning either replacement completes before T+5.7s or doesn't happen; the two-phase race story from macOS couldn't be confirmed in servo timing. Simpler theory consistent with evidence: the unhide mechanism never runs in servo at all (rather than fires-then-gets-discarded). Chrome-UA spoof test: user_agent=Chrome/131 changes NOTHING (still hidden, still zero-height) — defect is UA-independent, shared framework path, and NOT a UA-gating issue. Open crux unchanged but sharpened: WHAT fires the hidden removal in real browsers — candidates narrowed: rIC-scheduled hydration commit (servo's rIC v1 fires callbacks but with non-spec ordering — IdleCallbackTick pumps at rAF rate continuously, so ordering vs rAF/microtasks is wrong; if youtube's commit is ordered relative to rAF/paint in a way servo violates, the commit could run BEFORE the dependent state exists and no-op silently), or custom-elements reaction timing (though CE primitives probe-verified). Cheapest next experiment: rIC-ordering bisect — locally revert/disable rIC (elements then can't schedule the commit at all — if behavior IDENTICAL with and without rIC, the commit either doesn't use rIC or the v1 ordering is irrelevant; if youtube's commit is rIC-dependent and servo ordering breaks it, disabling rIC should change SOMETHING observable).
->>>>>>> 5768d10301e (memory: sec1zt13 — permanent unhide failure, UA-independent, rIC bisect proposal)
 
 ## sec1zt14 — vp9 abort hunt FINAL state + real-YouTube dependency documented (2026-11-26)
 
 Sixth reproduction attempt: extended vp9 seek-churn loop (random seek every 800ms, 171 seeks/2.5min, live decode readyState 4 throughout) — zero panics, process alive. **The vp9 abort is non-reproducible in every harness available on Linux.** Real-YouTube hunting is blocked by a hard dependency: the YouTube player never bootstraps in servo — video element present but src never set, ZERO videoplayback network requests, networkState 0 — the player init is part of the incomplete-boot/visibility defect family (same root class as the hidden-attribute stall). DEPENDENCY CHAIN documented for prioritization: fixing the boot/visibility defect unblocks BOTH the #1-site usability AND the vp9 crash hunt. The vp9 abort mission is closed-exhausted on this lane: negative matrix (5 synthetic harnesses) + extended seek-churn + real-YouTube-blocked-by-boot all documented. Symptom-index final entry: Symptom 'gst vp9 threads crash / abort on youtube' → check: seek-ack teardown race (CONFIRMED FIXED — was real, verified eliminated), playerleak intentional-leak sites (documented, non-crashing), gst decode threads generally (RULED OUT in 6 harnesses), YouTube player bootstrap (blocked upstream by boot-visibility defect — retest there once boot fixed).
+
+## sec1zt15 — rIC starvation FIXED + the cause-verdict correction: insufficient for YouTube visibility (2026-11-26)
+
+The rIC starvation fix is implemented and landed (commit 6744dae2875): pending idle callbacks count as a rendering-update need in Document::needs_rendering_update, making the script-thread timer machinery self-sustaining on quiet pages. Verified mechanically: quiet-page rictest fires immediately post-settle; rIC registered on live youtube fires within 4s. The fix is spec-closer and correct regardless — SPA quiet-stall class improved.
+
+**CRITICAL CORRECTION to the macOS lane's confirmed-cause verdict**: with rIC firing correctly, YouTube search STILL stays hidden (tcHidden:true, display:none, renderers zero-height at T+22s post-fix). Starvation was real but NOT the sufficient cause — the visibility commit either never gets scheduled, or runs and fails silently for another reason. What remains verified-working: the binding itself (ys.set('data.hideContents', false) unhides live per macOS; force-removeAttribute + display:block renders everything incl. thumbnails per sec1zt12). Sharpened open question: the write of hideContents=false (or equivalent visibility-flip data write) never happens — the failure is UPSTREAM of the binding, in the navigation-completion/response-processing logic. Next investigation is framework-level: fetch the kevlar bundle (youtube's ytbase.js), find the hideContents write site, determine its trigger conditions, and probe which one fails in servo. NOTE for that work: webdriver can't inject pre-load — analysis must be static (read the bundle) or use servo devtools protocol. ALSO NOTE: merge-artifact duplication existed in this file from conflict union-merges (cleaned marker lines 2026-11-26; duplicated sec1zt11 body text remains harmless).
