@@ -345,7 +345,7 @@ impl HTMLIFrameElement {
                     opener: None,
                     load_data,
                     viewport_details,
-                    user_content_manager_id: None,
+                    user_content_manager_id: window.user_content_manager_id(),
                     target_snapshot_params,
                     frame_name: self.frozen_name.borrow().clone(),
                 };

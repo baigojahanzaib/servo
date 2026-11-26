@@ -3639,6 +3639,7 @@ impl ScriptThread {
                     self.unminify_css,
                     self.local_script_source.clone(),
                     user_contents,
+                    incomplete.user_content_manager_id,
                     self.player_context.clone(),
                     #[cfg(feature = "webgpu")]
                     self.gpu_id_hub.clone(),
