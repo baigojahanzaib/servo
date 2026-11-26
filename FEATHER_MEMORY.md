@@ -3747,3 +3747,6 @@ Symptom index: 'google serp legacy/basic html forever, verify 204s but lite=1 ne
 ## ellipsis-scrollwidth-bug (2026-11-27) — upstreamable, precisely isolated
 - scrollWidth clamps to clientWidth when text-overflow:ellipsis applies (80 vs correct 433 control). Servo measures scroll overflow from the ellipsized text run not original content. Breaks truncation-detection tooltips everywhere. PR #243 matrix harness. NEXT: fix in layout ellipsis truncation — scope: measure pre-truncation width. FUNDING-MODEL candidate.
 - git lesson reconfirmed: squash-merges invalidate local commit hashes — always `git rebase origin/main` before pushing branches that raced merges; verify with merge-base --is-ancestor.
+
+## ellipsis-fix-VERIFIED (2026-11-27) — fifth upstreamable engine fix
+- text-overflow ellipsis no longer shrinks scrollable overflow: matrix css-overflow 10/10, scrollWidth 433 correct with ellipsis. Fix = keep original inline_advance in layout_text_run (components/layout/flow/inline/line.rs) — glyph truncation unchanged, only advance accounting. Pushed to feather-engine. UPSTREAM-CANDIDATES.md entry 5 (PR #244). Funding-model ledger now 5 verified fixes.
