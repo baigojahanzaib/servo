@@ -2862,3 +2862,12 @@ en route by shell PR #45 (schemaless localhost/IP literals default to http — t
 was almost certainly schemeless typing defaulting to HTTPS against a plain-http server, exactly as
 the TLS InvalidMessage error suggested). Lesson confirmed: always type explicit http:// for local
 servers; the InvalidContentType symptom means "TLS handshake attempted against plain HTTP".
+
+sec1zt44 — text-overflow: CONFIRMED ENTIRELY UNIMPLEMENTED (scoping result)
+============================================================================
+Zero implementation anywhere in components/style, components/layout, or script — only an
+unrelated mention in the HTML sanitizer. `text-overflow: ellipsis` is silently dropped, clipping
+truncated headlines on BBC/YouTube/every news site (defect-queue engine findings). This is a real
+CSS-layout feature: inline overflow measurement + ellipsis rendering in the inline box tree.
+Estimate: multi-hour engine feature, not a papercut. Recommend as a dedicated engine-compat mission;
+it's the most visible recurring text-rendering gap on real sites.
