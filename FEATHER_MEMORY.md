@@ -1616,3 +1616,21 @@ Evidence chain (pad probes + push counting on signed-in YouTube):
 **Symptom: rs collapses to 0 / currentTime resets to 0 some seconds after a stalled seek → check: YouTube player.js error recovery resetting MSE state (prime suspect — application-level response to starvation, not engine). Not an engine crash.**
 
 Debug-instrumentation recipe (reusable): eprintln in mse_source push_buffer + pad probe on ghost pads post-flush — buffer OUT count vs push count is the decisive lossless-handover metric.
+
+## sec1zg — multi-seek end-to-end state: two fixes landed, resume-flakiness precisely layered
+
+**Symptom: seek target clamped upward/backward seeks impossible → check: MSE seekable mirroring flush-cleared buffered union (CONFIRMED CAUSE — FIXED in 4c14e896601: seekable=[0,duration] for finite MSE, matching Chrome/Firefox; clamping eliminated, targets accepted exactly).**
+
+**Symptom: post-seek position wildly wrong (~90 for target 60) → check: mse_position_offset double-count (CONFIRMED CAUSE — FIXED in 4c14e896601: matroskademux outputs ABSOLUTE cluster timecodes, pipeline positions are natively correct presentation times; offset removed; verified correct advancing positions when playing). The earlier rebase theory (sec1ze) is REVISED: demux does not rebase; pre-seek correctness was coincidental (streams start at 0).**
+
+**Symptom: post-seek playback frozen at exact target forever (rs=4, correct data indexed) → multi-layered, partially unresolved:
+- layer 1: byte loss in flush+recreate handover (CONFIRMED — FIXED in 027251a9ed2, atomic reset under tracks lock)
+- layer 2: YouTube feed flakiness — sometimes never re-feeds post-seek (aborts=0, append count frozen); cause unknown, suspect engine-side seek-event completion or timing; NOT a constant — other runs re-feed correctly (73 appends, correct target ranges indexed)
+- layer 3: when fed correctly, pipeline consumption still stalls in most runs — bytes verified entering appsrcs (pushes ok) but playback doesn't advance; pad-probe discrimination of source-exit vs downstream starvation inconclusive across flaky runs. Suspects: decodebin3 stream-id handling of recreated appsrc stream-start (new random stream-id on existing topology), segment/running-time vs pipeline clock mismatch, post-flush decoder keyframe re-priming.
+- negative results: appendBuffer errors — none ever observed; feeding logic itself — ruled out as constant cause (feeds correctly in some runs); seekable clamping — ruled out post-fix.**
+
+**Symptom: position collapses to ~0 + rs=0 some seconds after a stalled forward-out-of-range seek → check: YouTube player.js error-recovery teardown/restart (prime suspect — player recreates MSE pipeline, restarts feeding from 0; NOT an engine crash).**
+
+**Probe recipes (reusable): (1) JS wrap SourceBuffer.prototype.appendBuffer/abort counting calls+bytes+errors on window — distinguishes page-side feeding vs engine-side consumption; (2) eprintln push counting + pad probes on servomse ghost pads — decisive lossless-handover metric is buffers-out vs pushes-in; (3) probes must be installed inside seek_reset since pads don't exist earlier. Startup flakiness note: youtube watch pages sometimes serve ads (dur<60) — gate probes on dur>60 with retry+nudging play().**
+
+Honest mission assessment: single-seek sometimes works end-to-end now (correct position, advancing playback); multi-seek does not. The remaining stall is multi-layered race-flakiness centered on the flush+recreate design's interaction with decodebin3 — resolving it may require replacing the design with timestamp-rewriting append pipelines (WebKit-style), est. 1-2d expert gst work, outcome uncertain.
