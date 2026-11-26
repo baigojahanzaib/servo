@@ -2573,3 +2573,5 @@ Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — pro
 ## Post-fix breadth verification (endgame-19)
 
 Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
+
+## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
