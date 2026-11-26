@@ -1838,3 +1838,9 @@ Running bot.sannysoft.com in feather, its own collector errors enumerate exactly
 - `Notification` — undefined (constructor missing entirely)
 - PerformanceObserver: "No valid entry type provided to observe()" — entry-type support diverges
 These presence-level gaps are EXACTLY what botguard-class detection harvests — a real Chrome population has all of them. Google sign-in rejection is plausibly THIS class of problem (API-surface deviation scoring) rather than any single fingerprint. Symptom index: heavy-js bot detection / google signin rejection → FIRST enumerate missing navigator/window constructors vs chrome (sannysoft fpCollect errors are a free oracle); individual API surface gaps are the fix-unit. Cheap shim-level stubs possible for presence-level checks (mediaDevices/enumerateDevices/getBattery/Notification/sendBeacon arity) — but stubs that throw-when-called may score worse than absence; implement carefully, verify each against fpCollect.
+
+
+## alpha refreshed (2026-11-26 15:15) — full punch-list build published
+Both assets on v0.1.0-alpha replaced with the main@71ca874 build: intro-onboarding versioning fix, pin/unpin, favorites, rounded corners, working upload picker (#175), compat-shim v2 (#176 — verified live: mediaDevices/getBattery/Notification/productSub 20030107/pdfViewerEnabled all present), startup GPU logging (#174), crash isolation + capture (#169/#171), GPU-preference exports (#172). zip 167,081,269 / setup.exe 105,696,962.
+GMAIL FINAL: rejection persists even with full presence-level API surface — detection is behavioral/challenge-execution deep, NOT fingerprint-surface. Shim road exhausted; documented. Next probe direction: does the encrypted botguard challenge EXECUTE correctly at all in servo (WASM exception paths, GC stress during challenge).
+KNOWN-ISSUE honesty in release notes: close-button defect documented with fix-in-progress.
