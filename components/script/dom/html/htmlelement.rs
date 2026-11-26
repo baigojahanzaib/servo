@@ -1232,6 +1232,31 @@ impl HTMLElementMethods<crate::DomTypeHolder> for HTMLElement {
     make_bool_getter!(Inert, "inert");
     make_bool_setter!(SetInert, "inert");
 
+    /// <https://html.spec.whatwg.org/multipage/#dom-draggable>
+    /// The `draggable` content attribute is an enumerated attribute with
+    /// `true`/`false`/`auto` states; the IDL attribute is boolean, returning
+    /// true only in the true state and setting "true"/"false" explicitly.
+    fn Draggable(&self) -> bool {
+        use crate::dom::bindings::inheritance::Castable;
+        use crate::dom::element::Element;
+        self.upcast::<Element>()
+            .get_string_attribute(&html5ever::local_name!("draggable"))
+            .str()
+            .eq_ignore_ascii_case("true")
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-draggable>
+    fn SetDraggable(&self, cx: &mut js::context::JSContext, value: bool) {
+        use crate::dom::bindings::inheritance::Castable;
+        use crate::dom::element::Element;
+        let string_value = if value { "true" } else { "false" };
+        self.upcast::<Element>().set_attribute(
+            cx,
+            &html5ever::local_name!("draggable"),
+            AttrValue::String(string_value.into()),
+        );
+    }
+
     // https://html.spec.whatwg.org/multipage/#globaleventhandlers
     global_event_handlers!(NoOnload);
 

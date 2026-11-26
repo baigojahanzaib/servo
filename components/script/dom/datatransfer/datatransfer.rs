@@ -91,6 +91,14 @@ impl DataTransfer {
     pub(crate) fn data_store(&self) -> Option<Ref<'_, DragDataStore>> {
         Ref::filter_map(self.data_store.borrow(), |data_store| data_store.as_ref()).ok()
     }
+
+    pub(crate) fn drop_effect_string(&self) -> DOMString {
+        self.drop_effect.borrow().clone().root()
+    }
+
+    pub(crate) fn effect_allowed_string(&self) -> DOMString {
+        self.effect_allowed.borrow().clone().root()
+    }
 }
 
 impl DataTransferMethods<crate::DomTypeHolder> for DataTransfer {

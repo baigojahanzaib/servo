@@ -979,16 +979,6 @@ impl DocumentEventHandler {
     ) {
         let is_compatibility_event_for_touch = input_event.is_compatibility_event_for_touch();
 
-        {
-            let mut maybe_drag_gesture = self.drag_gesture.borrow_mut();
-            if maybe_drag_gesture
-                .as_mut()
-                .is_some_and(|drag_gesture| !drag_gesture.handle_mouse_button_event(input_event))
-            {
-                *maybe_drag_gesture = None;
-            }
-        }
-
         let flags = if input_event.primary_button_is_pressed() ||
             input_event.auxiliary_button_is_pressed()
         {
@@ -1003,6 +993,18 @@ impl DocumentEventHandler {
         else {
             return;
         };
+
+        {
+            let mut maybe_drag_gesture = self.drag_gesture.borrow_mut();
+            if maybe_drag_gesture
+                .as_mut()
+                .is_some_and(|drag_gesture| {
+                    !drag_gesture.handle_mouse_button_release(cx, input_event, &hit_test_result)
+                })
+            {
+                *maybe_drag_gesture = None;
+            }
+        }
 
         debug!(
             "{:?}: at {:?}",
