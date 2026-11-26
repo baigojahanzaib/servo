@@ -3616,3 +3616,6 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 - UNBLOCKED: all google properties now testable — gmail, maps, live-SERP container-query validation (was environmentally blocked). The TLS-fingerprint megaproject is definitively dead — impersonation-mismatch was the mechanism.
 - OPEN crash defect: Firefox-UA gecko-flavored SERP stack-overflows StyleThread (rayon thread, deep cascade recursion — servo has no iterative cascade). Repro: FEATHER_USER_AGENT=firefox-UA + google search. Not hit in production config (gecko content never served to chrome/honest UAs) but it's a latent crash class for any deeply-nested page.
 - ALSO SHIPPED this session: svg-canvas-source complete (byte-level completion split, engine 24842544161); layout/query.rs RANGE_DEBUG compile fix for another lane (Fragment lacks Debug — match on variants).
+
+## range-geometry-EMPIRICAL (2026-11-26) — case closed
+- RANGE_DEBUG instrumentation live-verdict: `[range-debug] NO-TRANSFORM fallback hit — fragments=0` (10 hits per page). Text nodes yield ZERO fragments exactly as statically proven via LayoutBox::with_base returning None for Text. Both traps confirmed: empty fragments AND the silent zero-size fallback. Case closed — architectural upstream feature documented in docs/wiki/UPSTREAM-CANDIDATES.md.
