@@ -3373,3 +3373,24 @@ the chain localizes the broken mechanism.
 - HARNESS-SOLVING chain (each proven live): (1) evaluateJS replies wrap in top-level Ok envelope; (2) location.href assignment no-ops in devtools eval — use tab actor navigateTo instead; (3) evaluateJS itself works PERFECTLY (strings/typeof/page globals all fine) — the identical-results mystery was pipeline staleness: after navigateTo, document.URL inside eval showed the PREVIOUS page forever. Root: browsing-context actor's active pipeline never rebinds in practice despite update_pipeline existing (NavigationState::Stop path). UPSTREAM SERVO DEVTOOLS DEFECT — strong upstream candidate.
 - WORKAROUND SHIPPED: boot-per-page isolation — each probe page gets a fresh feather boot (first pipeline IS the page). matrix.py run_one_page. ~10s/page.
 - devtools evaluateJS SANDBOX myth busted: eval runs in the real page context fine — earlier location.href=None was the stale-pipeline effect, not sandboxing.
+
+sec1zt95 — google SERP layout ROOT CAUSE: container queries entirely unimplemented in servo
+(2026-11-26, linux lane): The user-reported SERP breakage (left-aligned, unpadded, full-width
+content) reduces to ONE missing css feature: @container queries. Chain: center_col width
+constraint comes from rules inside `@container srp (max-width: 1147.98px)` blocks — servo
+parse-drops the ENTIRE at-rule (probe: a test @container rule produces ZERO cssom rules),
+so #rcnt:not(.tXI1nd) .ufC5Cb{max-width:652.02px;grid-column:2/-2} never exists, and the
+column expands to the full grid width. Everything else on the SERP works: grid itself
+(resolved template correct), round() in calc VERIFIED SUPPORTED (negative result — do not
+re-hunt), :is(), modern selectors parse. servo probe facts: CSS.supports('container-type',
+'inline-size') false; container-type computed empty; zero container-query cssom. Verified
+via google.co.uk (NOT captcha-walled — use it for all google work) A/B against devin chromium
+playwright CDP. Symptom: modern site renders unstyled-width/left-aligned with css fully
+loaded → check for @container in sheet text vs absence in cssom — parse-drop of the whole
+at-rule is the tell. IMPLEMENTATION notes for the engine mission: servo has no components/style
+in-tree — style engine is upstream stylo dependency; firefox/stylo has container queries since
+ff110 so parsing may already exist behind a feature flag — check the stylo version in
+Cargo.lock for container_queries support before writing anything; servo's side is then the
+evaluation integration (container size evaluation needs layout interleaving — the hard part).
+This is a top-5-property-validated, fleet-wide modern-css gap — highest-value css engine work
+identified so far.
