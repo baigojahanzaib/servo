@@ -3286,3 +3286,8 @@ Two more mechanism-level iterations, both insufficient: (1) injected stream-star
 
 ## sec1zt85 — Google Maps boot stall: NON-REPRO (2026-11-26, linux)
 google.com/maps boots fully in feather: complete vector map render (roads/labels/traffic layer), search box, sign-in, zero JS errors, 4 canvases live. Whatever caused the reported stall is fixed by the recent engine work (document.all/cache-api/text-overflow candidates) or was environmental. If it recurs, capture: does the canvas paint tiles (webgl organic validation per memory line 1522 passes), is the stall interaction-specific (pan/zoom) rather than boot.
+||||||| parent of 9c95ef620 (memory: xclick repro negative)
+
+## xclick-1 — x.com clickable-text glitch repro attempt (2026-11-26, honest negative)
+- Round-3-remainder hunt: "clicking text items glitches" on x.com. REPRO ATTEMPT NEGATIVE on the signup flow: clicking "Continue with phone" opens the modal correctly; clicking the phone input and typing works perfectly (text formats, Continue activates). Neither buttons nor text inputs glitch in the unauthenticated flow.
+- IMPLICATION: the user's glitch is likely in the AUTHENTICATED timeline context (tweet text, links in posts) or is text-SELECTION/drag behavior, not plain clicking. Next repro needs either x.com login credentials, or user clarification on exactly which text items (links? plain text? selection?). Cheap hypothesis to test first: click-DRAG text selection rendering in servo (selection highlight painting) — testable unauthenticated on any text-heavy page.
