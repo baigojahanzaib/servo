@@ -2089,6 +2089,16 @@ ytd-masthead (fully working) ALSO lacks __data/dataReady — modern YouTube elem
 ## PerformanceObserver probe — mostly fine, warning is narrow (2026-11-26, macOS lane)
 
 servo supportedEntryTypes: container, largest-contentful-paint, mark, measure, navigation, paint, resource, visibility-state. observe() accepts every type without throwing (even unsupported ones like longtask/layout-shift — no validation error). The youtube "No valid entry type provided to observe()" warning is therefore NOT a broad PerfObserver gap — likely a specific buffered/option combination; weak lead, deprioritized as boot-telemetry noise unless proven load-bearing.
+
+## YouTube hidden hunt — property-setter probe results (2026-11-26, macOS lane)
+
+Framework manipulates hidden via PROPERTY assignment (`el.hidden =`), not setAttribute — earlier attribute-op logging missed this layer entirely. Hidden-property probe (patched HTMLElement.prototype hidden setter, /tmp/feather-eval-persist.js v-hp) on a fresh search boot:
+
+- ytd-search itself IS unhidden via property write at boot (`setActivePage`, T1457) — page-level logic works.
+- Framework helper `qJC` (in ytmainappweb kevlar_base bundle) is the hide/unhide function: e.g. YTD-WATCH-METADATA gets hid=1 then hid=0 ~39ms later, BOTH through qJC — the unhide counterpart mechanism EXISTS and fires for other elements.
+- YTD-TWO-COLUMN-SEARCH-RESULTS-RENDERER: hid=1 via qJC at T1469 — never followed by hid=0. The framework actively hides it (not just SSR-stamped) and the clearing qJC call never runs.
+- Caveat: replacement-via-innerHTML stamping would bypass the property setter (hidden attribute in parsed markup), so replacement-time stamping is invisible to this probe; identity correlation with mutation log not yet done.
+- NEXT LAYER: what calls qJC(hidden=false) for the results renderer in Chrome — get caller chain of qJC by capturing full stack (probe currently stores only frame 2; deepen to full stack) or find the completion signal qJC awaits (search-response processing completion event?). qJC is minified inside ytmainappweb kevlar_base bundle — grep-able in the fetched JS.
 ||||||| parent of f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
 
 ## sec1zt10 — YouTube OOM/define_properties theory VERIFIED + fixed (2026-11-26)
@@ -2120,3 +2130,4 @@ Verification of the macOS lane's unifying theory (memory-pressure boot corruptio
 
 **Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
 >>>>>>> f8063206702 (memory: sec1zt10 — youtube OOM theory verified + define panic fixed)
+||||||| parent of 5649a3f84 (memory: hidden-property probe — qJC helper identified, unhide never fires)
