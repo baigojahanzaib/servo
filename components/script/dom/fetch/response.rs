@@ -81,6 +81,32 @@ impl Response {
         Self::new_with_proto(cx, global, None)
     }
 
+    /// Reconstruct a `Response` from a serialized Cache-storage entry snapshot.
+    /// Simplified: headers/status/body only, no response type/url fidelity.
+    pub(crate) fn new_cached_response(
+        cx: &mut js::context::JSContext,
+        global: &GlobalScope,
+        entry: &storage_traits::cache_storage::CachedResponse,
+    ) -> Fallible<DomRoot<Response>> {
+        use crate::fetch::body::Extractable;
+
+        let response = Response::new(cx, global);
+        *response.status.borrow_mut() =
+            HttpStatus::new_raw(entry.status, entry.status_text.clone().into_bytes());
+        for (name, value) in &entry.headers {
+            response.Headers(cx).Append(
+                ByteString::new(name.as_bytes().to_vec()),
+                ByteString::new(value.as_bytes().to_vec()),
+            )?;
+        }
+        if !entry.body.is_empty() {
+            let extracted = entry.body.extract(cx, global, false)?;
+            response.body_stream.set(Some(&*extracted.stream));
+            response.fetch_body_stream.set(Some(&*extracted.stream));
+        }
+        Ok(response)
+    }
+
     fn new_with_proto(
         cx: &mut js::context::JSContext,
         global: &GlobalScope,

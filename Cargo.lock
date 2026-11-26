@@ -9773,6 +9773,7 @@ dependencies = [
  "serde",
  "servo-base",
  "servo-malloc-size-of",
+ "servo-net-traits",
  "servo-profile-traits",
  "servo-url",
  "uuid",

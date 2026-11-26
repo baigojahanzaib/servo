@@ -8,6 +8,9 @@ interface Cache {
   // [NewObject] Promise<FrozenArray<Request>> keys(optional RequestInfo request, optional CacheQueryOptions options = {});
   // Workaround until FrozenArray get implemented.
   [NewObject] Promise<sequence<Request>> keys(optional RequestInfo request, optional CacheQueryOptions options = {});
+  [NewObject] Promise<any> match(optional RequestInfo request, optional CacheQueryOptions options = {});
+  [NewObject] Promise<undefined> put(optional RequestInfo request, optional Response response);
+  [NewObject] Promise<boolean> delete(optional RequestInfo request, optional CacheQueryOptions options = {});
 };
 
 dictionary CacheQueryOptions {

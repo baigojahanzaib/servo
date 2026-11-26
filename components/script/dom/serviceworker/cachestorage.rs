@@ -135,6 +135,12 @@ impl CacheStorage {
             },
             // <https://w3c.github.io/ServiceWorker/#cache-storage-open>
             // the steps resolving the promise with the result.
+            CacheStorageThreadResponse::PutEntryResult(_)
+            | CacheStorageThreadResponse::MatchEntryResult(_)
+            | CacheStorageThreadResponse::DeleteEntryResult(_) => debug_assert!(
+                false,
+                "Unexpected entry-op response in CacheStorage handle_response."
+            ),
             CacheStorageThreadResponse::OpenCacheResult { result, cache_name } => {
                 let Some(promise) = self
                     .pending_promises

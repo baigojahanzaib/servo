@@ -14,7 +14,7 @@ use servo_base::generic_channel::{self, GenericReceiver, GenericSender};
 use servo_url::ImmutableOrigin;
 use storage_traits::cache_storage::{
     CacheStorageError, CacheStorageThreadHandle, CacheStorageThreadMessage,
-    CacheStorageThreadResponse,
+    CacheStorageThreadResponse, CachedResponse,
 };
 use storage_traits::client_storage::StorageProxyMap;
 
@@ -50,12 +50,36 @@ trait CacheStorageEngine {
         cache_name: &str,
         proxy_map: &StorageProxyMap,
     ) -> Result<bool, CacheStorageError<Self::Error>>;
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-put>
+    fn put_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        entry: CachedResponse,
+    ) -> Result<(), CacheStorageError<Self::Error>>;
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-match>
+    fn match_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        url: &str,
+    ) -> Result<Option<CachedResponse>, CacheStorageError<Self::Error>>;
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-delete>
+    fn delete_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        url: &str,
+    ) -> Result<bool, CacheStorageError<Self::Error>>;
 }
 
 /// <https://w3c.github.io/ServiceWorker/#dfn-request-response-list>
 pub struct RequestResponseList {
-    /// A list of tuples consisting of a request (a request) and a response (a response)
-    pub list: Vec<(Request, Response)>,
+    /// A list of cached entries keyed by exact request url (simplified matching).
+    pub list: Vec<CachedResponse>,
 }
 
 pub struct MemCacheStorageEngine {
@@ -145,8 +169,8 @@ impl CacheStorageEngine for MemCacheStorageEngine {
             return Err(CacheStorageError::Internal(()));
         };
         // Step 5.2.2: Add requestResponse’s request to requests.
-        for (request, _response) in &relevant_cache.list {
-            requests.push(request.url().to_string());
+        for entry in &relevant_cache.list {
+            requests.push(entry.url.clone());
         }
 
         // Step 5.3: Else:
@@ -196,6 +220,66 @@ impl CacheStorageEngine for MemCacheStorageEngine {
         // Step 2.3.2: Resolve promise with true.
         // Note: promise resolved in script.
         Ok(has)
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-put>
+    /// Simplified: request matching by exact url only (ignoreSearch/ignoreMethod/ignoreVary
+    /// not yet honored). An existing entry with the same url is replaced, per spec step 7.
+    fn put_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        entry: CachedResponse,
+    ) -> Result<(), CacheStorageError<Self::Error>> {
+        let Some(cache) = self
+            .name_to_cache_map
+            .get_mut(&(origin, cache_name.to_string()))
+        else {
+            return Err(CacheStorageError::Internal(()));
+        };
+        cache.list.retain(|existing| existing.url != entry.url);
+        cache.list.push(entry);
+        Ok(())
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-match>
+    /// Simplified exact-url matching.
+    fn match_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        url: &str,
+    ) -> Result<Option<CachedResponse>, CacheStorageError<Self::Error>> {
+        let Some(cache) = self
+            .name_to_cache_map
+            .get(&(origin, cache_name.to_string()))
+        else {
+            return Err(CacheStorageError::Internal(()));
+        };
+        for entry in &cache.list {
+            if entry.url == url {
+                return Ok(Some(entry.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#cache-delete>
+    fn delete_entry(
+        &mut self,
+        origin: ImmutableOrigin,
+        cache_name: &str,
+        url: &str,
+    ) -> Result<bool, CacheStorageError<Self::Error>> {
+        let Some(cache) = self
+            .name_to_cache_map
+            .get_mut(&(origin, cache_name.to_string()))
+        else {
+            return Err(CacheStorageError::Internal(()));
+        };
+        let before = cache.list.len();
+        cache.list.retain(|entry| entry.url != url);
+        Ok(cache.list.len() != before)
     }
 }
 
@@ -316,6 +400,60 @@ where
                         .is_err()
                     {
                         error!("Failed to send response to script for DeleteCache message.");
+                    }
+                },
+                CacheStorageThreadMessage::PutEntry {
+                    cache_name,
+                    entry,
+                    callback,
+                    origin,
+                } => {
+                    let result = self
+                        .engine
+                        .put_entry(origin.clone(), &cache_name, entry);
+                    if callback
+                        .send(CacheStorageThreadResponse::PutEntryResult(
+                            result.map_err(|e| format!("{:?}", e)),
+                        ))
+                        .is_err()
+                    {
+                        error!("Failed to send response to script for PutEntry message.");
+                    }
+                },
+                CacheStorageThreadMessage::MatchEntry {
+                    cache_name,
+                    url,
+                    callback,
+                    origin,
+                } => {
+                    let result = self
+                        .engine
+                        .match_entry(origin.clone(), &cache_name, &url);
+                    if callback
+                        .send(CacheStorageThreadResponse::MatchEntryResult(
+                            result.map_err(|e| format!("{:?}", e)),
+                        ))
+                        .is_err()
+                    {
+                        error!("Failed to send response to script for MatchEntry message.");
+                    }
+                },
+                CacheStorageThreadMessage::DeleteEntry {
+                    cache_name,
+                    url,
+                    callback,
+                    origin,
+                } => {
+                    let result = self
+                        .engine
+                        .delete_entry(origin.clone(), &cache_name, &url);
+                    if callback
+                        .send(CacheStorageThreadResponse::DeleteEntryResult(
+                            result.map_err(|e| format!("{:?}", e)),
+                        ))
+                        .is_err()
+                    {
+                        error!("Failed to send response to script for DeleteEntry message.");
                     }
                 },
                 CacheStorageThreadMessage::Exit(sender) => {

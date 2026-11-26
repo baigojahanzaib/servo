@@ -305,6 +305,12 @@ impl Headers {
         *self.header_list.borrow_mut() = hyper_headers;
     }
 
+    /// A cloned snapshot of the raw header list, for serialization
+    /// (e.g. Cache storage entries).
+    pub(crate) fn headers_snapshot(&self) -> HyperHeaders {
+        self.header_list.borrow().clone()
+    }
+
     pub(crate) fn get_headers_list(&self) -> HyperHeaders {
         self.header_list.borrow_mut().clone()
     }

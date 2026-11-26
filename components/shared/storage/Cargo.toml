@@ -14,6 +14,8 @@ name = "storage_traits"
 path = "lib.rs"
 
 [dependencies]
+serde_bytes = { workspace = true }
+net_traits = { workspace = true }
 malloc_size_of = { workspace = true }
 malloc_size_of_derive = { workspace = true }
 profile_traits = { workspace = true }

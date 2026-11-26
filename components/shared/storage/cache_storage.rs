@@ -53,6 +53,18 @@ impl DerefMut for CacheStorageThreadHandle {
     }
 }
 
+/// A serialized snapshot of one cached request/response pair.
+/// Simplified matching model: entries are keyed by exact request url only.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct CachedResponse {
+    pub url: String,
+    pub status: u16,
+    pub status_text: String,
+    pub headers: Vec<(String, String)>,
+    #[serde(with = "serde_bytes")]
+    pub body: Vec<u8>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum CacheStorageThreadMessage {
     /// <https://w3c.github.io/ServiceWorker/#cache-storage-has>
@@ -81,6 +93,27 @@ pub enum CacheStorageThreadMessage {
         proxy: StorageProxyMap,
         origin: ImmutableOrigin,
     },
+    /// <https://w3c.github.io/ServiceWorker/#cache-put>
+    PutEntry {
+        cache_name: String,
+        entry: CachedResponse,
+        callback: GenericCallback<CacheStorageThreadResponse>,
+        origin: ImmutableOrigin,
+    },
+    /// <https://w3c.github.io/ServiceWorker/#cache-match>
+    MatchEntry {
+        cache_name: String,
+        url: String,
+        callback: GenericCallback<CacheStorageThreadResponse>,
+        origin: ImmutableOrigin,
+    },
+    /// <https://w3c.github.io/ServiceWorker/#cache-delete>
+    DeleteEntry {
+        cache_name: String,
+        url: String,
+        callback: GenericCallback<CacheStorageThreadResponse>,
+        origin: ImmutableOrigin,
+    },
     Exit(GenericSender<()>),
 }
 
@@ -93,4 +126,7 @@ pub enum CacheStorageThreadResponse {
     },
     KeysResult(Result<Vec<String>, String>),
     DeleteCacheResult(Result<bool, String>),
+    PutEntryResult(Result<(), String>),
+    MatchEntryResult(Result<Option<CachedResponse>, String>),
+    DeleteEntryResult(Result<bool, String>),
 }

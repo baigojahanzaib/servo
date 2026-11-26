@@ -2102,7 +2102,7 @@ class MethodDefiner(PropertyDefiner):
                         accessor = "Some(generic_static_promise_method)"
                     else:
                         jitinfo = "ptr::null()"
-                        accessor = f'Some({m.get("nativeName", m["name"])}::<D>)'
+                        accessor = f'Some({CGDictionary.makeMemberName(m.get("nativeName", m["name"]))}::<D>)'
             if m["name"].startswith("@@"):
                 assert not self.crossorigin
                 name = f'JSPropertySpec_Name {{ symbol_: SymbolCode::{m["name"][2:]} as usize + 1 }}'
@@ -4686,7 +4686,7 @@ class CGMethodPromiseWrapper(CGAbstractExternMethod):
             let cx = &mut cx;
             return exception_to_promise(cx, (*args).rval());
             """,
-            methodName=self.method.identifier.name,
+            methodName=CGDictionary.makeMemberName(self.method.identifier.name),
             args=", ".join(arg.name for arg in self.args),
         ))
 
