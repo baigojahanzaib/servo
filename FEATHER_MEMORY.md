@@ -2941,3 +2941,17 @@ So implementation is TWO parts: (a) full property plumbing in the style crate (s
 derive-based values system — look at a comparable simple longhand like overflow-wrap/white-space in
 components/style/values for the pattern), (b) the layout ellipsis rendering. Part (a) is mechanical
 but touches the property database; estimate is bigger than initially scoped — still the top compat item.
+
+sec1zt51 — CRASH ISOLATION: servo already implements it; feather runs with the safety OFF
+==========================================================================================
+Mechanism (verified in-tree): panic hook emits error! while thread::panicking() → servo's logger
+converts it to LogEntry::Panic tagged with thread-local ScriptEventLoopId → constellation handle_panic
+(constellation.rs:3189) closes+reloads ONLY pipelines on the dead event loop, notifies embedder
+per-webview. Tested upstream: components/servo/tests/crash.rs. THREE gaps in feather shell-new:
+(1) hard_fail defaults TRUE in Opts::default (config/opts.rs:248) — every panic is process::exit(1);
+(2) no panic hook installed — default rust hook prints stderr, never reaches the log layer;
+(3) no Panic arm in the engine delegate. Stage-0 patch (hours) fixes all three.
+Granularity caveat: ScriptEventLoopId::installed() returns None on non-script threads (media/WR/compositor)
+— handle_panic early-returns, so those panics are logged but NOT recovered. WR/compositor are singletons:
+treat their panics as never-bugs, not recovery candidates. multiprocess feature is DEFAULT-ON in-tree
+(run_content_process) — the Stage-3 chromium-model option exists but is weeks of wiring.
