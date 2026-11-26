@@ -1930,3 +1930,8 @@ Also: feather PR #194 merged (snap ratio + native picker). shim v5 #192 merged e
 - tab ops: ctrl+t opens new tab (verified visually); input during heavy-load stalls can be swallowed (see above).
 - errors: zero panics, zero engine errors across all audit sessions.
 - honest bottom line: stable for daily-driver evaluation on real hardware; the one user-visible rough edge is input lag during heavy page loads, amplified badly on software rendering.
+
+### symptom: clicking text items glitches (x.com, user round-3 item 3) — RESOLVED AS STALL INPUT LOSS
+- NEGATIVE RESULT: hit-test/input-transform geometry is EXACT even in the worst-case DPI mismatch. Verified with FEATHER_ZOOM=1.5 (synthetic zoom forces egui ppp=1.5 while winit scale stays 1.0 — a worse mismatch than any real HiDPI): clicking a 400px link dead-center navigated correctly, [input] probe shows internally consistent math (physical pos / egui scale → logical rect; rel = physical - rect*scale). Do NOT re-walk the input transform chain — it is correct at any scale.
+- VERIFIED MECHANISM: input events arriving DURING a heavy-load frame stall are swallowed/mistimed (typing into omnibox during a github-load stall was lost entirely). The user's "glitching clicks" = clicking while the frame path is stalled (multi-hundred-ms to multi-second on software GL; sub-second on real GPU but still perceptible on heavy pages like x.com).
+- FIX DIRECTION (engine/rendering lane, not shell): shorten frame stalls — the present path (egui_glow GL blit + buffer swap) blocks the UI thread. Options: hardware-accelerated blit, moving present off the UI thread, or partial-present. Until then, heavy pages will eat clicks during load on any hardware.
