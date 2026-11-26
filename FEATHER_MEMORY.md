@@ -1725,3 +1725,22 @@ OPEN NEXT STEPS (ranked):
 4. WebComponentsReady never fires in servo even when everything works — check whether the -sd bundle should fire it at all.
 
 REPRO ASSETS (Windows box): probe server has polymer-repro.html, polymer-native.html, shadycssfull.html, adopted.html, ceprops.html, tplstyle.html + node_modules/@polymer + poly-bundle.js (esbuild). Downloads in work/: ytresults.html (1.5MB), wcsd.js, ytbase.js (1MB).
+
+
+## F10 ROOT CAUSE FOUND (2026-11-26 ~13:30) — servo layout engine, not missing features
+
+THE ANSWER after full elimination:
+1. YouTube's component CSS is a plain external <link> stylesheet (ytmainappweb/_/ss/...) — 3.2MB, ~19k rules. It LOADS and APPLIES in servo fine (verified: rules apply to elements, even custom-element type selectors; isolation repro ytcss.html: display:block + max-width:862 both correct).
+2. Chrome ground truth (CDP-driven headless Chrome, cdp_eval.py): SAME tiny inline-css footprint as servo, no shadow roots either, ShadyDOM active in both — the entire "missing css-build payload" theory was WRONG. Chrome renders with identical architecture.
+3. Computed styles in servo end up CORRECT (display block/flex everywhere after load settles).
+4. THE TERMINAL FAILURE IS LAYOUT: with correct computed styles, servo produces 0x0 boxes for YouTube's nested flex structures. Parent containers collapse to zero width/height; images never decode size (naturalWidth 0); even plain text content inside these structures measures 0x0.
+5. STATIC REPRO EXISTS: probe/ytstatic.html — real YouTube results HTML + document styles extracted from Chrome (500KB), no JS needed. In servo: #dismissible lays out but wrong (700x2326), host ytd-video-renderer 0x0. Bisectable offline — THE asset for the layout-engine fix.
+
+KEY IMPLICATION: servo's flexbox/layout implementation is too incomplete for YouTube's nested flex structures. This is almost certainly the same root cause behind other heavy-site rendering failures — F10 is a layout-engine bug, not an API gap. All the API work along the way (rIC, adoptedStyleSheets pref) was still worth landing.
+
+SECONDARY OBSERVATIONS:
+- During load, computed styles initially read inline/default and correct themselves later — either sheet-parse timing or genuine invalidation lag; inconclusive (insertRule correlation unproven either way).
+- servo perf entries have negative durations (resource timing bug, minor).
+- servo getComputedStyle returns specified width (auto) rather than resolved px in some cases — measurement hazard when comparing.
+
+ASSETS: probe/ytstatic.html (static repro), probe/ytmain.css (real 3.2MB sheet), probe/race*.html + ytcss.html (negative results), cdp_eval.py (Chrome CDP eval harness — ground truth for any future comparison), chromeprof/ chrome CDP on port 9223.
