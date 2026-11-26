@@ -3567,3 +3567,10 @@ CAPTURED feather's real request headers (localhost capture): anomalies vs Chrome
 - Batch-enabled in shell (matrix arbitrating): cookiestore, exec_command, credential_management, gamepad. Skipped: webgpu/webxr/bluetooth (environmental/no hardware), geolocation (platform integration), webrtc (known-large), entries-api (drag-drop filesystem, lower value desktop).
 - TRAP CONFIRMED AGAIN: branch skew cost a debugging detour — a matrix page 404'd because the branch predated the round merge; looked exactly like a regression (0 collected, error page). RULE: sync branch with main BEFORE trusting a matrix negative; the telltale is document.title eval → "Error response".
 - Range-geometry deep-dive banked: chain verified correct Range→border_boxes→box_areas_query→layout query_box_areas; text nodes DO have LayoutBox::Text; silent zero-size fallback exists when root_transform lookup fails. Engine lane has exact file/function trail.
+
+## pref-batch-verdicts (2026-11-26, PR #221)
+- execCommand EXPOSED + FUNCTIONAL: insertText writes into contenteditable, ret=true. Editor-class mechanism unlocked. Composes with shadow-input fix.
+- cookieStore exposed but roundtrip RED: set().then(get) returns null — functional-level gap in the store path (or jar keying). Exposed-but-broken is arguably worse than absent for feature-detecting sites — WATCH: if sites branch on cookieStore presence and break, revert. Matrix tracks it in platform-apis.
+- credentials exposed. permissions was already green (query returns real states).
+- GAMEPAD requires cargo feature not pref: webidl has skip-unless CARGO_FEATURE_GAMEPAD — pref alone is a no-op. Before enabling any pref, check the webidl header for skip-unless lines — pref-gates and feature-gates are DIFFERENT levers.
+- Branch note: platform-apis branch carries its own copy of the clipboard pref line (branched pre-#219-merge) — merge conflict with main is trivial/identical content.
