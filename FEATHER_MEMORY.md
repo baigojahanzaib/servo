@@ -3770,3 +3770,7 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 
 ## matrix-rounds-10-12 (2026-11-27)
 - websockets 4/4 (harness embeds dependency-free RFC6455 echo server on 8472 — close handshake needs server close-echo), focus-events 10/10, drag-drop 3/6 honest absence (no DragEvent.webidl in servo at all, draggable commented out — engine-scale, sites feature-detect safely). PRs #248/#249/#250.
+
+## sec1zt125 — matrix-rebase union parser diff3 bug (2026-11-27)
+- Symptom: union-merge loop leaves files still conflicted → check: diff3-style conflicts have a `|||||||` base section BEFORE `=======` — a parser keying on `=======` mis-slices. Correct walk: <<< then optional ||| base, then ===, then >>>. 248 websockets rebased+pushed clean (no diff3 conflicts); 247/249/250 still conflicted on origin, branches untouched, local repo back on main. Also: matrix classes should batch per-round per coordinator.
+- seek settle-fix (engine 72b6c0fe29d) pushed, VERIFICATION PENDING — testing-agent handoff not yet done.
