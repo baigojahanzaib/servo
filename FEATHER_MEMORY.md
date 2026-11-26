@@ -1900,3 +1900,19 @@ Lesson: generated webidl callbacks invoke via `callback.Call__(cx, args..., Exce
 ## F1 final root cause (2026-11-26) — correction of earlier coordinate hypothesis
 
 Symptom: in-page links/inputs appear dead → check: POST-NAVIGATION PAINT INVALIDATION in shell-new compositing (CONFIRMED CAUSE — verified live: clicks register exact css coords (149,148 vs true 150,150), click events fire on correct targets (target=A), anchor activation proceeds, navigation fetches+loads the target (200 in net log), omnibox eventually updates — but the new page NEVER PAINTS until subsequent input interactions nudge the surface; links were never dead, navigation was invisible); forward_page_input coordinate math (status: RULED OUT on macOS scale1 AND windows scale2 — exact registration both lanes); anchor activation/navigation delegate path (status: RULED OUT — navigation completes end-to-end); blit geometry at scale1 (status: RULED OUT — visual box position matches layout position within 2px). MEASUREMENT LESSON: the original down-right-coordinate evidence was measurement error — the click position was calculated from assumed element positions rather than verified visual positions; never infer input-transform defects without a self-reporting target element (one that logs its own hit coordinates).
+
+## sec1zm — RG8 video-plane crash FIXED: planar YCbCr upload (2026-11-26)
+
+FIXED — commit f9180e2bf1d. NV12 video chroma is now deinterleaved into separate Cb/Cr planes and uploaded as planar YCbCr — all-R8 planes, fully shared-cache compatible, natively supported by WebRender's brush_yuv shader. Deinterleave cost is a quarter-resolution byte shuffle — negligible against decode cost.
+
+Root-cause chain for the record: WebRender `is_allowed_in_shared_cache` (texture_cache.rs) checks SIZE constraints but NEVER checks whether the format is supported by the shared arrays — RG8 planes under TEXTURE_REGION_DIMENSIONS entered shared cache and select() panicked "Unexpected format RG8". Size-dependent flakiness explained: large planes went standalone (safe), small/medium hit shared arrays (panic). This is an upstream WR defect — the proper upstream fix is a format-support check in is_allowed_in_shared_cache, but the planar path is strictly better for servo anyway (no upstream dependency, no vendoring).
+
+Verified: (1) SMPTE color bars render with CORRECT colors (grey/yellow/cyan/green/magenta/red/blue + bottom stripes) — video visibly plays, not black, not color-shifted; (2) 8/8 deep-scroll bursts on r/pics survive to scrollY 15649 with video content in path, zero RG8 panics — pre-fix rate ~2/3 crashes at this depth.
+
+Symptom index: symptom "Unexpected format RG8 panic WRRenderBackend then signal 11 scrolling video feeds" -> status FIXED at f9180e2bf1d — planar upload means RG8 is never uploaded to WR at all. Symptom "video renders black despite active decode" (dogfood F3) -> FIXED same commit — planes now reach WR in a format its shader actually rasterizes.
+
+Symptom: video colors wrong on SD content → check: Rec709+Limited hardcoded in display_list/mod.rs push_yuv_image (unchanged by this fix — correct for HD h264, wrong for BT.601 SD; proper fix parses gst colorimetry caps).
+
+Threading note for future work: MediaFrame now carries image_key + uv_key + v_key; uv_key+v_key both present = planar, uv_key alone = NV12 (legacy path retained), neither = BGRA. Key lifecycle: generated per frame-format-change in media_frame_renderer render(), deleted in delete_frame_keys.
+
+Residual cost: deinterleave allocates two new vectors per frame (half-res each) — memcpy-bound, unmeasured but small vs decode. The gst copy-out remains as documented in the NV12 pipeline notes.
