@@ -100,6 +100,8 @@ use crate::dom::attr::Attr;
 use crate::dom::beforeunloadevent::BeforeUnloadEvent;
 use crate::dom::bindings::callback::{ExceptionHandling, TracedCallback};
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
+use crate::dom::bindings::codegen::Bindings::IdleRequestBinding::IdleRequestCallback;
+use crate::dom::idledeadline::IdleDeadline;
 use crate::dom::bindings::codegen::Bindings::BeforeUnloadEventBinding::BeforeUnloadEvent_Binding::BeforeUnloadEventMethods;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, DocumentVisibilityState, ElementCreationOptions,
@@ -7751,6 +7753,12 @@ pub(crate) enum AnimationFrameCallback {
     FrameRequestCallback {
         callback: TracedCallback<FrameRequestCallback>,
     },
+    /// Idle callbacks piggyback on the animation-frame pipeline: they fire
+    /// on the next rendering opportunity rather than in spec-exact idle
+    /// periods. Web-compatible v1 approximation — see idledeadline.rs.
+    IdleRequestCallback {
+        callback: TracedCallback<IdleRequestCallback>,
+    },
 }
 
 impl js::gc::Rootable for AnimationFrameCallback {}
@@ -7768,6 +7776,12 @@ impl AnimationFrameCallback {
                 // TODO(jdm): The spec says that any exceptions should be suppressed:
                 // https://github.com/servo/servo/issues/6928
                 let _ = callback.Call__(cx, Finite::wrap(now), ExceptionHandling::Report);
+            },
+            AnimationFrameCallback::IdleRequestCallback { ref callback } => {
+                // v1 approximation: report the spec-mandated maximum 50ms budget
+                // and never a timeout — the callback is firing within a frame.
+                let deadline = IdleDeadline::new(cx, &document.global(), 50.0, false);
+                let _ = callback.Call__(cx, &deadline, ExceptionHandling::Report);
             },
         }
     }

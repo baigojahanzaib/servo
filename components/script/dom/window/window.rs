@@ -113,6 +113,7 @@ use webrender_api::units::{DeviceIntSize, DevicePixel, LayoutPixel, LayoutPoint}
 use crate::dom::StatelessWorkletThreadPool;
 use crate::dom::bindings::callback::RootedCallback;
 use crate::dom::bindings::codegen::Bindings::AnimationFrameProviderBinding::FrameRequestCallback;
+use crate::dom::bindings::codegen::Bindings::IdleRequestBinding::{IdleRequestCallback, IdleRequestOptions};
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
     DocumentMethods, DocumentReadyState, NamedPropertyValue,
 };
@@ -1954,6 +1955,29 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
         let doc = self.Document();
         doc.cancel_animation_frame(ident);
         Ok(())
+    }
+
+    /// <https://w3c.github.io/requestidlecallback/#dom-window-requestidlecallback>
+    ///
+    /// v1 approximation: idle callbacks are driven by the animation-frame
+    /// pipeline rather than spec-exact idle periods — they fire on the next
+    /// rendering opportunity. The timeout option is accepted but not needed
+    /// in practice since callbacks fire within a frame regardless.
+    fn RequestIdleCallback(
+        &self,
+        callback: RootedCallback<IdleRequestCallback>,
+        _options: &IdleRequestOptions,
+    ) -> u32 {
+        self.Document()
+            .request_animation_frame(AnimationFrameCallback::IdleRequestCallback {
+                callback: callback.to_traced(),
+            })
+    }
+
+    /// <https://w3c.github.io/requestidlecallback/#dom-window-cancelidlecallback>
+    fn CancelIdleCallback(&self, handle: u32) {
+        let doc = self.Document();
+        doc.cancel_animation_frame(handle);
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-window-postmessage>
