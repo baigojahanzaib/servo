@@ -2787,6 +2787,8 @@ connect issue unresolved for explicit http:// too — low priority, eval-injecti
 sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with caveat)
 
 ## COMPOSITING STALENESS CLASS SOLVED: root cause was visibility contention — all webviews permanently "shown", servo composites every shown webview into the shared rendering context on its own refresh schedule, so the active tab's pixels get overwritten by background tabs continuously. Explains: aux tabs never painting (always lost contention), static-page switch staleness (the repaint-force helped only because it repainted AFTER servo's last background composite — race-dependent), and likely a big slice of the historical F1 paint-invalidation defects. Fix in shell-new composite(): hide all non-active webviews, show only active. hide() semantics: throttles script threads + discards decoded image surfaces — standard browser backgrounding. VERIFIED end-to-end: target=_blank correct content immediately, bidirectional tab switching correct. Symptom-index: "correct tab chrome/navigation but pixels belong to a different page" → visibility contention in shared rendering context, check show/hide discipline.
+
+## ALPHA GATE FINAL VALIDATION (endgame-22): with document.all + rIC + visibility-discipline + paint fixes all in one build, YouTube search renders FULLY UNASSISTED end-to-end — complete chrome, filter chips, sponsored cards, channel cards, video results with thumbnails/avatars/durations/LIVE badges, working scroll. Screenshots: lofi beats results indistinguishable from Chrome. The multi-session hunt chain is closed: rIC starvation → hidden-attribute → resin sanitizer → document.all → compositing visibility. Residual classes: attestation/botwall, background-media-aware visibility throttling, window.open JS-path RefCell panic (upstream).
 ||||||| parent of f6a2ad7e986 (memory: stale-composite root cause — show/hide contract, fix verified)
 gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
 and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
@@ -2821,3 +2823,4 @@ compositing. Symptom: blank white content area on first load after naive show/hi
 first-composite ordering, webview must be show()n before its frames composite.
 Behavioral side effect: hide() throttles background script + discards decoded images (memory win,
 but background media pauses — documented in PR).
+||||||| parent of 74926cca4 (memory: alpha gate final validation — YouTube fully unassisted)
