@@ -43,6 +43,14 @@ pub const BUF_SIZE: usize = 32768;
 pub const ALPN_H2: &str = "h2";
 
 const HTTP2_MAX_HEADER_LIST_SIZE: u32 = 64 * 1024;
+// Chrome 131 sends a 256 KiB h2 max header list; advertising Chrome's value
+// keeps the HTTP/2 settings fingerprint closer to a real browser (server sees
+// this in our SETTINGS frame).
+const CHROME_HTTP2_MAX_HEADER_LIST_SIZE: u32 = 256 * 1024;
+// Chrome 131 h2 settings: initial stream window 6291456, connection-level
+// WINDOW_UPDATE 15663105. hyper defaults (2 MiB / +5177345) are a headless tell.
+const CHROME_HTTP2_INITIAL_STREAM_WINDOW_SIZE: u32 = 6_291_456;
+const CHROME_HTTP2_CONNECTION_WINDOW_DELTA: u32 = 15_663_105;
 
 #[derive(Clone)]
 pub struct ServoHttpConnector {
@@ -678,7 +686,9 @@ pub fn create_http_client(tls_config: TlsConfig) -> ServoClient {
     Client::builder(TokioExecutor {})
         .http1_title_case_headers(true)
         // The default 16 KiB size is insufficient for certain sites like YouTube
-        .http2_max_header_list_size(HTTP2_MAX_HEADER_LIST_SIZE)
+        .http2_max_header_list_size(CHROME_HTTP2_MAX_HEADER_LIST_SIZE)
+        .http2_initial_stream_window_size(CHROME_HTTP2_INITIAL_STREAM_WINDOW_SIZE)
+        .http2_initial_connection_window_size(CHROME_HTTP2_CONNECTION_WINDOW_DELTA + 65_535)
         // This is necessary to allow hyper to perform various background tasks for HTTP/2.
         .timer(TokioTimer::new())
         // This is necessary for hyper to reap unused idle keep-alive connections.
