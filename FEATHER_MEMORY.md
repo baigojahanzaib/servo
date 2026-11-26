@@ -2843,17 +2843,6 @@ tab take a moment to re-decode (hide() discards decoded surfaces by design) — 
 ## Input-focus defect class refined (endgame-25): x.com onboarding email field — click does not focus, typing never appears (2/2 attempts, placeholder persists, no focus ring). CONTRAST: youtube search input accepted focus+typing earlier this session. Differential hypotheses: (a) React controlled-input path relying on beforeinput/input events servo doesn't fire, (b) X's input is inside a shadow-DOM/composed-focus structure where servo hit-targets the wrong node, (c) focus succeeded but keystrokes route to the wrong target. Minimal-repro path: local test page with vanilla input vs React-controlled input vs shadow-DOM input — three rows isolates the mechanism cheaply. Symptom-index: "click input, nothing focuses/types on SOME sites but not others" → input mechanism differential, test vanilla/react/shadow rows.
 
 ## INPUT DEFECT ROOT-CAUSED (endgame-26): three-row minimal repro (/tmp/vtest/inputtest.html) — vanilla input types ✓, react-style controlled input types ✓, **shadow-DOM input takes focus (visible focus ring) but keystrokes never land** ✗. The x.com onboarding failure is the shadow-DOM keyboard event routing defect — keystrokes are not delivered into the shadow tree even when the shadow input holds focus. Prime suspect location: keyboard event dispatch in script_thread/script — the key event target resolution probably fails to pierce the shadow boundary (document.activeElement resolution or the key event's composed path handling). This is a TOP-TIER compat defect: most modern apps (YouTube Studio, X, Salesforce, anything polymer/lit) use shadow inputs. Symptom-index: "input focuses but typing never appears" → shadow-DOM keyboard dispatch.
-||||||| parent of ee587efae6b (memory: gmail marketing click verified — defect fully closed)
-
-sec1zt42 — gmail marketing-page Sign-in click: VERIFIED NAVIGATES (caveat closed)
-The marketing page DID reproduce this run (fresh-profile variance): the Sign in link is exactly as
-theorized — target=_blank to accounts.google.com/AccountChooser. Clicking it (eval-driven .click())
-opens the aux tab which lands on accounts.google.com/v3/signin/identifier correctly. The original
-gmail sign-in non-navigation defect is fully closed end-to-end — no caveat remaining. Confirms the
-target=_blank class was the whole cause.
-
-sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
-=============================================================================
 Symptom (previously indexed unresolved): servo "client error (Connect)" for localhost python
 http.server despite curl 200, net log TLS InvalidMessage(InvalidContentType).
 Retest on current feather-engine head: http://localhost:8931/blank1.html typed EXPLICITLY with
@@ -2871,3 +2860,17 @@ truncated headlines on BBC/YouTube/every news site (defect-queue engine findings
 CSS-layout feature: inline overflow measurement + ellipsis rendering in the inline box tree.
 Estimate: multi-hour engine feature, not a papercut. Recommend as a dedicated engine-compat mission;
 it's the most visible recurring text-rendering gap on real sites.
+||||||| parent of 97d4f0bd4 (memory: shadow-input typed-text deep chain — endgame-27)
+=======
+
+## Shadow-input typed-text defect — deep chain (endgame-27). Symptom: inputs inside shadow DOM accept focus + keystrokes (keydown/beforeinput/input all fire, value correct internally) but TYPED text never renders. Minimal repro: /tmp/vtest/inputtest.html (vanilla/react/shadow rows). Established facts: (1) isConnected=true inside shadow tree — the is_connected() gate in value_changed (htmlinputelement.rs `if self.upcast::<Node>().is_connected()`) is NOT the cause; (2) initial `value=` attribute and JS `.value=` assignment RENDER CORRECTLY in shadow inputs — so UA-shadow-tree composition, layout, and the value→character-data sync path all fundamentally work in nested shadow context; (3) placeholder text renders and correctly hides on typing (:placeholder-shown state updates correctly); (4) scrollWidth never exceeds clientWidth when typing in shadow input (vanilla: 447/214) — typed text never enters layout; (5) forced repaint (tab switch) doesn't help — not an invalidation-only issue; (6) typing path diverges from JS-set path: KeyReaction::DispatchInput in htmlinputelement::handle_key_reaction does NOT call update_shadow_tree directly — it queues the input event; handle_event then calls value_changed(cx, trusted) for InputEvents, which is the SAME path JS-set uses — yet outcomes differ, so either the input-event-driven value_changed never runs in shadow context, or the damage/invalidation from the typing path (dirty(NodeDamage::Other) on the input node) fails to propagate layout to the nested UA shadow tree; (7) structural fact: servo renders input text via a UA shadow tree (text_input_widget.rs — inner-container > input-editor + input-placeholder divs with text nodes), so input-in-user-shadow = nested shadow roots; editor visibility toggles via `input:placeholder-shown::-servo-text-control-inner-editor { display: none }` in layout/stylesheets/servo.css. NEXT DISCRIMINATOR (cheap, not yet run): type in si2, then force `si2.value = si2.value` via a JS button — if text appears, the typing-path sync is broken DOM-side; if not, layout-side re-traversal of nested UA shadow trees is broken. Also untested: whether `update()` in text_input_widget runs at all during typing in shadow context (instrument with a println — one build cycle). Symptom-index: "input in shadow DOM: focus+events fine, typed text invisible, JS-set text fine" → typing-path sync vs nested-UA-shadow re-layout, see endgame-27.
+||||||| parent of ee587efae6b (memory: gmail marketing click verified — defect fully closed)
+
+sec1zt42 — gmail marketing-page Sign-in click: VERIFIED NAVIGATES (caveat closed)
+The marketing page DID reproduce this run (fresh-profile variance): the Sign in link is exactly as
+theorized — target=_blank to accounts.google.com/AccountChooser. Clicking it (eval-driven .click())
+opens the aux tab which lands on accounts.google.com/v3/signin/identifier correctly. The original
+gmail sign-in non-navigation defect is fully closed end-to-end — no caveat remaining. Confirms the
+target=_blank class was the whole cause.
+
+sec1zt43 — localhost connect failure: NO LONGER REPRODUCES (negative result)
