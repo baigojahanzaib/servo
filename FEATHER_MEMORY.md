@@ -1668,3 +1668,14 @@ RESUME INSTRUCTIONS (exact):
 - Mechanism chain: servo notify_new_frame_ready → shell wake → throttled spin DROPPED (8ms coalescing) → final frame notification of a static page never delivered → no paint → blank. Input nudge → new wake → spin → healed.
 - Suspect-location pattern INDEXED BY MECHANISM: any wake/notification throttle that DROPS rather than DEFERS can strand one-shot notifications (frames, load events). When investigating stall-class symptoms, check every early-return in the wake path for whether the dropped work has a guaranteed successor.
 - Scale-correlation: scale-2 doubles device-size churn → more wakes → drops far more likely → macOS HiDPI sees stall constantly, scale-1 rarely.
+
+## Symptom index — keyboard-into-page (2026-11-26, SOLVED)
+Symptom: typing never reaches web page input fields; clicking focuses the field but keystrokes vanish.
+Two layered causes, both in shell-new, both fixed (feather PR #148):
+1. FUNCTION: Harness::window_event — egui focus is never surrendered when a click is consumed by web content; after any omnibox typing, wants_keyboard_input() stays true forever, chrome swallows all keys. MECHANISM: egui Memory focus persistence. FIX: surrender_focus on consumed MouseInput::Pressed.
+2. FUNCTION: forward_page_input KeyboardInput branch — mapping keyed ONLY on winit logical_key. MECHANISM: input paths where logical decoding fails deliver Unidentified(Windows(vk)) yet KeyEvent.text stays intact and correct. FIX: derive Key::Character from event.text first, fall back to logical_key. NOTE: servoshell keyutils.rs has the same latent logical-only flaw upstream.
+Negative results / artifacts: SendKeys on this VM mistranslates letters to VK_ESCAPE — OS-level injection artifact, not a product defect; computer-tool typing produces Unidentified logical keys but correct text payloads.
+Probe: work/probe/input.html on 8998 (input + input-event logger, mirrors to document.title).
+
+## Addendum — keyboard modifiers (2026-11-26, feather PR #149)
+Shell now forwards modifier state (ModifiersChanged tracked on FeatherApp; new_without_event with ctrl/shift/alt/meta + repeat). Pages receive correct modifier flags. OPEN engine-side question: does servo script execute editing operations (select-all, copy, paste) on ctrl+key in text inputs? Unverified — check components/script textinput/editing handling if ctrl+A selection doesn't appear in dogfooding.
