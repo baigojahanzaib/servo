@@ -1854,3 +1854,8 @@ KEY UPSTREAM FACT: egui_glow-0.37 EguiGlow::run processes viewport commands but 
 
 ## gmail repro confound — datacenter IP contamination (2026-11-26)
 accounts.google.com boots with ZERO console errors in feather — the botguard challenge executes without crashing; rejection is a scoring verdict, not an execution failure. CRITICAL CONFOUND: all Windows-lane repro happens from a datacenter IP, which Google risk-scores independently of browser quality — even Chrome-perfect surface may be rejected from here. The user's residential-IP repro is the only meaningful test. Recommendation: surface-complete alpha shipped; ask user to retest signin on the refreshed build; treat deep signal conformance as a long-term workstream, not alpha-gating.
+
+
+## CONFIRMED: published assets include #180 (2026-11-26 15:55 UTC)
+Patrol questioned the 4-minute merge-to-publish timeline. Evidence: the release build was compiled from branch close-fix-native @ 4e5a962 — the exact commit that BECAME PR #180 (merged unchanged as ab2103a; `git diff origin/main close-fix-native -- shell-new/src/platform.rs shell-new/src/ui/window.rs` is EMPTY). The build did not wait for the merge because it never needed to: the branch content is the merged content byte-for-byte. Close verification (process exits on X click) was performed on this exact binary BEFORE packaging. Assets zip 167,084,025 / setup 105,688,184 uploaded 15:13-15:15 are the #180-inclusive build. NOT STALE.
+Note: main also has docs-only #179 (defect-queue notes) which post-dates the build but does not affect the binary.
