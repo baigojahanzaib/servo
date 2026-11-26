@@ -1908,3 +1908,25 @@ Test on the dual-fixed binary (document-start userscript injection + shim v5): f
 ## HEADCHR_IFRAME — still failing after document-start fix (measured 20:35); all other rows pass
 Detection suite now: everything green EXCEPT PHANTOM_ETSL (low-value phantomJS-era test) and HEADCHR_IFRAME. The iframe case: sannysoft writes content into a dynamically-created iframe via document.write and checks window.chrome in it. Leading theory: the initial about:blank document of a dynamic iframe never runs the HTML parser through a fresh head insertion (document synthesized, or head pre-exists from about:blank bootstrapping), so the injection point never fires in that document. Since window.chrome is set per-window by the shim and document.write reuses the same window, the missing piece is the injection ever running there at all. NEXT PROBE: instrument whether load_script fires for iframe documents at all (counter in userscripts.rs logging document URL). Engine follow-up — not alpha-gating.
 Also: feather PR #194 merged (snap ratio + native picker). shim v5 #192 merged earlier. Alpha refresh candidates now in main: docstart engine fix needs servo fork merge decision + rebuild.
+
+## SYMPTOM INDEX — hang/freeze investigation (2026-11-26, Windows lane)
+
+### symptom: "app not responding" / close button appears dead / input glitches during load
+- VERIFIED MECHANISM (watchdog evidence): the UI thread genuinely stalls for SECONDS during heavy page loads — 17s continuous stall captured on youtube+github navigation. First-principles: Windows raises "Not Responding" after 5s of no message pumping, so ANY stall >5s produces the user's exact report.
+- ATTRIBUTION (stall probes, PR feather#199): stalls are in the **gui frame path** (`gui.run` = egui layout + webview.paint() composite + glow present), NOT in `spin_event_loop` compositor message handling. Measured 492/325/166ms frames during youtube boot on the software-GL VM; zero slow spins.
+- ROOT AMPLIFIER: this VM renders through ANGLE-on-Microsoft-Basic-Render-Driver (pure software D3D11) — rasterization+present of a 1280x820 surface is CPU-bound. On real-GPU hardware the same frames should be ms-scale. SUSPECTS within the frame path, in order: (1) glow present/buffer-swap blocking on software rasterizer, (2) the render_to_parent GL blit in the egui paint callback, (3) webview.paint() servo composite. Fine-grained split not yet measured — that's the next probe if the user reports hangs on real hardware.
+- USER'S "close doesn't work / not responding" REPORT — high-confidence verdict: primarily the DEAD CLOSE BUTTON artifact (egui_glow drops close-requests, fixed in feather#180): clicking X did nothing, taskbar force-close went unanswered, Windows raised the dialog on a non-stalled app. User quote "on the previous build" corroborates. TRUE stalls (above) are a real secondary factor for input glitches during heavy loads.
+- INPUT LOSS DURING STALLS verified: typing into the omnibox during a github-load stall was swallowed — explains the user's "clicking text glitches" report on x.com. Suspect locations: the whole event chain in shell-new/src/main.rs window_event/forward_page_input — events arriving during a stalled frame queue in Windows but their effects bunch up after recovery.
+- instrumentation shipped: UI_PUMP_CTR watchdog (feather#198, merged) logs "[watchdog] UI THREAD STALL"; stall attribution probes (feather#199) log "[stall] spin_event_loop/gui frame took Xms". Both feed the crash-capture log, so any user-side hang now self-attributes.
+- NEGATIVE RESULTS (do not re-walk): close-then-rapid-clicks does NOT hang (clean exit in ms even with video+3 tabs); spin throttling at 8ms is NOT the stall source; single spins are fast.
+- NEXT IF USER REPRODUCES ON REAL GPU: read [stall] lines from their logs/ folder; if gui frame stalls appear on hardware GL, the fix target is the present path (egui_glow/surfman), not the engine.
+
+## STABILITY AUDIT (round-4, audit build = main@a5e86c0+#198 watchdog)
+- launch: window centered exact (win32 rect 160,190 for 1280x820 on 1600x1200). no phantom rectangle.
+- onboarding: full flow renders flawless — hello screen, theme picker, tabs picker, privacy toggles, "all set" finale with gradient animation; continue/skip navigation works; no glitches observed. NOTE: onboarding screens do NOT swallow clicks; the flow needs ~5 continue clicks.
+- caption glyphs: native Segoe-fluent style min/max/close render correctly.
+- close: click X → process exits in milliseconds even under video playback + multiple tabs. VERIFIED multiple times.
+- navigation: github.com/trending renders fully correct (repos, avatars, stars). youtube search 22 results verified earlier. youtube video playback boots (with frame stalls on software GL).
+- tab ops: ctrl+t opens new tab (verified visually); input during heavy-load stalls can be swallowed (see above).
+- errors: zero panics, zero engine errors across all audit sessions.
+- honest bottom line: stable for daily-driver evaluation on real hardware; the one user-visible rough edge is input lag during heavy page loads, amplified badly on software rendering.
