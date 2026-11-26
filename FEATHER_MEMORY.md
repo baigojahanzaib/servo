@@ -2987,3 +2987,12 @@ crashes (old_load_data.crash.is_some()), no further replacement is created — i
 protection, tab left in dead state but browser unaffected. v1-acceptable; a shell-side "this tab keeps
 crashing — close it?" affordance would be the UX polish. The core guarantee held in every test: the
 process never died regardless of crash pattern.
+
+sec1zt55 — text-overflow scoping CORRECTED: only layout work remains
+=====================================================================
+Earlier notes said the property doesn't exist anywhere — WRONG LOCATION: servo's CSS comes from
+stylo, a PINNED GIT dependency (servo/stylo rev 0ab78ce, not in-tree — components/style does not
+exist in current servo). Upstream stylo ALREADY implements text-overflow completely (TextOverflow
+computed value, longhands.toml, parsing+cascade — it's firefox-derived). Scope collapses to the
+layout half only: read the computed text-overflow in inline layout, truncate at the overflow boundary,
+render the ellipsis glyph. No style-system work needed. Estimated effort drops from days to hours.
