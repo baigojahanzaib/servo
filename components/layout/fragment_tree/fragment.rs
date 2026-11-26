@@ -145,6 +145,9 @@ pub(crate) struct ImageFragment {
     /// `image_key` is the R8 luma plane and this the half-resolution RG8
     /// interleaved chroma plane, painted as a webrender YUV image.
     pub yuv_uv_key: Option<ImageKey>,
+    /// The R8 Cr plane key for planar YCbCr video — when present alongside
+    /// `yuv_uv_key` the fragment is planar (not NV12) video.
+    pub yuv_v_key: Option<ImageKey>,
     pub showing_broken_image_icon: bool,
     pub url: Option<ServoUrl>,
     pub load_time: Option<CrossProcessInstant>,

@@ -210,6 +210,7 @@ impl MediaFrameRenderer {
                 width: image.metadata.width as i32,
                 height: image.metadata.height as i32,
                 uv_key: None,
+                v_key: None,
             })
         });
     }
@@ -223,6 +224,9 @@ fn delete_frame_keys<A: smallvec::Array<Item = ImageUpdate>>(
     updates.push(ImageUpdate::DeleteImage(frame.image_key));
     if let Some(uv_key) = frame.uv_key {
         updates.push(ImageUpdate::DeleteImage(uv_key));
+    }
+    if let Some(v_key) = frame.v_key {
+        updates.push(ImageUpdate::DeleteImage(v_key));
     }
 }
 
@@ -258,15 +262,27 @@ impl VideoFrameRenderer for MediaFrameRenderer {
 
         let bgra_descriptor = plane_descriptor(width, height, ImageFormat::BGRA8);
 
-        // NV12 frames become two plane payloads: full-resolution R8 luma and
-        // half-resolution RG8 interleaved chroma.
+        // NV12 frames are deinterleaved into THREE all-R8 planar payloads:
+        // full-resolution luma plus half-resolution Cb and Cr planes. RG8
+        // interleaved chroma is never uploaded because WebRender's shared
+        // texture cache cannot allocate RG8 and panics (crash class of
+        // sec1zt). The deinterleave is a quarter-resolution byte shuffle —
+        // far cheaper than full color conversion — and PlanarYCbCr is a
+        // natively supported WebRender YUV format.
         let nv12_planes = if is_nv12 {
             let (y, uv) = frame.get_nv12_planes();
+            let mut u = Vec::with_capacity(uv.len() / 2);
+            let mut v = Vec::with_capacity(uv.len() / 2);
+            for pair in uv.chunks_exact(2) {
+                u.push(pair[0]);
+                v.push(pair[1]);
+            }
             Some((
                 plane_descriptor(width, height, ImageFormat::R8),
                 SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(y)),
-                plane_descriptor(width / 2, height / 2, ImageFormat::RG8),
-                SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(uv)),
+                plane_descriptor(width / 2, height / 2, ImageFormat::R8),
+                SerializableImageData::Raw(GenericSharedMemory::from_vec(u)),
+                SerializableImageData::Raw(GenericSharedMemory::from_vec(v)),
             ))
         } else {
             None
@@ -304,7 +320,7 @@ impl VideoFrameRenderer for MediaFrameRenderer {
 
         if format_matches && size_matches {
             let current_frame = self.current_frame.as_ref().unwrap();
-            if let Some((y_desc, y_data, uv_desc, uv_data)) = nv12_planes {
+            if let Some((y_desc, y_data, uv_desc, u_data, v_data)) = nv12_planes {
                 updates.push(ImageUpdate::UpdateImage(
                     current_frame.image_key,
                     y_desc,
@@ -312,7 +328,10 @@ impl VideoFrameRenderer for MediaFrameRenderer {
                     None,
                 ));
                 if let Some(uv_key) = current_frame.uv_key {
-                    updates.push(ImageUpdate::UpdateImage(uv_key, uv_desc, uv_data, None));
+                    updates.push(ImageUpdate::UpdateImage(uv_key, uv_desc, u_data, None));
+                }
+                if let Some(v_key) = current_frame.v_key {
+                    updates.push(ImageUpdate::UpdateImage(v_key, uv_desc, v_data, None));
                 }
             } else if !frame.is_gl_texture() {
                 updates.push(ImageUpdate::UpdateImage(
@@ -342,7 +361,7 @@ impl VideoFrameRenderer for MediaFrameRenderer {
                 return;
             };
 
-            let (descriptor, image_data, uv_key) = if let Some((y_desc, y_data, uv_desc, uv_data)) =
+            let (descriptor, image_data, uv_key, v_key) = if let Some((y_desc, y_data, uv_desc, u_data, v_data)) =
                 nv12_planes
             {
                 let Some(uv_image_key) =
@@ -350,15 +369,21 @@ impl VideoFrameRenderer for MediaFrameRenderer {
                 else {
                     return;
                 };
-                updates.push(ImageUpdate::AddImage(uv_image_key, uv_desc, uv_data, false));
-                (y_desc, y_data, Some(uv_image_key))
+                let Some(v_image_key) =
+                    self.paint_api.generate_image_key_blocking(self.webview_id)
+                else {
+                    return;
+                };
+                updates.push(ImageUpdate::AddImage(uv_image_key, uv_desc, u_data, false));
+                updates.push(ImageUpdate::AddImage(v_image_key, uv_desc, v_data, false));
+                (y_desc, y_data, Some(uv_image_key), Some(v_image_key))
             } else {
                 let image_data = external_image_data(&frame).unwrap_or_else(|| {
                     SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(
                         frame.get_data(),
                     ))
                 });
-                (bgra_descriptor, image_data, None)
+                (bgra_descriptor, image_data, None, None)
             };
 
             self.current_frame = Some(MediaFrame {
@@ -366,6 +391,7 @@ impl VideoFrameRenderer for MediaFrameRenderer {
                 width,
                 height,
                 uv_key,
+                v_key,
             });
 
             self.current_frame_holder

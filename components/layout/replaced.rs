@@ -148,6 +148,7 @@ pub(crate) struct ImageInfo {
 pub(crate) struct VideoInfo {
     pub image_key: Option<ImageKey>,
     pub yuv_uv_key: Option<ImageKey>,
+    pub yuv_v_key: Option<ImageKey>,
     pub poster_or_src_url: Option<ServoUrl>,
 }
 
@@ -551,6 +552,7 @@ impl ReplacedContents {
                             clip,
                             image_key: Some(image_key),
                             yuv_uv_key: None,
+                            yuv_v_key: None,
                             showing_broken_image_icon: image_info.showing_broken_image_icon,
                             url: image_info.url.clone(),
                             load_time: image_info.load_time,
@@ -572,6 +574,7 @@ impl ReplacedContents {
                         clip,
                         image_key: video_info.image_key,
                         yuv_uv_key: video_info.yuv_uv_key,
+                        yuv_v_key: video_info.yuv_v_key,
                         showing_broken_image_icon: false,
                         url: video_info.poster_or_src_url.clone(),
                         load_time: None,
@@ -626,6 +629,7 @@ impl ReplacedContents {
                         clip,
                         image_key: Some(image_key),
                         yuv_uv_key: None,
+                            yuv_v_key: None,
                         showing_broken_image_icon: false,
                         url: None,
                         load_time: None,
@@ -685,6 +689,7 @@ impl ReplacedContents {
                                 clip,
                                 image_key: Some(image_key),
                                 yuv_uv_key: None,
+                            yuv_v_key: None,
                                 showing_broken_image_icon: false,
                                 url: None,
                                 load_time: None,

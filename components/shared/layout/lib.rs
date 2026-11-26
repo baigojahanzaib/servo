@@ -231,12 +231,14 @@ pub struct MediaFrame {
     pub image_key: webrender_api::ImageKey,
     pub width: i32,
     pub height: i32,
-    /// When present, the frame is NV12 planar video: `image_key` is the
-    /// full-resolution R8 luma plane and `uv_key` the half-resolution RG8
-    /// interleaved chroma plane, and the display list must paint it with a
-    /// YUV image item rather than a plain image. Absent: `image_key` is a
-    /// plain BGRA image.
+    /// When present, the frame is planar video: `image_key` is the
+    /// full-resolution R8 luma plane. If `v_key` is also present the frame is
+    /// planar YCbCr (uv_key = half-resolution R8 Cb plane, v_key = R8 Cr plane);
+    /// otherwise it is NV12 (uv_key = half-resolution RG8 interleaved chroma).
+    /// Absent: `image_key` is a plain BGRA image.
     pub uv_key: Option<webrender_api::ImageKey>,
+    /// The half-resolution R8 Cr plane for planar YCbCr frames (see `uv_key`).
+    pub v_key: Option<webrender_api::ImageKey>,
 }
 
 pub struct MediaMetadata {

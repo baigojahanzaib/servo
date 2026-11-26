@@ -957,14 +957,21 @@ impl PaintTraversalHandler for DisplayListBuilder<'_> {
 
         if let Some(image_key) = fragment.image_key {
             if let Some(uv_key) = fragment.yuv_uv_key {
-                // NV12 planar video: webrender converts YUV to RGB in its
+                // Planar video: webrender converts YUV to RGB in its
                 // brush shader during rasterization. HD video is BT.709
                 // limited-range in practice; see the colorspace caveat in
                 // docs/video-compositing-scoping.md.
+                // PlanarYCbCr (all-R8 planes) rather than NV12 (RG8 chroma):
+                // RG8 panics webrender's shared texture cache (sec1zt).
+                let yuv_data = if let Some(v_key) = fragment.yuv_v_key {
+                    wr::YuvData::PlanarYCbCr(image_key, uv_key, v_key)
+                } else {
+                    wr::YuvData::NV12(image_key, uv_key)
+                };
                 self.wr().push_yuv_image(
                     &common,
                     rect,
-                    wr::YuvData::NV12(image_key, uv_key),
+                    yuv_data,
                     wr::ColorDepth::Color8,
                     wr::YuvColorSpace::Rec709,
                     wr::ColorRange::Limited,
