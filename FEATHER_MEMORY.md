@@ -2672,14 +2672,12 @@ planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functiona
 search, watch, playback. This closes the alpha-critical YouTube cluster.
 
 sec1zt36 — post-document.all regression sweep (negative results + one environmental)
-====================================================================================
 - github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
 - IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
 - google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
   NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
   chase engine causes.
 ||||||| parent of 8e00d9628 (memory: aux-popup upstream RefCell blocker filed)
-=======
 
 ## Aux-popup upstream blocker (filed): after the windowproxy entry-global fix, window.open gets further but hits `RefCell already borrowed` at script_thread.rs handle_loads_complete / documents.borrow_mut().insert — re-entrancy in the aux browsing context document load path. This is upstream servo popup-path breakage (unexercised in embedding), NOT shell-adoption-specific — popups would crash the same way in any embedder that builds the requested webview. NOTE: window.open was NEVER safe in feather — it panicked even before aux shell support (the entry-global panic fires before the constellation consults the embedder), so the shell's adoption support is strictly additive, no regression either way. Next step when prioritized: backtrace the borrow conflict (RUST_BACKTRACE=1), likely the documents RefCell held across a re-entrant load callback in the initial-about-blank aux document path.
 ||||||| parent of 5ca51d09be0 (memory: document.all verification PASSED end-to-end — YouTube results render)
@@ -2763,7 +2761,6 @@ showing the marketing page (no-cookie flow variance), so the literal marketing-p
 re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
 The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
 ||||||| parent of 97426c6c2 (memory: aux paint residual isolated to create-request builder path)
-=======
 
 ## Aux final verification state: post-paint-fix, normal tab switching verified correct both directions, BUT aux-adopted tabs still never paint their content even after manual tab cycling — deeper than frame timing: webview.paint() on the aux webview appears to composite nothing/the wrong thing. Suspect the WebViewBuilder::new_for_create_request path misses some compositor/constellation registration that normal creation performs (compare what new() does beyond builder vs new_for_create_request in components/servo/webview.rs). Tab chrome/navigation/omnibox all correct — purely compositing. This is the last aux-blocking defect; fix site comparison is the next step.
 ||||||| parent of d1863b5901e (memory: target=_blank + window.open verification PASSED — popup cluster closed)
@@ -2853,7 +2850,6 @@ the TLS InvalidMessage error suggested). Lesson confirmed: always type explicit 
 servers; the InvalidContentType symptom means "TLS handshake attempted against plain HTTP".
 
 sec1zt44 — text-overflow: CONFIRMED ENTIRELY UNIMPLEMENTED (scoping result)
-============================================================================
 Zero implementation anywhere in components/style, components/layout, or script — only an
 unrelated mention in the HTML sanitizer. `text-overflow: ellipsis` is silently dropped, clipping
 truncated headlines on BBC/YouTube/every news site (defect-queue engine findings). This is a real
@@ -2899,7 +2895,6 @@ fake-focus needs egui selection-state cleanup on focus loss — both shell-side,
 (3) find-in-page/page-zoom need servo webview APIs that don't exist — engine-queue items.
 
 sec1zt47 — omnibox revert-mid-load: FIXED + verified (feather#167)
-===================================================================
 Fix: skip the unfocused resync while loading_since.is_some() — one-guard fix, uses the existing
 loading state. Verified live: typed destination stays in the bar 1s after Enter mid-load (pre-fix
 snapped back instantly). loading_since was ALREADY maintained for the loading-bar widget — lesson:
@@ -2907,7 +2902,6 @@ check for existing state before designing new tracking. Papercut #2 (fake-focus 
 egui TextEdit selection state persists after focus loss — needs state cleanup on the sync/lost-focus path.
 
 sec1zt48 — fake-focus omnibox papercut #2: FIXED + verified (feather#168, stacked on #167)
-==========================================================================================
 Fix: clear the persisted egui TextEditState cursor range on lost_focus — the select-all range survived
 focus loss and painted a fake selection while keystrokes went to the page. Verified live post-fix:
 at-rest bar shows clean unfocused styling after clicking into the page; typed destination persists
@@ -2934,7 +2928,6 @@ Cheap v1 scope: single-line nowrap blocks only (covers bbc headlines, youtube ti
 divs, screenshot compare ellipsis presence; then bbc.com live.
 
 sec1zt50 — text-overflow scoping CORRECTION: no parser support either
-======================================================================
 Grep confirms ZERO hits in components/style — not just layout ignoring it; the property does not
 exist in servo's CSS parser/cascade at all. WPT input-text-overflow tests exist in-tree (meta .ini only).
 So implementation is TWO parts: (a) full property plumbing in the style crate (servo style uses the
@@ -2943,7 +2936,6 @@ components/style/values for the pattern), (b) the layout ellipsis rendering. Par
 but touches the property database; estimate is bigger than initially scoped — still the top compat item.
 
 sec1zt51 — CRASH ISOLATION: servo already implements it; feather runs with the safety OFF
-==========================================================================================
 Mechanism (verified in-tree): panic hook emits error! while thread::panicking() → servo's logger
 converts it to LogEntry::Panic tagged with thread-local ScriptEventLoopId → constellation handle_panic
 (constellation.rs:3189) closes+reloads ONLY pipelines on the dead event loop, notifies embedder
@@ -2957,7 +2949,6 @@ treat their panics as never-bugs, not recovery candidates. multiprocess feature 
 (run_content_process) — the Stage-3 chromium-model option exists but is weeks of wiring.
 
 sec1zt52 — crash isolation Stage 0 MERGED (feather#170 scoping + #171 implementation)
-=====================================================================================
 hard_fail=false + panic-hook-as-error! + notify_crashed delegate arm + testbinding feature all in
 feather main. VERIFICATION IN PROGRESS: testbinding rebuild running, then forced ServoTestUtils.crashHard()
 in one tab of a two-tab browser — pass criteria: process survives, [tab-crash] log line fires, crashed
@@ -2967,7 +2958,6 @@ the testbinding cargo feature AND the pref; interface is a namespace (ServoTestU
 is crashHard() not panic().
 
 sec1zt53 — CRASH ISOLATION VERIFIED END-TO-END: script panic costs one tab, browser survives
-=============================================================================================
 Live test on feather main (FEATHER_TESTUTILS=1, wikipedia Cat tab): ServoTestUtils.panic() fired in
 the script thread — full recovery chain observed in log order: (1) hook emits error! with location,
 (2) [tab-crash] delegate notification fires, (3) constellation "creating replacement pipeline for
@@ -2980,7 +2970,6 @@ isolation territory). Use panic() for unwind-recovery tests. Residual gaps per s
 compositor singletons (never-bugs), media threads (degrade-not-notify), crash-banner UX polish.
 
 sec1zt54 — crash-isolation edge case: repeated panic in same tab (crash-loop protection)
-=========================================================================================
 3 consecutive panics in one tab: browser ALIVE throughout; constellation counts: 2 replacement-pipeline
 recoveries + 1 "crash page crashed" give-up. Upstream behavior by design: if the CRASH PAGE ITSELF
 crashes (old_load_data.crash.is_some()), no further replacement is created — infinite-crash-loop
@@ -2989,10 +2978,39 @@ crashing — close it?" affordance would be the UX polish. The core guarantee he
 process never died regardless of crash pattern.
 
 sec1zt55 — text-overflow scoping CORRECTED: only layout work remains
-=====================================================================
 Earlier notes said the property doesn't exist anywhere — WRONG LOCATION: servo's CSS comes from
 stylo, a PINNED GIT dependency (servo/stylo rev 0ab78ce, not in-tree — components/style does not
 exist in current servo). Upstream stylo ALREADY implements text-overflow completely (TextOverflow
 computed value, longhands.toml, parsing+cascade — it's firefox-derived). Scope collapses to the
 layout half only: read the computed text-overflow in inline layout, truncate at the overflow boundary,
 render the ellipsis glyph. No style-system work needed. Estimated effort drops from days to hours.
+||||||| parent of 2c195280e (memory: dogfood-ui-1 — five shell UI defect fixes + patterns)
+
+## dogfood-ui-1 — first-dogfood shell UI fixes (2026-11-26, macOS lane)
+
+User's first real dogfood of shell-new. Five defects, all fixed in
+feather PR #175, each verified live. Symptom-index entries:
+
+- SYMPTOM: intro doesn't play on first start for existing alpha users.
+  CAUSE: not first-run detection (sound) — stale alpha prefs `onboarded=1`
+  read as completed. FIX: versioned pref (`onboarded=2`); versioning
+  user-facing boolean prefs is the pattern when alpha state may be corrupt.
+- SYMPTOM: GL-blit content area has square corners though the design is
+  rounded. MECHANISM: egui PaintCallback blits square over the rounded
+  card; epaint can't clip GL. FIX PATTERN: repaint corner-spillover
+  crescents in chrome colour with triangle-fan meshes AFTER the callback
+  in paint order (foreground layer is ordering-proof). GOTCHA: egui y
+  points down — arc-centre inward from a corner is (cx - sx·r, cy + sy·r)
+  with sy=+1 for TOP; a sign slip puts the whole fan outside the rect,
+  invisible because it lands on same-coloured chrome.
+- SYMPTOM: onboarding file picker does nothing on macOS/Linux.
+  CAUSE: `#[cfg(not(windows))] let picked = None` — hardcoded dead.
+  FIX: osascript `choose file` (macOS) / zenity (Linux) — no new crate
+  deps (binary-size discipline). osascript dialogs are unanchored
+  floating windows, appear on top — acceptable.
+- SYMPTOM: avatar badge in onboarding You step looks clickable, does
+  nothing. It was decorative paint only — no interact. When a control
+  LOOKS like an affordance it must be one.
+- PATTERN: favorites/quick-access must be user state, not static mock —
+  one `Browser.pinned` list feeding sidebar grid + new-tab tiles +
+  session.json persistence.
