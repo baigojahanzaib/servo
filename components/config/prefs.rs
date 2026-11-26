@@ -597,6 +597,7 @@ impl Preferences {
             layout_css_backdrop_filter_enabled: false,
             layout_css_columns_enabled: false,
             layout_css_container_queries_enabled: false,
+            layout_css_starting_style_enabled: false,
             layout_css_ellipse_corners_enabled: false,
             layout_css_font_variations_enabled: false,
             layout_css_text_overflow_enabled: true,

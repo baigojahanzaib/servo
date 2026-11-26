@@ -1615,8 +1615,14 @@ async fn http_network_or_cache_fetch(
                 .filter(|h| !h.is_empty())
                 .any(|h| host.as_str() == h || host.ends_with(&format!(".{h}")));
             if honest {
+                // Firefox-flavor, not honest: google keys SERP modernity on a
+                // recognized browser NAME token server-side — unknown names get
+                // permanent basic-html no matter what the client does
+                // (sec1zt120/121). firefox-flavor is unwalled AND modern-served;
+                // the honest string remains available via env override.
                 std::env::var("FEATHER_HONEST_UA").unwrap_or_else(|_| {
-                    "Feather/1.0 (X11; Linux x86_64) Servo/1.0".to_string()
+                    "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
+                        .to_string()
                 })
             } else {
                 context.user_agent.clone()
