@@ -3443,3 +3443,10 @@ restyle-scheduling hook is the unknown — look at how layout-2020 incremental r
 triggered today (needed regardless). Files: layout_dom/servo_dangerous_style_element.rs,
 components/layout/flow construction entry, stylo container_rule.rs traverse_container.
 - xclick-2 (2026-11-26): click-DRAG text selection on x.com signup page renders highlight — multiline selection highlight appears to track drag x-position per line rather than wrapping full-width on the first line (uncertain if defect — needs comparison against Chrome). No dramatic glitch reproduced unauthenticated: clicks, modals, inputs, selection all functional. The user's "clicking text items glitches" remains unreproduced — most likely requires the authenticated timeline. RECOMMEND: ask user for a screen recording of the glitch or x.com test credentials.
+
+## favicon-pipeline-2 — SOLVED: persistence, origin-keyed (2026-11-26, PR #209)
+- Verdict chain: servo engine pipeline complete and WORKING for loaded tabs (fetch 200s, decode, deliver, texture upload, paint hit — all traced live). Letters were exclusively lazy-restored tabs that never load.
+- TRAP DOCUMENTED: session.json stores tabs as BARE URL STRINGS — no ids. Tab ids are reassigned at restore. Any per-tab-id persistence is broken by design; key by ORIGIN.
+- Fix shipped: favicons.bin FAV2 format, origin-keyed, 32px downscale, RGB8→RGBA normalize, 5s throttled writes. Verified live: github octocats visible on restored lazy tabs.
+- FEATHER_FAVICON_DEBUG env tracing lives in shell-new (writeback + paint-miss).
+- Gotcha: the debug paint-miss print fires per-frame-per-tab — a few minutes of logging = GIGABYTES (filled /tmp once). Use briefly.
