@@ -1859,3 +1859,10 @@ accounts.google.com boots with ZERO console errors in feather — the botguard c
 ## CONFIRMED: published assets include #180 (2026-11-26 15:55 UTC)
 Patrol questioned the 4-minute merge-to-publish timeline. Evidence: the release build was compiled from branch close-fix-native @ 4e5a962 — the exact commit that BECAME PR #180 (merged unchanged as ab2103a; `git diff origin/main close-fix-native -- shell-new/src/platform.rs shell-new/src/ui/window.rs` is EMPTY). The build did not wait for the merge because it never needed to: the branch content is the merged content byte-for-byte. Close verification (process exits on X click) was performed on this exact binary BEFORE packaging. Assets zip 167,084,025 / setup 105,688,184 uploaded 15:13-15:15 are the #180-inclusive build. NOT STALE.
 Note: main also has docs-only #179 (defect-queue notes) which post-dates the build but does not affect the binary.
+
+
+## ALPHA REFRESH PUBLISHED — freeze build (2026-11-26 16:04 UTC)
+Assets on v0.1.0-alpha: feather-0.1.0-alpha.zip (167,091,100) + feather-0.1.0-setup.exe (105,693,072).
+FREEZE CONTENTS: built from freeze-alpha branch = main @ ca8813f + cfg(unix) compile fix — byte-equivalent to main @ 2135bc5 (#185). Includes ALL PRs through #185: #180 close fix (VERIFIED — process exits on X click), #184 shim v3+v4 (sannysoft 28pass/3fail, webdriver tell gone), #175 UI fixes, #176/#172/#174, crash capture+isolation, GPU exports, single-instance (unix-only; Windows stubbed — follow-up needed). Post-freeze merges NOT in build: #186 argv-URL routing, #187/#188 docs.
+CROSS-PLATFORM BREAK DOCUMENTED: #182 merged unix-only code without cfg gates — main did not compile on Windows for hours. No cargo CI exists in this repo; recommend adding even a minimal check workflow.
+Sannysoft residual: PluginArray constructor not exposed in servo (setPrototypeOf no-ops) — engine-deep; HEADCHR_IFRAME = userscript delayed-task timing (document-start semantics missing in servo — same timing class as YouTube).
