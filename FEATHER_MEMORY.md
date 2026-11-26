@@ -3692,3 +3692,6 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 ## gamepad-CLOSED (2026-11-26) — sixth matrix-driven enable
 - servo `gamepad` cargo feature enabled in shell — navigator.getGamepads matrix-verified. Key distinction: cargo features (skip-unless in webidl) don't appear in pref sweeps — audit both. Empty-array-no-hardware IS spec-correct, safe to expose unlike cookieStore. platform-apis 7/9. PR #235. Remaining: webgpu unassessed, cookiestore deliberate.
 - DISK: multiple full builds this session — purge before next big build.
+
+## cookiestore-scoped (2026-11-26) — NOT a stub, real diagnosis needed
+- cookiestore.rs is 986 lines with full Get/Set/Delete/GetAll implementations — the roundtrip failure is a real behavioral bug, not an absence. Next step: enable dom_cookiestore_enabled in shell, run platform-apis matrix page, capture WHICH operation fails (set? get? promise resolution?). Probe detail in tests/scenarios/pages/platform-apis.html. If small: another upstreamable fix; if architectural: stays reverted.
