@@ -3124,3 +3124,24 @@ F6/F7/F15 negatives this session: scrolling verified working end-to-end (wikiped
 **Test harness artifacts**: /tmp/seekharness (cargo project, 10s builds) — CRITICAL harness gotchas: fakesink sync=false consumes streams at max speed (EOS before your seek fires — invalidates the test); feeding the whole file then seeking without re-feed tests starvation not the pipeline; position queries need the running binary rebuilt (stale binary silent on build error).
 
 **Confirmed ancillary defect**: reset_track_locked drops the old appsrc while still PLAYING (gstreamer critical) — must set NULL state before removal. Fixed in harness copy, NOT yet in engine.
+
+
+## sec1zt70 — MSE seek-stall: mechanism fully narrowed, correct fix design specified (2026-11-26, linux)
+
+**Decisive experiment results** (all controlled repro, /tmp/elltest/mseseek.html, 10s engine rebuilds):
+1. WITH recreation (current design): post-seek push returns Ok but ZERO buffers ever exit the servomse ghost pad. The recreated appsrc's streaming task never pushes out — recreation mechanics are the flow-killer IN THE ENGINE (same code resumes fine in pure-gst harness — environmental, mechanism uncracked despite bisection of flush/clock/playbin3/dispose-state).
+2. WITHOUT recreation (SERVO_MSE_NORECREATE=1, flush-only): the re-fed buffer DOES exit the ghost pad downstream (FLOW n=1) — but playback STILL frozen (frame-pixel-identical). So even with flow restored, downstream produces no frames.
+3. Conclusion: TWO independent bugs stack. (a) recreation kills source-out flow in the gst-play/appsink engine environment; (b) even with flow, the clock-domain mismatch kills presentation downstream: re-fed webm cluster timecodes restart low while pipeline running time never resets (no real seek event exists in push mode) — frames map to running times in the past, sink sync drops or stalls them. This is exactly why §1q/§1t validation "worked" in the harness: fakesink sync behavior differs from appsink+render pull, and positions advancing ≠ frames correct.
+
+**THE FIX DESIGN (WebKit-style, now precisely specified)**: timestamp continuity via post-demux rewriting.
+- Keep the original appsrc (no recreation — kills bug (a) by construction); flush still needed to reset demux/decoder state.
+- On MSE seek to target T: record shift S = P_running - T where P_running is the pipeline running time/position at the moment of seek. Accumulate shifts across seeks (S_total).
+- Pad probes on the demux output pads (matroskademux srcs, or equivalently decoder input pads — attached by walking the pipeline once after preroll in player.rs, NOT in servomse): rewrite every buffer pts/dts += S_total so presentation time is continuous in running-time domain. Frames then play in order regardless of stream timecode direction — backward seeks included. Probes must handle buffer writability (copy-on-write in probe).
+- Position reporting: positions must report T-domain not running-time: report pipeline_position - S_total. gst-play queries the pipeline position directly, so compensation must intercept at the servo-media player layer where position-update events are consumed (the removed mse_position_offset was the right idea but wrong constant — it must be the accumulated shift, sign-checked, and it was removed in 4c14e896601 based on the wrong natively-correct theory).
+- Keyframe reality: post-seek re-fed media starts at the nearest keyframe before T in practice (players feed from keyframes) — small presentation inaccuracy acceptable, matches what Chrome does.
+- Open implementation risks: (1) probe attachment — demux pads appear dynamically inside decodebin3; must walk pipeline post-preroll or use decodebin pad-added signal in the servomse/uridecodebin chain; (2) multi-track sync — shift must be identical on a/v or audio glitches; (3) segment event rewriting may also be needed, not just buffers, since sinks compute running time from pts via the segment — test-driven; (4) EOS/eviction interplay untouched.
+
+**Cheaper alternative NOT yet tried, worth 30min before the big design**: recreate the appsrc BUT also re-link it through a pad-added-style re-negotiation — i.e., investigate WHY the recreated streaming task dies in gst-play env specifically (gst debug output works in harness but produced nothing in feather — solve that logging gap first: GST_DEBUG output absent in feather stderr for unknown reason, glib criticals do print). If recreation can be made to flow in the engine, then only bug (b) remains, which is the smaller timestamp-shift half.
+
+**Confirmed small fix to land regardless**: reset_track_locked drops old appsrc in PLAYING state (gstreamer critical) — set_state(Null) before obj.remove. One line.
+**Instrumentation state in tree**: mse_source.rs currently has debug eprintlns + FLOW probes + SERVO_MSE_NORECREATE/SERVO_MSE_NOFLUSH env gates — strip before any PR, keep the NULL fix.
