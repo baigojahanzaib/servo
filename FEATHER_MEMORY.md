@@ -3302,3 +3302,19 @@ Navigate-away protocol measurement: first video +110-140MB, ~0 reclaimed after 3
 
 ## sec1zt87 — SW-pref regression sweep: CLEAN; YouTube playback stall NOT caused by the pref
 Post-#200 verification: X (twitter) boots zero-error full content; reddit boots zero-error 878KB content; Google Maps full vector render (sec1zt85). YouTube watch page boots fully but video never buffers (rs:0, zero MSE activity — servomse never even created; page-level/env). A/B tested pref on/off: IDENTICAL behavior both ways — the SW pref is exonerated. The stall pattern (page fine, googlevideo data never flows) matches bot-wall serving rather than engine regression: initial MSE startup verified working on the mseseekA harness in the same builds. OPEN: needs a run where youtube serves media to this IP — not currently diagnosable further on this VM.
+
+sec1zt88 — media adapter-cycle FIX VERIFIED, retention work closed (2026-11-26, linux lane):
+The permanent-leak mechanism from sec1zt86 confirmed and fixed: the deferred-dispose queue stored
+the whole PlayerInner, but PlayerInner holds the PlaySignalAdapter which keeps a STRONG glib ref on
+the play object — the queue itself pinned play refs at >=2, so the reaper's play_refs==1 drain check
+could never fire. Symptom: player objects never finalize after pipeline teardown → check:
+signal_adapter glib ref cycle (PlayerInner holds adapter, adapter holds play object; queuing inner
+pins the object the reaper is supposed to release). General form: when implementing drain-to-N-refcount
+reaper patterns, audit every field of the queued struct for hidden strong refs on the target object —
+the queue must hold ONLY its own clone, nothing transitive. Fix: queue the bare Play object, drop inner
+at queue time (releases inner.player + adapter refs). VERIFIED live: 3 consecutive navigate-away
+cycles, reaper fired for all three players (2s/0.7s/0.16s — refs drain progressively faster once prior
+deferred mass is gone), playback restarts cleanly on nav back, zero panics, zero regressions. The
+sec1zt86 deferred-dispose design is now actually functional rather than permanent-leak-with-extra-steps.
+Media retention investigation CLOSED — true per-player leak now disposes within seconds; residual RSS
+mass is the documented reusable-arena behavior. Commit 4c126d64190.
