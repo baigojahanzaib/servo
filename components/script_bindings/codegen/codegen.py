@@ -3408,7 +3408,7 @@ class CGWrapMethod(CGAbstractMethod):
         proto_object_fn = "GetProtoObject::<D>"
         if self.descriptor.proxy:
             if self.descriptor.interface.identifier.name == "HTMLAllCollection":
-                c = "Some(&crate::utils::HTML_ALL_COLLECTION_PROXY_CLASS)"
+                c = "Some(crate::utils::html_all_collection_proxy_class())"
             else:
                 c = "None"
         else:

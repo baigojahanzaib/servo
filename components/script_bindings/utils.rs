@@ -918,16 +918,32 @@ pub(crate) unsafe fn report_define_properties_failure(cx: &mut js::context::JSCo
     JS_ClearPendingException(cx);
 }
 
-/// JSClass for the HTMLAllCollection proxy object. The
-/// JSCLASS_EMULATES_UNDEFINED flag (1 << 6, js/public/Class.h) gives the
-/// object the [[IsHTMLDDA]] behavior required by the spec: typeof undefined,
-/// falsy, loose-equal to null/undefined, while remaining an ordinary object
-/// for identity and strict equality.
-pub(crate) static HTML_ALL_COLLECTION_PROXY_CLASS: JSClass = JSClass {
-    name: c"HTMLAllCollection".as_ptr(),
-    flags: js::jsapi::JSCLASS_EMULATES_UNDEFINED,
-    cOps: std::ptr::null(),
-    spec: std::ptr::null(),
-    ext: std::ptr::null(),
-    oOps: std::ptr::null(),
-};
+/// JSClass for the HTMLAllCollection proxy object: a clone of SpiderMonkey's
+/// built-in `js::ProxyClass` (so all class ops, the class extension and the
+/// object ops behave exactly as they do for ordinary proxies) with the
+/// JSCLASS_EMULATES_UNDEFINED flag (1 << 6, js/public/Class.h) added. That
+/// flag gives the object the [[IsHTMLDDA]] behavior required by the spec:
+/// typeof undefined, falsy, loose-equal to null/undefined, while remaining an
+/// ordinary object for identity and strict equality.
+pub(crate) fn html_all_collection_proxy_class() -> &'static JSClass {
+    use std::sync::OnceLock;
+
+    struct SyncClass(JSClass);
+    unsafe impl Send for SyncClass {}
+    unsafe impl Sync for SyncClass {}
+
+    static CLASS: OnceLock<SyncClass> = OnceLock::new();
+    &CLASS
+        .get_or_init(|| {
+            let base = unsafe { &js::jsapi::ProxyClass };
+            SyncClass(JSClass {
+                name: c"HTMLAllCollection".as_ptr(),
+                flags: base.flags | js::jsapi::JSCLASS_EMULATES_UNDEFINED,
+                cOps: base.cOps,
+                spec: base.spec,
+                ext: base.ext,
+                oOps: base.oOps,
+            })
+        })
+        .0
+}
