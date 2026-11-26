@@ -1928,3 +1928,20 @@ Symptom index: symptom "panic player.rs seek_data ack_channel Disconnected durin
 OPEN — playerleak volume: the intentional-leak mitigation fires constantly under teardown churn (74 leaks in 3min extreme stress; real-world infinite-feed teardown rate is much lower but nonzero). Each leak pins a gst pipeline shell. PROPER FIX candidate: deferred-dispose retry — instead of permanent mem::forget, queue the player for a dispose retry when refs drain (poll on next player creation or a timer). Not attempted — design change beyond crash-fix scope.
 
 UNRESOLVED — the "vp9 threads crash on YouTube" as a named defect: no documented signature exists in FEATHER_MEMORY or lane history (grepped). Direct vp9 playback (1080p webm loop) does NOT crash. YouTube itself untestable on this VM environmentally. If the crash resurfaces with a concrete signature, the vp9stress harness is the reproduction starting point.
+
+## sec1zo — vp9/YouTube abort hunt: exhaustive negative-results matrix (2026-11-26)
+
+MISSION CONTEXT: coordinator directive to root-cause "gst YouTube abort (vp9 threads crash)". CRITICAL META-FINDING: no such crash signature is documented anywhere — not in FEATHER_MEMORY, not in feather/docs/defect-queue.md, not in lane session history. All greps negative. The defect as named may be misremembered, misattributed, or fixed-incidentally by the planar-YCbCr/teardown work. This entry is the negative-results index so future lanes don't re-walk the search.
+
+REPRO MATRIX — all on post-planar-fix feather, all CLEAN (zero panics/aborts):
+1. Progressive vp9 loop 1080p webm, minutes — clean, renders correct.
+2. Concurrent vp9 teardown churn (4 decoders, destroy/recreate 3s cycle) — clean post-seek-ack-fix (was: 5 seek-ack panics/2min pre-fix).
+3. Random-seek stress 2.5 seeks/sec — clean.
+4. MSE vp9 append choreography (updateend-gated 64KB chunks, YouTube pattern) dual-player churn, 5+min — clean, renders correct.
+5. MSE adaptive resolution alternation — test artifact: arbitrary byte-splicing corrupts ebml stream (matroskademux "reading large block" errors are the SPLICE being invalid, NOT a product defect — proper repro needs cluster-aligned ffmpeg-generated segments, not built).
+
+Symptom index: symptom "gst abort/crash during YouTube vp9 playback" -> check: seek-ack teardown race (FIXED — sec1zn); RG8 planar class (FIXED — sec1zm, was the actual cause of multiple misattributed crash reports); progressive vp9 decode (ruled out — minutes of loop clean); vp9 teardown churn (ruled out post-seek-ack-fix); MSE append churn (ruled out 5min clean); adaptive resolution reconfigure (UNTESTED properly — needs cluster-aligned segments). If the crash resurfaces: capture the exact signature BEFORE investigating — every hour spent on the wrong signature is waste.
+
+ENVIRONMENTAL: real YouTube untestable on this VM — bot wall even with valid cookies sent (LOGIN_INFO present in requests, SIDCC server-side rotation invalidates within a day), youtube-nocookie embed walled too. YouTube testing requires either fresh cookie extraction from a live signed-in Chrome (portal-keyring encryption blocks the sqlite path — needs CDP-based extraction) or a non-null-routed network.
+
+NEW CONFIRMED DEFECT (found via the stress harness): playerleak volume — 423 leaks in 5.5min of MSE churn stress. The intentional-leak mitigation converts crashes to leaks at high rate under teardown-heavy use. Deferred-dispose-retry is the proper-fix candidate.
