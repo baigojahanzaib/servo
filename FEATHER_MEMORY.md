@@ -3145,3 +3145,17 @@ F6/F7/F15 negatives this session: scrolling verified working end-to-end (wikiped
 
 **Confirmed small fix to land regardless**: reset_track_locked drops old appsrc in PLAYING state (gstreamer critical) — set_state(Null) before obj.remove. One line.
 **Instrumentation state in tree**: mse_source.rs currently has debug eprintlns + FLOW probes + SERVO_MSE_NORECREATE/SERVO_MSE_NOFLUSH env gates — strip before any PR, keep the NULL fix.
+
+
+## sec1zt71 — seek-stall REFRAME: flow works, downstream consumption is the sole bug; test contamination warning (2026-11-26, linux)
+
+**CRITICAL CORRECTION to sec1zt70**: in a CLEAN single-instance run (fresh session.json — feather session-restore resurrects old test tabs and SERVES AS A SECOND hidden video instance; ALL earlier mse instrumentation is potentially cross-contaminated — restored tabs run their own pipelines and interleave [mse] logs). Clean findings:
+1. A recreation happens AT STARTUP before any seek (reset_track fires during initial setup — initial playback already runs on a recreated appsrc and works). So recreation is NOT inherently broken.
+2. Post-seek WITH recreation: the re-fed buffer DOES exit the ghost pad (FLOW + OUT probes fire, pts=0). Source-side flow WORKS.
+3. Yet playback still frozen (pixel-identical frames), position pinned 0.0.
+=> The stall is PURELY downstream consumption: data enters decodebin but never presents. The zero-flow observations in sec1zt70 were contamination/race artifacts. The recreation-kills-flow theory is DEAD.
+4. currentTime reads 0.0 post-seek (not the target 40): pipeline position genuinely restarts at ~0 — consistent with demux re-basing, meaning frames are NOT in the past — the late-drop clock-domain theory does NOT explain the freeze either.
+5. Leading remaining suspects: (a) re-preroll never completes — first post-seek buffer never reaches the video appsink in renderable form; (b) the appsink new_sample/new_preroll callbacks error post-flush (return Flushing/Error) and the sink stops pulling — back-pressure stalls everything upstream; (c) vp9 decoder state post-flush not re-priming despite keyframe.
+NEXT INSTRUMENT (planned, not done): probe the video appsink input + matroskademux/vp9dec outputs by walking the pipeline in player.rs post-seek; check whether frames reach the sink at all, and whether the render callback errors.
+
+**Testing rule (MANDATORY for all future media verification)**: before any instrumented run, move ~/.config/feather/session.json aside or use unique-per-run URLs; session-restore duplicates test pages silently and invalidates instance-level logs.
