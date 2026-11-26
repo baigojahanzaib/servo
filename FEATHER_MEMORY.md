@@ -2905,3 +2905,11 @@ loading state. Verified live: typed destination stays in the bar 1s after Enter 
 snapped back instantly). loading_since was ALREADY maintained for the loading-bar widget — lesson:
 check for existing state before designing new tracking. Papercut #2 (fake-focus selection) still open:
 egui TextEdit selection state persists after focus loss — needs state cleanup on the sync/lost-focus path.
+
+sec1zt48 — fake-focus omnibox papercut #2: FIXED + verified (feather#168, stacked on #167)
+==========================================================================================
+Fix: clear the persisted egui TextEditState cursor range on lost_focus — the select-all range survived
+focus loss and painted a fake selection while keystrokes went to the page. Verified live post-fix:
+at-rest bar shows clean unfocused styling after clicking into the page; typed destination persists
+through load. Both omnibox papercuts (#1 revert-mid-load, #2 fake-focus) now closed — remaining
+papercut tails: progress-affordance visibility, Cmd+Shift+T (needs closed-tab tracking infra).
