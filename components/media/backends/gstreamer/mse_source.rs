@@ -26,6 +26,11 @@ mod imp {
     pub struct MseTrack {
         pub appsrc: gstreamer_app::AppSrc,
         pub eos: bool,
+        /// The stream-id this track's appsrc started with — captured from the
+        /// first stream-start event. Reused verbatim in post-seek resequencing
+        /// so decodebin3 treats the re-fed stream as the SAME stream rather
+        /// than an unselected new one (sec1zt74 stream-id theory).
+        pub stream_id: std::sync::Arc<Mutex<Option<(String, Option<u32>)>>>,
         /// Set by seek_reset: the next push must re-sequence the stream in-band
         /// (stream-start/caps/segment) before the first post-seek buffer.
         pub needs_resequence: bool,
@@ -35,6 +40,10 @@ mod imp {
         pub cat: gstreamer::DebugCategory,
         pub tracks: Mutex<BTreeMap<u64, MseTrack>>,
         pub signalled_no_more_pads: std::sync::atomic::AtomicBool,
+        /// Pending resequence parameters: (seek target seconds, pipeline
+        /// running time at the seek moment in nanoseconds). Consumed by the
+        /// first post-seek push to build the injected segment.
+        pub pending_resequence: Mutex<Option<(f64, u64)>>,
     }
 
     impl ServoMse {
@@ -63,13 +72,21 @@ mod imp {
             ghost.set_target(appsrc.static_pad("src").as_ref()).unwrap();
             ghost.set_active(true).unwrap();
             obj.add_pad(&ghost).expect("Could not add track pad");
+            let stream_id_slot = std::sync::Arc::new(Mutex::new(None));
             {
                 let idc = id;
+                let slot = stream_id_slot.clone();
                 ghost.add_probe(gstreamer::PadProbeType::EVENT_DOWNSTREAM, move |_, info| {
                     if let Some(gstreamer::PadProbeData::Event(ref ev)) = info.data {
                         if ev.type_() == gstreamer::EventType::StreamStart {
                             if let Some(s) = ev.structure() {
                                 eprintln!("[mse] STREAMSTART track={} struct={}", idc, s.to_string());
+                                if let Ok(idstr) = s.get::<String>("stream-id") {
+                                    let group = s.get::<u32>("group-id").ok();
+                                    if slot.lock().unwrap().is_none() {
+                                        *slot.lock().unwrap() = Some((idstr, group));
+                                    }
+                                }
                             }
                         }
                     }
@@ -113,7 +130,7 @@ mod imp {
                     }
                 });
             }
-            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false });
+            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false, stream_id: stream_id_slot });
         }
 
         pub fn push_buffer(
@@ -145,16 +162,45 @@ mod imp {
             if t.needs_resequence {
                 t.needs_resequence = false;
                 if let Some(srcpad) = t.appsrc.static_pad("src") {
-                    let stream_id = format!("servomse-{track}-reseq");
-                    let r1 = srcpad.push_event(
-                        gstreamer::event::StreamStart::builder(&stream_id).build(),
-                    );
+                    let (stream_id, group_id) = t
+                        .stream_id
+                        .lock()
+                        .unwrap()
+                        .clone()
+                        .map(|(i, g)| (i, g))
+                        .unwrap_or_else(|| (format!("servomse-{track}-reseq"), None));
+                    // The resequenced stream-start must reproduce the original
+                    // stream-id AND group-id: decodebin3 keys stream selection
+                    // and collection grouping on both — a missing group-id or
+                    // fresh id makes the re-fed stream an unselected stranger
+                    // and zero frames reach the sinks (sec1zt82 remaining half).
+                    let mut ev = gstreamer::event::StreamStart::builder(&stream_id).build();
+                    if let Some(g) = group_id {
+                        // The safe builder only generates fresh group ids, so
+                        // patch the original back into the structure directly.
+                        if let Some(evref) = ev.get_mut() {
+                            evref.structure_mut().set("group-id", g);
+                        }
+                    }
+                    let r1 = srcpad.push_event(ev);
                     // No caps event: track caps are ANY (typefind re-detects
                     // on the new stream-start), and gst_event_new_caps rejects
                     // non-fixed caps with a null-event crash (event.rs:149).
                     let r2 = true;
-                    let segment =
-                        gstreamer::FormattedSegment::<gstreamer::format::Bytes>::new();
+                    // TIME-format segment: demuxers in push mode adopt a TIME
+                    // input segment directly (a BYTES one is dropped as
+                    // untranslatable — verified: base never propagates, frames
+                    // dropped as too-late). start = seek target, base = pipeline
+                    // running time at the seek moment, so media timestamps map
+                    // into the live clock domain: pts(target) -> base + 0.
+                    let mut segment =
+                        gstreamer::FormattedSegment::<gstreamer::ClockTime>::new();
+                    if let Some((target, base_ns)) = *self.pending_resequence.lock().unwrap() {
+                        segment.set_start(gstreamer::ClockTime::from_nseconds(
+                            (target * 1_000_000_000.0) as u64,
+                        ));
+                        segment.set_base(gstreamer::ClockTime::from_nseconds(base_ns));
+                    }
                     let r3 = srcpad.push_event(gstreamer::event::Segment::new(&segment));
                     eprintln!(
                         "[mse] resequence inject track={} streamstart={} caps={} segment={}",
@@ -198,8 +244,9 @@ mod imp {
         /// manually from the application thread wedges the pipeline (FEATHER_MEMORY
         /// §1q), this design avoids injection entirely. Validated in the isolated
         /// gst harness: playback resumes cleanly with continuous position.
-        pub fn seek_reset(&self) {
-            eprintln!("[mse] seek_reset enter");
+        pub fn seek_reset(&self, target_secs: f64, base_ns: u64) {
+            eprintln!("[mse] seek_reset enter target={} base_ns={}", target_secs, base_ns);
+            *self.pending_resequence.lock().unwrap() = Some((target_secs, base_ns));
             // Hold the tracks lock for the whole reset: pushes arriving
             // mid-reset would otherwise land in a dying appsrc (or a removed
             // track) and be silently lost, permanently starving the demuxer —
@@ -280,7 +327,7 @@ mod imp {
             appsrc.set_format(gstreamer::Format::Bytes);
             appsrc.set_stream_type(gstreamer_app::AppStreamType::Stream);
             let _ = appsrc.sync_state_with_parent();
-            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false });
+            tracks.insert(id, MseTrack { appsrc, eos: false, needs_resequence: false, stream_id: std::sync::Arc::new(Mutex::new(None)) });
         }
     }
 
@@ -300,6 +347,7 @@ mod imp {
                 ),
                 tracks: Mutex::new(BTreeMap::new()),
                 signalled_no_more_pads: std::sync::atomic::AtomicBool::new(false),
+                pending_resequence: Mutex::new(None),
             }
         }
     }
@@ -395,8 +443,8 @@ impl ServoMse {
 
     /// Seek support: flush + recreate all track appsrcs so the next pushes
     /// re-sequence the stream naturally. See imp::ServoMse::seek_reset.
-    pub fn seek_reset(&self) {
-        self.imp().seek_reset()
+    pub fn seek_reset(&self, target_secs: f64, base_ns: u64) {
+        self.imp().seek_reset(target_secs, base_ns)
     }
 
     pub fn end_of_stream_all(&self) {

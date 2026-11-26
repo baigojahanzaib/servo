@@ -308,7 +308,19 @@ impl PlayerInner {
             // so the page's post-seek appends re-sequence the stream in-band —
             // the harness-validated design in FEATHER_MEMORY §1q/§1t.
             if let Some(PlayerSource::Mse(ref source)) = self.source {
-                source.seek_reset();
+                // Running time at the seek moment: pipeline clock minus base
+                // time. Injected as the resequenced segment's base so post-seek
+                // media timestamps land in the live clock domain.
+                let base_ns = (|| {
+                    let pipeline = self.player.pipeline();
+                    let clock = pipeline.clock()?;
+                    let now = clock.time().nseconds();
+                    let base = pipeline.base_time().map(|b| b.nseconds()).unwrap_or(0);
+                    Some(now.saturating_sub(base))
+                })()
+                .unwrap_or(0);
+                eprintln!("[mse] seek target={} running_time_ns={}", time, base_ns);
+                source.seek_reset(time, base_ns);
             }
             self.mse_position_offset.set(time);
             return Ok(());
@@ -977,11 +989,15 @@ impl GStreamerPlayer {
                         }
                     })
                     .new_sample(move |video_sink| {
-                        render_sample(
-                            video_sink
-                                .pull_sample()
-                                .map_err(|_| gstreamer::FlowError::Eos)?,
-                        )
+                        let sample = video_sink
+                            .pull_sample()
+                            .map_err(|_| gstreamer::FlowError::Eos)?;
+                        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                        let c = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        if c % 30 == 0 || c < 3 {
+                            eprintln!("[mse] video sample n={} pts={:?}", c, sample.buffer().map(|b| b.pts()));
+                        }
+                        render_sample(sample)
                     })
                     .build(),
             );
