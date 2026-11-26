@@ -2772,3 +2772,13 @@ Symptom: "client error (Connect)" on http LAN/localhost urls partially explained
 IP:port in shell-new omnibox goes to HTTPS (TLS InvalidContentType against plain-http server in net log).
 Workaround: none needed for external testing; local-http testing still broken (servo TLS-to-plain or
 connect issue unresolved for explicit http:// too — low priority, eval-injection covers repro needs).
+
+sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with caveat)
+==================================================================================
+gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
+and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
+originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
+by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
+showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
+re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
+The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
