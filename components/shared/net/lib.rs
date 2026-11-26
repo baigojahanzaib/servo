@@ -1458,8 +1458,25 @@ pub fn set_default_accept_language(headers: &mut HeaderMap) {
         return;
     }
 
-    // To reduce fingerprinting we set only a single language.
-    headers.insert(header::ACCEPT_LANGUAGE, get_current_locale().1.clone());
+    // Send Chrome-style language fallbacks (`en-US,en;q=0.9`): a bare locale is
+    // fine, but "C"/"POSIX" (which sys_locale reports on minimal/headless
+    // systems with LANG=C) is a headless-automation tell no real browser emits.
+    let (locale, _default_value) = get_current_locale();
+    let normalized = match locale.as_str() {
+        "" | "C" | "POSIX" | "C.UTF-8" | "POSIX.UTF-8" => "en-US".to_string(),
+        _ => locale.clone(),
+    };
+    let value = normalized
+        .split(['-', '_'])
+        .next()
+        .filter(|primary| *primary != normalized)
+        .map(|primary| format!("{normalized},{primary};q=0.9"))
+        .unwrap_or(normalized);
+    if let Ok(header_value) = HeaderValue::from_str(&value) {
+        headers.insert(header::ACCEPT_LANGUAGE, header_value);
+    } else {
+        headers.insert(header::ACCEPT_LANGUAGE, HeaderValue::from_static("en-US"));
+    }
 }
 
 pub static PRIVILEGED_SECRET: LazyLock<u32> = LazyLock::new(|| rng().next_u32());

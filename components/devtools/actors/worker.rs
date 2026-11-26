@@ -136,9 +136,11 @@ impl Actor for WorkerTargetActor {
     fn cleanup(&self, stream_id: StreamId) {
         self.streams.borrow_mut().remove(&stream_id);
         if self.streams.borrow().is_empty() {
-            self.script_sender
-                .send(WantsLiveNotifications(TEST_PIPELINE_ID, false))
-                .unwrap();
+            // The script thread may already be gone during teardown — a
+            // disconnected channel must not panic the devtools thread.
+            let _ = self
+                .script_sender
+                .send(WantsLiveNotifications(TEST_PIPELINE_ID, false));
         }
     }
 }

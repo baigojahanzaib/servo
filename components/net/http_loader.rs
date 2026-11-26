@@ -896,6 +896,40 @@ pub(crate) async fn http_fetch(
     // Step 1. Let request be fetchParams’s request.
     let request = &mut fetch_params.request;
 
+    // FEATHER behavioral-shaping experiment (sec1zt104/105, Stage-0 google-wall
+    // validation): serialize + space request starts for hosts listed in
+    // FEATHER_SLOW_FETCH_HOSTS (comma-separated substrings, e.g. "google.com,google.co.uk")
+    // with a minimum interval of FEATHER_SLOW_FETCH_MS milliseconds (default 150).
+    // Requests are spaced without holding the lock across the sleep: each fetch
+    // claims a start-slot under the lock, then waits for its slot.
+    if let Ok(hosts) = std::env::var("FEATHER_SLOW_FETCH_HOSTS") {
+        let host = request
+            .current_url()
+            .host_str()
+            .unwrap_or_default()
+            .to_string();
+        if hosts.split(',').any(|h| !h.is_empty() && host.contains(h.trim())) {
+            static LAST_FETCH_SLOT: std::sync::Mutex<Option<std::time::Instant>> =
+                std::sync::Mutex::new(None);
+            let interval_ms: u64 = std::env::var("FEATHER_SLOW_FETCH_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(150);
+            let slot = {
+                let mut last = LAST_FETCH_SLOT.lock().unwrap();
+                let now = std::time::Instant::now();
+                let slot = last.map_or(now, |t| t.max(now)) +
+                    std::time::Duration::from_millis(interval_ms);
+                *last = Some(slot);
+                slot
+            };
+            let wait = slot.saturating_duration_since(std::time::Instant::now());
+            if !wait.is_zero() {
+                tokio::time::sleep(wait).await;
+            }
+        }
+    }
+
     // Step 2. Let response and internalResponse be null.
     let mut response: Option<Response> = None;
 
