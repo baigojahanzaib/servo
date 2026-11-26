@@ -2664,3 +2664,37 @@ Sites re-tested after the document.all fix on the stable build: YouTube results+
 Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
 
 ## window.open panic root cause + fix (post-alpha): `windowproxy.open` did `maybe_entry_global().map(|g| g.as_window().Document())` — as_window() PANICS when the entry global isn't a Window (devtools evaluateJS frames, possibly WASM instantiation). Reproduced 2/2 via devtools eval of window.open on trivial page (example.com) — Script thread panic "expected a Window scope" then webrender cascade kills the app. Fixed on feather-engine: only use entry global when it downcasts to Window, else fall back to the browsing context's active document. NOTE: real-link target=_blank clicks don't hit this (entry global IS the window during event dispatch) — devtools-eval-driven testing did. Upstreamable bugfix, small.
+||||||| parent of 5ca51d09be0 (memory: document.all verification PASSED end-to-end — YouTube results render)
+||||||| parent of acd75309d67 (memory: document.all verification PASSED end-to-end — YouTube results render)
+
+sec1zt34 — document.all verification: PASSED end-to-end (Linux, feather shell-new)
+Verification of the HTMLAllCollection implementation (1a1f702bdd6, other lane) in the integrated
+feather shell-new binary. ALL gates pass:
+
+**Primitive semantics** (live eval bridge probe on https://example.com/, servo engine):
+- `typeof document.all` → "undefined" ✓ spec
+- `document.all === undefined` → **false** ✓ THE FIX (was true pre-fix — the exact sanitizer-breaking primitive)
+- `document.all == undefined` → true ✓ spec (loose equality emulates undefined)
+- `!document.all` → true ✓ spec (falsy object)
+- `document.all === null` → false ✓ spec
+- `document.all.length` → 22 on example.com — live collection populated ✓
+- `Object.prototype.toString` → "[object HTMLAllCollection]" ✓
+- `document.all[0]` → object — indexed access works ✓
+- `document.all('x')` → TypeError not-a-function — legacy-caller omission as documented (acceptable v1; sites using the call form still break — track as follow-up)
+
+**END-TO-END ALPHA GATE: YouTube search results RENDER in feather shell-new.**
+youtube.com/results?search_query=test displays full result set: video thumbnails with images,
+channel avatars, titles, metadata, subscribe buttons, filter chips. Pre-fix this page rendered a
+completely blank results area (hidden attribute never cleared). The root-cause chain documented in
+sec1zt29-31 is closed: document.all real object → strict-equality false → resin sanitizer passes
+undefined binding values through untouched → hidden=false → results visible.
+
+**Verification environment notes (symptom-indexed):**
+- Symptom: shell-new shows "wired to Servo" mock placeholder + eval bridge silent (rects=0) → check: file:// and non-http URLs NEVER get engine webviews (app.rs sync_engine gates on `doc.url.starts_with("http")`); also first-run onboarding must be completed once. Use http(s) URLs for all engine verification.
+- Symptom: "client error (Connect)" loading localhost/127.0.0.1:<port> in servo → python http.server IS reachable via curl but servo net fails to connect; workaround: evaluate probes via the eval bridge on external sites instead of serving local probe pages. NOT further root-caused (low value).
+- Symptom: xdotool clicks land on wrong window when multiple browsers on DISPLAY=:0 → always wmctrl -l to enumerate, minimize competition, activate the feather window explicitly by id; Chrome-for-testing instances persist on the desktop from other harnesses.
+- The eval bridge chain works end-to-end once a real http engine webview exists: probe file → [eval] result in stderr within ~2s. FEATHER_EVAL_DBG diagnostics confirmed active=Some/webview=true.
+- shell-new first-run onboarding (hello → make-it-yours → skip) blocks real browsing until completed; it reappears on fresh profiles only.
+
+The document.all mission is COMPLETE. Verification evidence: screenshots + eval results in session
+devin-d3790f631f184a44862d36d5fb5f39e4.
