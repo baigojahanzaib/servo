@@ -1678,3 +1678,18 @@ rg16fprobe.html, glbtestlive.html. DIAGNOSTIC LESSON: bisecting the three.js VER
 cracked it in 4 steps when mechanism-guessing was stalled; for library-dependent rendering defects, bisect
 the library version FIRST. Also: the texImage InvalidEnum error appeared in WORKING versions too (r183) —
 error-presence is not proof of causation; verify against a passing baseline before chasing.
+||||||| parent of 46ac4ea01a9 (docs: sec1zi — image-cap verdict: structurally toothless (100% pinning), memory is DOM/WR-owned, no hours-scale win exists)
+
+## sec1zi — image-cache cap verdict: structurally toothless, memory is DOM/WR-owned (2026-11-26)
+
+**Symptom: net image-cache far exceeds the 128MB per-pipeline cap (309-338MB on reddit) → check: encoded-vs-decoded byte miscounting (status: RULED OUT — cap counts image.bytes.len() = decoded RGBA), broken LRU/eviction (status: RULED OUT — eviction logic correct as designed), total pinning by external Arc holders (CONFIRMED CAUSE — instrumented: 103/103 images pinned, 100%: every cache entry is Arc-shared with a DOM/render holder; evicting pinned entries frees nothing by construction so the cap has nothing it can legally free).**
+
+Consequences:
+- The cache does not OWN the memory it measures — it mirrors bytes owned by DOM image nodes and paint-path references. Cap enforcement can only ever affect genuinely-unreferenced images (scroll-accumulation case, where it already works: post-DOM-removal unpinned images get evicted).
+- §1037 pin-release dead end is now explained mechanistically a second time: dropping a pin does nothing because bytes are Arc-shared and re-pinned every paint — do not re-attempt a third time.
+- The idle-memory image mass decomposes into: DOM-side decoded bytes (the Arc) + WR-side copy (webrender/images 342MB — independent ownership, uninvestigated lifetime) + the encoded originals (small). Lever ranking: (1) WR-side CPU-copy lifetime scoping — hours-scale, biggest tractable piece; (2) lazy/offscreen decode — weeks-scale structural.
+
+**Instrumentation recipe (reusable)**: eprintln inside enforce_completed_load_budget gated on >half-cap — prints per-pipeline total/pinned bytes+counts. IMGCACHE-DBG in working tree only, never committed.
+
+### sec1zi addendum — WR-side copy scoping verdict (hours-scale check, 2026-11-26)
+webrender/images (342MB) is CPU-side bytes retained by upstream webrender 0.70's resource cache — WR keeps CPU copies of every registered image so textures can be re-uploaded after texture-cache eviction. The keys persist because servo never deletes them (same pinning reflection: image-cache eviction is what sends WR DeleteImage, and pinned images never evict). Attacking this = vendoring/forking webrender (crates.io upstream, NOT a servo fork — Cargo.toml:290) and redesigning resource-cache retention: weeks-scale, upstream-grade surgery, NOT hours-scale. On software-GL hosts (llvmpipe/SWGL) there is no GPU copy at all — the WR bytes ARE the rendering surface, so no savings are possible there at all; on real GPUs the CPU copies are still retained by design. CONCLUSION: no hours-scale cheap win exists in the image-memory subsystem in either direction; both copies are structural. The only real lever remains the documented weeks-scale redesigns (single-copy ownership, lazy/offscreen decode-at-visibility). The image-cache cap mission is closed as premise-false: the cache never owned the bytes.
