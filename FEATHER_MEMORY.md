@@ -3273,3 +3273,10 @@ Required config: dom_serviceworker_enabled=true (shell pref) — gates `caches` 
 - FREEZE mechanism hypothesis: 76 failed fetches + wasm retry loops flood script/constellation — the renav-oscillation starvation class. The 8ms spin throttle caps rate, not total work.
 - Suspect locations indexed by FUNCTION: net/resource_thread.rs handle_preloaded_response + the fetch dispatch path for parallel classic-script preloads; script htmlscriptelement fetch error handling; constellation message flood control.
 - NEGATIVE RESULTS: not network environment, not GPU/software-GL (youtube fine same binary), not cache-api regression (cache api is orthogonal to classic script fetch), not a general merge regression.
+
+## ALPHA REFRESH 2 PUBLISHED — cache-api build (2026-11-26 19:14 UTC)
+- EXACT COMMITS SHIPPED: feather main @ **b2892cf** (#200 pref, includes all round-3/#198/#199) + servo = build-engine branch = feather-engine tip (cache-api adf65bf76d1 + media guards + text-overflow + HTMLAllCollection + rIC) + cherry-picked f8cef980c7e (userscript docstart) + 320252a358b (iframe propagation). Branch pushed to fork as build-engine.
+- Assets live: feather-0.1.0-alpha.zip (167,322,739 @ 19:13:49Z) + feather-0.1.0-setup.exe (105,840,011 @ 19:13:46Z). Notes rewritten.
+- VERIFICATION on the exact binary: **discord.com/login RENDERS THE COMPLETE LOGIN PAGE** — welcome-back form, email/password fields, QR code, animated background (screenshot evidence). YouTube zero-stall responsive. Second-boot clean.
+- CAVEAT: first-ever boot on discord.com hit an intermittent cold-cache freeze (76 preload failures, 103s stall, needed kill). Second boot: zero preload failures, zero stalls, perfect render. Race-type intermittency — the preload-failure mechanism is still open engine-lane investigation. User hardware (real GPU/faster CPU) will mask much of it, but the fetch-failure race is real and documented in the symptom index.
+- BUILD GOTCHA recorded: swgl needs CC=clang-cl/CXX=clang-cl when recompiling.
