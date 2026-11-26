@@ -2190,3 +2190,13 @@ Decisive force-removal experiment on Linux, live youtube search page: `ytd-two-c
 
 Experiment artifacts: /tmp/ytsession holds a live webdriver session id pattern for reuse (single-session limit workaround — reuse don't recreate); force-flip probe script pattern in session history.
 ||||||| parent of 6a02aecc0 (memory: hidden binding dead on replacement — feature-gate theory named, scheduler/IO/data all exonerated)
+
+## YouTube hidden-stall — BINDINGS EXONERATED, final layer (2026-11-26, macOS lane)
+
+DECISIVE LIVE PROOF: on the stuck page, `ytd-search.set('data.hideContents', true/false)` toggles the hidden attribute correctly BOTH directions — the Polymer binding system, propagation chain, and qJC evaluator are ALL fully functional in servo, including on the replacement element. Feature-gate/dead-binding theory DEAD.
+
+Final cornered mechanism: the framework step that sets data.hideContents=false after response processing NEVER RUNS in servo. Supporting facts: data.contents present (response data arrived — wholesale data assignment happened), but hideContents is UNDEFINED (never managed). The defect is in post-response navigation-completion logic — the lifecycle step that manages loading visibility state — NOT in any primitive (scheduler/IO/MO/bindings all exonerated with live tests). Boot variance (vrs=0 vs 19) suggests the same completion pipeline partially runs race-dependent amounts.
+
+ONE-LINE VERIFIED MITIGATION: ys.set('data.hideContents', false) unhides results live — usable as a shell-injected shim if a mitigation is ever wanted, but the correct fix is finding why the completion logic doesn't run (suspect: yt-navigate lifecycle handler timing or an exception-free early-exit in the response processor — needs breakpoint-level debugging via devtools server pause/exception hooks, or upstream reading of the navigation completion code path in the kevlar bundle).
+
+SESSION HANDOFF NOTE: this session's context is exhausted at this exact point. Next session: read ytd-search's navigate/response handling in /tmp/ytbase.js (still on disk — 9.8MB bundle), find the hideContents write site, determine its trigger.
