@@ -2085,3 +2085,7 @@ Symptom: search results built but invisible → CONFIRMED MECHANISM: T1429 boot 
 ## CORRECTION — the "never initialized" youtube theory was a framework misread (2026-11-26)
 
 ytd-masthead (fully working) ALSO lacks __data/dataReady — modern YouTube elements don't use the classic Polymer data system at all. The absence of __data on stuck elements is NORMAL, not evidence of failed initialization. Retracted as a mechanism theory. What stands: replacement arrives stamped hidden=true at T1751, no op ever clears it, manual driving of initVisibilityObserver_/flushRenderStamperComponentBindings_/initializeInjection changes nothing without throwing. Lesson: probe framework assumptions against WORKING elements on the same page before theorizing from missing internals.
+
+## PerformanceObserver probe — mostly fine, warning is narrow (2026-11-26, macOS lane)
+
+servo supportedEntryTypes: container, largest-contentful-paint, mark, measure, navigation, paint, resource, visibility-state. observe() accepts every type without throwing (even unsupported ones like longtask/layout-shift — no validation error). The youtube "No valid entry type provided to observe()" warning is therefore NOT a broad PerfObserver gap — likely a specific buffered/option combination; weak lead, deprioritized as boot-telemetry noise unless proven load-bearing.
