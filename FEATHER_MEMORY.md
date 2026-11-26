@@ -1657,3 +1657,8 @@ RESUME INSTRUCTIONS (exact):
 **Repro harness**: hanging server accept-never-responds on 127.0.0.1:8999; FEATHER_WEDGE=1 RUST_LOG=info,servo_constellation=debug; nav hang-url then renav — success = second GET fires.
 **Suspect locations if this recurs**: constellation pending-change/activation lifecycle (handle_activate_document_msg, remove_pending_change paths), the embedder LoadUrl early-return ordering, any new navigation type that bypasses the supersede logic.
 **Related open issue**: servo has NO navigation timeout at all — a hanging read hangs forever even in the best case; real browsers force-error stuck loads. Orthogonal hardening candidate.
+
+## NEGATIVE RESULT: shell input-transform math (forward_page_input) — EXONERATED at scale != 1
+- Symptom: clicks land down-right of physical position on macOS HiDPI (F1 ledger).
+- Verified CORRECT on Windows with synthetic scale=2 (FEATHER_ZOOM): device-px input → exact css coords. Servo expects DEVICE-pixel input points; paint converts internally (webview_renderer.rs dispatch_input_event_with_hit_testing / as_device_point). Feeding logical coords instead produces half-scale hits.
+- Suspect locations INDEXED BY MECHANISM: input-coordinate mismatch can arise from (a) embedder feeding wrong units — exonerated here; (b) the PRESENT/BLIT path geometry disagreeing with input — prime remaining suspect on macOS wgpu/Metal present path (untested, GL path exonerated); (c) egui scale-factor detection — exonerated, egui_winit tracks window scale automatically.
