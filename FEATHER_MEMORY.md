@@ -3658,3 +3658,6 @@ Hook shipped for experiments: FEATHER_USER_AGENT env override in shell-new engin
 ## sec1zt116 — post-container-queries compat spot checks
 - Symptom: github.com blank hero → CHECK RESOLVED/NON-REPRO post container-queries: h1 present ('Software still starts with you'), 0/22 broken images. Likely healed by container-queries implementation (hero layout was container-query-dependent) — consistent with the fleet-wide win prediction.
 - Symptom: youtube watch playback under honest-UA-narrowed policy → verified live same session as SERP: t advancing, rs=4. coordinator requirement (3) satisfied.
+
+## merge-resolution-validation-gap (2026-11-26) — CRITICAL PROCESS RULE
+- PR #221's squash-merge carried UNRESOLVED conflict markers (<<<<<<< ||||||| ======= >>>>>>>) into matrix.py on main. Root cause: union-resolving conflicts by hand without a final validation pass. RULE for all lanes: after ANY manual conflict resolution, before pushing: `git grep -l '^<<<<<<< \|^>>>>>>> '` MUST be empty for the whole tree — not just the files you remember touching. Diff3-style markers (`|||||||`) also count. One broken harness file invalidated main for hours; PR #231 is the hotfix.
