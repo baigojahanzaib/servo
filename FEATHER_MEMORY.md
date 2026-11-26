@@ -2887,3 +2887,13 @@ Browser-style ctrl+shift+[/] bindings must be intercepted at the winit layer mat
 characters directly. Also symptom-indexed: "ctrl+t appears dead on a blank New Tab" is NOT a defect —
 the shell dedupes blank New Tabs by design (focuses the existing one); verify shortcuts on non-blank tabs.
 ||||||| parent of 7e7c08179 (memory: shadow-input root cause — default-action retargeting (endgame-28))
+||||||| parent of ef2680ee8f9 (memory: shortcut mission closeout + verified matrix)
+
+sec1zt46 — keyboard-shortcut mission closeout + verified-working matrix
+Merged: feather#163 (tab-switch shortcuts) + #164 (winit interception + modifier-tracking fix) + #165 (docs).
+Verified live on Linux: ctrl+shift+[/] both directions, ctrl+shift+Tab, ctrl+PgUp/PgDn, ctrl+t (with the
+blank-tab dedupe caveat), ctrl+w, ctrl+l. Next compat-tail candidates in priority order: (1) omnibox
+papercuts #1/#2 — revert-mid-load needs pending-destination display state in toolbar.rs sync logic,
+fake-focus needs egui selection-state cleanup on focus loss — both shell-side, subtle state-machine work;
+(2) text-overflow engine implementation (scoping in sec1zt44) — most visible recurring CSS gap on real sites;
+(3) find-in-page/page-zoom need servo webview APIs that don't exist — engine-queue items.
