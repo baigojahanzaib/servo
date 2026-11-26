@@ -365,6 +365,24 @@ impl FontFaceSet {
 }
 
 impl FontFaceSetMethods<crate::DomTypeHolder> for FontFaceSet {
+    /// <https://drafts.csswg.org/css-font-loading/#dom-fontfaceset-check>
+    fn Check(&self, font: DOMString, text: DOMString) -> bool {
+        // Steps 1-2. Find the matching font faces; a syntax error means no fonts
+        // can be matched, so the answer is false (consistent with the spec's
+        // "if a syntax error was returned" handling in the load() algorithm).
+        let Ok(font_face_objects) = self.find_the_matching_font_faces(&self.global(), &font.str(), &text.str())
+        else {
+            return false;
+        };
+
+        // Step 3. If every matched font face has status "loaded", return true.
+        // Families with no matched faces are treated as system fonts, which are
+        // always available without loading, per the spec's font matching rules.
+        font_face_objects
+            .iter()
+            .all(|font_face| font_face.Status() == FontFaceLoadStatus::Loaded)
+    }
+
     /// <https://drafts.csswg.org/css-font-loading/#dom-fontfaceset-ready>
     fn Ready(&self, cx: &mut JSContext) -> RootedPromise {
         if self.promise.borrow().is_fulfilled() {
