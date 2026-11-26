@@ -2787,3 +2787,37 @@ connect issue unresolved for explicit http:// too — low priority, eval-injecti
 sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with caveat)
 
 ## COMPOSITING STALENESS CLASS SOLVED: root cause was visibility contention — all webviews permanently "shown", servo composites every shown webview into the shared rendering context on its own refresh schedule, so the active tab's pixels get overwritten by background tabs continuously. Explains: aux tabs never painting (always lost contention), static-page switch staleness (the repaint-force helped only because it repainted AFTER servo's last background composite — race-dependent), and likely a big slice of the historical F1 paint-invalidation defects. Fix in shell-new composite(): hide all non-active webviews, show only active. hide() semantics: throttles script threads + discards decoded image surfaces — standard browser backgrounding. VERIFIED end-to-end: target=_blank correct content immediately, bidirectional tab switching correct. Symptom-index: "correct tab chrome/navigation but pixels belong to a different page" → visibility contention in shared rendering context, check show/hide discipline.
+||||||| parent of f6a2ad7e986 (memory: stale-composite root cause — show/hide contract, fix verified)
+gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
+and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
+originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
+by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
+showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
+re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
+The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
+gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
+and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
+originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
+by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
+showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
+re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
+The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
+
+sec1zt40 — stale-composite tab-switch defect: ROOT CAUSE + FIX verified (feather#160)
+Defect: tab switch composites the previously-active tab's pixels indefinitely (F1 class).
+FULL mechanism chain (correcting the earlier partial theory): it is NOT merely a missing repaint —
+paint() was already being called for the correct webview (proven via FEATHER_PAINT=1 logging:
+painted=true for the gmail webview while wikipedia pixels stayed on screen). The deeper cause:
+**servo composites only the webview shown within the shared rendering context** — the embedding
+contract requires the embedder to call webview.show()/hide() on activation changes (servoshell
+running_app_state.rs activate_webview is the reference implementation). shell-new never did, so
+servo kept compositing the first-shown webview no matter which webview paint() was invoked on.
+Fix (feather PR #160, branch devin/1795697030-tab-switch-paint): on active-tab change in composite(),
+show() the active webview + hide() all others + force paint without waiting for frame signals.
+VERIFIED both directions: wikipedia↔gmail tab pair composites correct distinct content after switches.
+Symptom index: Symptom: tab content shows wrong/other tab's page after switching → check: embedder
+show()/hide() activation contract, NOT the repaint logic — paint() running is not evidence of correct
+compositing. Symptom: blank white content area on first load after naive show/hide adoption → check:
+first-composite ordering, webview must be show()n before its frames composite.
+Behavioral side effect: hide() throttles background script + discards decoded images (memory win,
+but background media pauses — documented in PR).
