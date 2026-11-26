@@ -22,6 +22,7 @@ use js::jsapi::{
     JSObject, JSTracer, MutableHandleIdVector as RawMutableHandleIdVector,
     MutableHandleValue as RawMutableHandleValue, PropertyKey, StringIsArrayIndex, jsid,
 };
+use js::jsapi::JSClass;
 use js::jsid::StringId;
 use js::jsval::{JSVal, UndefinedValue};
 use js::rust::wrappers2::{
@@ -916,3 +917,17 @@ pub(crate) unsafe fn report_define_properties_failure(cx: &mut js::context::JSCo
     );
     JS_ClearPendingException(cx);
 }
+
+/// JSClass for the HTMLAllCollection proxy object. The
+/// JSCLASS_EMULATES_UNDEFINED flag (1 << 6, js/public/Class.h) gives the
+/// object the [[IsHTMLDDA]] behavior required by the spec: typeof undefined,
+/// falsy, loose-equal to null/undefined, while remaining an ordinary object
+/// for identity and strict equality.
+pub(crate) static HTML_ALL_COLLECTION_PROXY_CLASS: JSClass = JSClass {
+    name: c"HTMLAllCollection".as_ptr(),
+    flags: js::jsapi::JSCLASS_EMULATES_UNDEFINED,
+    cOps: std::ptr::null(),
+    spec: std::ptr::null(),
+    ext: std::ptr::null(),
+    oOps: std::ptr::null(),
+};

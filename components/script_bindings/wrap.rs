@@ -78,6 +78,9 @@ unsafe fn wrap_object(
 
         if config.is_proxy {
             let handler: *const libc::c_void = config.proxy_handler.unwrap();
+            let proxy_class = config
+                .class
+                .map_or(ptr::null(), |class| class as *const JSClass);
 
             if config.is_maybe_cross_origin_object {
                 rval.set(NewProxyObject(
@@ -85,7 +88,7 @@ unsafe fn wrap_object(
                     handler,
                     Handle::undefined(),
                     ptr::null_mut(),
-                    ptr::null(),
+                    proxy_class,
                     true,
                 ));
             } else {
@@ -94,7 +97,7 @@ unsafe fn wrap_object(
                     handler,
                     Handle::undefined(),
                     canonical_proto.get(),
-                    ptr::null(),
+                    proxy_class,
                     false,
                 ));
             };

@@ -2554,3 +2554,7 @@ sec1zt31 root cause confirmed correct. Implementation landed locally (compiles c
 - dom/html/mod.rs — module registered
 KEY ENGINE FACT: SpiderMonkey implements all IsHTMLDDA semantics (typeof undefined, falsy, loose==undefined true, strict===undefined FALSE) purely from the class flag — no VM changes needed.
 Verification gate: `document.all === undefined` must be false in servo, typeof document.all "undefined", !document.all true, document.all==undefined true; then YouTube results render unassisted.
+
+## HTMLAllCollection round 2 — the proxy class path (endgame-16)
+
+CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
