@@ -1085,7 +1085,7 @@ impl ScriptThread {
         }
     }
 
-    fn schedule_update_the_rendering_timer_if_necessary(&self, delay: Duration) {
+    pub(crate) fn schedule_update_the_rendering_timer_if_necessary(&self, delay: Duration) {
         if self.scheduled_update_the_rendering.borrow().is_some() {
             return;
         }

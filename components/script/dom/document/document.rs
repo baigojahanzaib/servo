@@ -2130,6 +2130,13 @@ impl Document {
         // Keep the frame pump alive while any idle callback is pending so the
         // callbacks get a tick to run on even when no page rAF loop exists.
         self.request_animation_frame(AnimationFrameCallback::IdleCallbackTick);
+        // Frame-independent fallback: on quiet pages the compositor produces no
+        // frames and the rAF pump starves (YouTube's scheduler rides rIC and
+        // stalls permanently). Poke the script thread's rendering-update timer
+        // so a tick happens within ~16ms regardless of compositor activity.
+        self.window()
+            .script_thread()
+            .schedule_update_the_rendering_timer_if_necessary(std::time::Duration::from_millis(16));
         ident
     }
 
@@ -2165,6 +2172,9 @@ impl Document {
         if !self.idle_callback_list.borrow().is_empty() {
             // More callbacks pending: keep the pump alive for the next tick.
             self.request_animation_frame(AnimationFrameCallback::IdleCallbackTick);
+            self.window()
+                .script_thread()
+                .schedule_update_the_rendering_timer_if_necessary(std::time::Duration::from_millis(16));
         }
     }
 
