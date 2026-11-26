@@ -1638,3 +1638,22 @@ RESUME INSTRUCTIONS (exact):
 **Diagnostic method worth reusing**: egui 0.37 `ctx.repaint_causes()` gives file:line of repaint requesters; combined with counters (frames/wakes/events per window) the loop becomes obvious (evrepaint≈frames, wakes=0 → self-chain).
 
 **Suspect locations if idle burn recurs**: the embedder's window_event/redraw handling, viewport-command senders, control-flow re-arm logic, webview creation policy. Servo itself was fully silent (0 wakes) — embedder-side entirely.
+
+## CLOSED CASE: embedder event-loop navigation stall — typed navigations queued until unrelated input (shell-new, Nov 2026)
+**Symptom**: typing a URL + Return appears dead — no load, blank page; everything flushes instantly when any unrelated input (click/keypress) arrives. Log proof: GET fires exactly when the unrelated keypress lands, up to 90s late.
+**Mechanism**: shell-side, NOT engine. `sync_engine` (the only path issuing `wv.load()`) ran pre-frame inside `RedrawRequested`; navigation committed by input processing in frame N was only commanded in frame N+1 — but with `ControlFlow::Wait` and nothing re-arming a redraw, frame N+1 never came.
+**Fix**: run `sync_engine` immediately AFTER `gui.run()` in the same frame (feather shell-new/src/main.rs). Merged in feather PR #139.
+**Suspect locations if this recurs**: any state committed during egui input handling that requires a follow-up frame to take effect — ordering of sync vs gui.run, plus whether anything re-arms redraws.
+**Negative results**: not a servo network wedge, not IPC, not allocator.
+
+## ROOT-CAUSED: session-history activation limbo — one hanging load permanently wedges the tab (engine, Nov 2026)
+**Symptom**: after navigating to a server that accepts but never responds (no timeout exists in servo), every subsequent same-tab navigation dies silently — no GET, no error; input events into the page warn `Unknown pipeline for input event`. User-facing: one slow page kills the browser session.
+**Mechanism chain** (all measurement-verified):
+1. Top-level browsing contexts are NOT created at webview creation — they materialize only when the pending navigation's document ACTIVATES (`new_browsing_context` runs inside the activation path; `NewBrowsingContextInfo` rides the pending `SessionHistoryChange` for exactly this reason).
+2. A hanging load never activates → `browsing_contexts` never gains the entry → embedder `LoadUrl` hits the `unknown browsing context` early return in the handler BEFORE reaching `load_url` — so the supersede/cancel logic added in bb5c9bc9b94 is unreachable for this case.
+3. Every input event and navigation hits dead lookups forever; nothing ever recovers.
+**Fix**: `supersede_unactivated_top_level_load` in constellation.rs — on lookup failure, if the webview has a pending change for the top-level context, cancel the stuck pending pipeline(s) and create a replacement pipeline+pending change carrying the original `NewBrowsingContextInfo` forward (omit it and activation fails with "No NewBrowsingContextInfo"). Servo fork branch wedge-supersede, commit 569d50aa2d6.
+**Negative results**: NOT Windows-specific mechanistically — Linux exoneration was an artifact of testing erroring/refused connections (fast failure resolves the limbo) rather than truly hanging reads. NOT the shell closing webviews (writeback/close paths exonerated by instrumentation). NOT allocator/pipe/event-loop.
+**Repro harness**: hanging server accept-never-responds on 127.0.0.1:8999; FEATHER_WEDGE=1 RUST_LOG=info,servo_constellation=debug; nav hang-url then renav — success = second GET fires.
+**Suspect locations if this recurs**: constellation pending-change/activation lifecycle (handle_activate_document_msg, remove_pending_change paths), the embedder LoadUrl early-return ordering, any new navigation type that bypasses the supersede logic.
+**Related open issue**: servo has NO navigation timeout at all — a hanging read hangs forever even in the best case; real browsers force-error stuck loads. Orthogonal hardening candidate.
