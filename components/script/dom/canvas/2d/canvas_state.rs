@@ -20,7 +20,9 @@ use fonts::{
 };
 use icu_locale_core::LanguageIdentifier;
 use js::context::{JSContext, NoGC};
-use net_traits::image_cache::{ImageCache, ImageResponse};
+use net_traits::image_cache::{
+    ImageCache, ImageCacheResponseMessage, ImageResponse, RasterizationResult,
+};
 use net_traits::request::CorsSettings;
 use pixels::{Snapshot, SnapshotAlphaMode, SnapshotPixelFormat};
 use script_bindings::cell::DomRefCell;
@@ -472,9 +474,7 @@ impl CanvasState {
                 if let Some(image) = image.as_raster_image() {
                     image
                 } else {
-                    // TODO: https://html.spec.whatwg.org/multipage/#dom-context-2d-drawimage
-                    warn!("Vector images are not supported as image source in canvas2d");
-                    return None;
+                    self.rasterize_vector_for_canvas(&image)?
                 }
             },
             ImageResponse::FailedToLoadOrDecode | ImageResponse::MetadataLoaded(_) => {
@@ -483,6 +483,67 @@ impl CanvasState {
         };
 
         Some(raster_image.as_snapshot())
+    }
+
+    /// Rasterize a vector image for use as a canvas image source. The image
+    /// cache rasterizes vector images asynchronously (thread pool); canvas
+    /// needs pixels synchronously, so this fast-paths on a cached raster of
+    /// the natural size, and otherwise submits the job and blocks briefly for
+    /// the completion notification. drawImage has no spec'd async path — a
+    /// bounded synchronous wait is the best available fidelity. The wait is
+    /// time-bounded because resvg panics are caught in the worker and a
+    /// panicking job never notifies its listeners.
+    fn rasterize_vector_for_canvas(
+        &self,
+        image: &net_traits::image_cache::Image,
+    ) -> Option<std::sync::Arc<pixels::RasterImage>> {
+        let net_traits::image_cache::Image::Vector(vector_image) = image else {
+            return image.as_raster_image();
+        };
+        let size = webrender_api::units::DeviceIntSize::new(
+            vector_image.metadata.width as i32,
+            vector_image.metadata.height as i32,
+        );
+        if size.is_empty() {
+            return None;
+        }
+        for attempt in 0..2 {
+            match self.image_cache.rasterize_vector_image(
+                vector_image.id,
+                size,
+                vector_image.svg_id,
+            ) {
+                RasterizationResult::Image(raster) => {
+                    return Some(std::sync::Arc::new(raster));
+                },
+                RasterizationResult::InvalidSvgParameters => return None,
+                RasterizationResult::PendingRasterization if attempt == 0 => {
+                    let (sender, receiver) = std::sync::mpsc::channel();
+                    self.image_cache.add_rasterization_complete_listener(
+                        GlobalScope::entry().pipeline_id(),
+                        vector_image.id,
+                        size,
+                        Box::new(move |message| {
+                            if matches!(
+                                message,
+                                ImageCacheResponseMessage::VectorImageRasterizationComplete(_)
+                            )
+                            {
+                                let _ = sender.send(());
+                            }
+                        }),
+                    );
+                    if receiver
+                        .recv_timeout(std::time::Duration::from_secs(3))
+                        .is_err()
+                    {
+                        return None;
+                    }
+                },
+                RasterizationResult::PendingRasterization => return None,
+            }
+        }
+        None
     }
 
     fn request_image_from_cache(
