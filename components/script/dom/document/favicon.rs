@@ -157,7 +157,7 @@ impl Document {
 
         let send_rasterized_favicon_to_embedder = |raster_image: &pixels::RasterImage| {
             // Let's not worry about animated favicons...
-            let frame = raster_image.first_frame();
+            let frame = &raster_image.frames[0];
 
             let format = match raster_image.format {
                 PixelFormat::K8 => EmbedderPixelFormat::K8,

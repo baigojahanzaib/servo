@@ -856,7 +856,9 @@ impl ImageCacheStore {
                             );
                             self.evicted_upload_keys.insert(upload_key);
                         }
-                        debug!("IMGMEM evicted {freed} decoded bytes for {key:?}");
+                        if std::env::var("FEATHER_IMGMEM_DEBUG").is_ok() {
+                            eprintln!("IMGMEM evicted {freed} decoded bytes for key {:?}", image.id);
+                        }
                         resident_total = resident_total.saturating_sub(freed);
                     }
                 }
@@ -1361,10 +1363,9 @@ impl ImageCache for ImageCacheImpl {
                     format: PixelFormat::RGBA8,
                     frames: vec![frame],
                     decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(
-                        pixels::DecodedBytes::Resident(bytes.clone()),
+                        pixels::DecodedBytes::Resident(pixels::ResidentBytes::new(bytes)),
                     )),
                     encoded_bytes: None,
-                    bytes,
                     id: None,
                     cors_status: vector_image.cors_status,
                     load_time: None,

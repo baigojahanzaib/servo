@@ -16,6 +16,7 @@ use euclid::default::{Point2D, Rect, Size2D};
 use image::imageops::{self, FilterType};
 use image::{ImageBuffer, ImageFormat, Rgba};
 use log::{debug, error};
+use malloc_size_of::{MallocConditionalSizeOf, MallocSizeOf as MallocSizeOfTrait, MallocSizeOfOps};
 use malloc_size_of_derive::MallocSizeOf;
 use serde::{Deserialize, Serialize};
 use servo_base::cross_process_instant::CrossProcessInstant;
@@ -329,12 +330,40 @@ pub struct SharedRasterImage {
 pub static GLOBAL_RESIDENT_DECODED_BYTES: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);
 
+/// Decoded byte buffer whose global residency accounting is Drop-balanced:
+/// construction increments GLOBAL_RESIDENT_DECODED_BYTES, drop decrements —
+/// covering every exit path (eviction swap, image drop, cache removal) with
+/// no manual accounting at any call site.
+#[derive(Clone)]
+pub struct ResidentBytes(pub Arc<Vec<u8>>);
+
+impl ResidentBytes {
+    pub fn new(bytes: Arc<Vec<u8>>) -> Self {
+        GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
+        Self(bytes)
+    }
+}
+
+impl Drop for ResidentBytes {
+    fn drop(&mut self) {
+        GLOBAL_RESIDENT_DECODED_BYTES
+            .fetch_sub(self.0.len(), std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+impl std::ops::Deref for ResidentBytes {
+    type Target = Arc<Vec<u8>>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
 pub enum DecodedBytes {
-    Resident(Arc<Vec<u8>>),
+    Resident(ResidentBytes),
     Evicted,
 }
 
-#[derive(Clone, MallocSizeOf)]
+#[derive(Clone)]
 pub struct RasterImage {
     pub metadata: ImageMetadata,
     pub format: PixelFormat,
@@ -343,14 +372,10 @@ pub struct RasterImage {
     pub load_time: Option<CrossProcessInstant>,
     /// Interior-mutable decoded residency — shared across clones so eviction is
     /// visible to every pin holder through the same logical image.
-    #[ignore_malloc_size_of = "residency mirrors bytes; counting both double-counts"]
     pub decoded_residency: std::sync::Arc<std::sync::RwLock<DecodedBytes>>,
-    #[conditional_malloc_size_of]
-    pub bytes: Arc<Vec<u8>>,
     /// Encoded source bytes retained for re-decode after decoded-byte eviction
     /// (image memory eviction: decoded bytes are ~10-20x larger, so retaining
     /// the source is cheap insurance for re-materialization).
-    #[conditional_malloc_size_of]
     pub encoded_bytes: Option<Arc<Vec<u8>>>,
     pub frames: Vec<ImageFrame>,
     /// Whether or not all of the frames of this image are opaque.
@@ -390,41 +415,9 @@ impl ImageFrame {
     }
 }
 
-/// A non-owning reference to the data of an [ImageFrame]
-pub struct ImageFrameView<'a> {
-    pub delay: Option<Duration>,
-    pub bytes: &'a [u8],
-    pub width: u32,
-    pub height: u32,
-}
-
-impl ImageFrameView<'_> {
-    pub fn delay(&self) -> Option<Duration> {
-        self.delay.map(sensible_delay)
-    }
-}
-
 impl RasterImage {
     pub fn should_animate(&self) -> bool {
         self.frames.len() > 1
-    }
-
-    fn frame_view<'image>(&'image self, frame: &ImageFrame) -> ImageFrameView<'image> {
-        ImageFrameView {
-            delay: frame.delay,
-            bytes: self.bytes.get(frame.byte_range.clone()).unwrap(),
-            width: frame.width,
-            height: frame.height,
-        }
-    }
-
-    pub fn frame(&self, index: usize) -> Option<ImageFrameView<'_>> {
-        self.frames.get(index).map(|frame| self.frame_view(frame))
-    }
-
-    pub fn first_frame(&self) -> ImageFrameView<'_> {
-        self.frame(0)
-            .expect("All images should have at least one frame")
     }
 
     pub fn as_snapshot(&self) -> Snapshot {
@@ -458,13 +451,13 @@ impl RasterImage {
         {
             let guard = self.decoded_residency.read().unwrap();
             if let DecodedBytes::Resident(ref bytes) = *guard {
-                return bytes.clone();
+                return bytes.0.clone();
             }
         }
         let mut guard = self.decoded_residency.write().unwrap();
         // Re-check after upgrading: another thread may have materialized first.
         if let DecodedBytes::Resident(ref bytes) = *guard {
-            return bytes.clone();
+            return bytes.0.clone();
         }
         let encoded = self
             .encoded_bytes
@@ -472,9 +465,18 @@ impl RasterImage {
             .expect("Evicted image without retained encoded bytes");
         let redecoded = load_from_memory(encoded, self.cors_status)
             .expect("Re-decode of previously-decoded image failed");
-        let bytes = redecoded.bytes.clone();
-        GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(bytes.len(), std::sync::atomic::Ordering::Relaxed);
-        *guard = DecodedBytes::Resident(bytes.clone());
+        // The constructor already placed the bytes in Resident state and
+        // accounted them globally — MOVE the accounting token out of the
+        // temporary image rather than double-counting a fresh one.
+        let token = match std::mem::replace(
+            &mut *redecoded.decoded_residency.write().unwrap(),
+            DecodedBytes::Evicted,
+        ) {
+            DecodedBytes::Resident(token) => token,
+            DecodedBytes::Evicted => unreachable!("freshly decoded image is resident"),
+        };
+        let bytes = token.0.clone();
+        *guard = DecodedBytes::Resident(token);
         bytes
     }
 
@@ -486,10 +488,8 @@ impl RasterImage {
         }
         let mut guard = self.decoded_residency.write().unwrap();
         match std::mem::replace(&mut *guard, DecodedBytes::Evicted) {
-            DecodedBytes::Resident(bytes) => {
-                GLOBAL_RESIDENT_DECODED_BYTES.fetch_sub(bytes.len(), std::sync::atomic::Ordering::Relaxed);
-                bytes.len()
-            },
+            // The dropped token decrements the global counter itself.
+            DecodedBytes::Resident(bytes) => bytes.0.len(),
             DecodedBytes::Evicted => 0,
         }
     }
@@ -609,6 +609,18 @@ impl RasterImage {
     }
 }
 
+impl MallocSizeOfTrait for RasterImage {
+    fn size_of(&self, ops: &mut MallocSizeOfOps) -> usize {
+        let mut total = self.encoded_bytes.conditional_size_of(ops);
+        if let Ok(guard) = self.decoded_residency.read() {
+            if let DecodedBytes::Resident(ref bytes) = *guard {
+                total += bytes.0.conditional_size_of(ops);
+            }
+        }
+        total
+    }
+}
+
 impl fmt::Debug for RasterImage {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
@@ -652,12 +664,6 @@ pub fn load_from_memory(buffer: &[u8], cors_status: CorsStatus) -> Option<Raster
             };
             if let Some(ref mut image) = image {
                 image.encoded_bytes = Some(Arc::new(buffer.to_vec()));
-                if std::env::var("FEATHER_IMGMEM").is_ok() {
-                    eprintln!("IMGMEM probe: decoded +{}KB", image.bytes.len() / 1024);
-                }
-                GLOBAL_RESIDENT_DECODED_BYTES.fetch_add(image.bytes.len(), std::sync::atomic::Ordering::Relaxed);
-                *image.decoded_residency.write().unwrap() =
-                    DecodedBytes::Resident(image.bytes.clone());
             }
             image
         },

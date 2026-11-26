@@ -283,16 +283,17 @@ pub(crate) fn decode_static_image(
         width: rgba.width(),
         height: rgba.height(),
     };
+    let width = rgba.width();
+    let height = rgba.height();
+    let bytes = Arc::new(rgba.into_vec());
     Some(RasterImage {
-        metadata: ImageMetadata {
-            width: rgba.width(),
-            height: rgba.height(),
-        },
+        metadata: ImageMetadata { width, height },
         format: PixelFormat::RGBA8,
         frames: vec![frame],
-        bytes: Arc::new(rgba.into_vec()),
         encoded_bytes: None,
-        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(crate::DecodedBytes::Evicted)),
+        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(
+            crate::DecodedBytes::Resident(crate::ResidentBytes::new(bytes)),
+        )),
         id: None,
         cors_status,
         load_time: None,
@@ -370,6 +371,7 @@ where
         bytes.extend_from_slice(frame.buffer());
     }
 
+    let bytes = Arc::new(bytes);
     Some(RasterImage {
         metadata: ImageMetadata { width, height },
         cors_status,
@@ -377,9 +379,10 @@ where
         frames,
         id: None,
         format: PixelFormat::RGBA8,
-        bytes: Arc::new(bytes),
         encoded_bytes: None,
-        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(crate::DecodedBytes::Evicted)),
+        decoded_residency: std::sync::Arc::new(std::sync::RwLock::new(
+            crate::DecodedBytes::Resident(crate::ResidentBytes::new(bytes)),
+        )),
         is_opaque,
         loop_count: Some(loop_count),
     })

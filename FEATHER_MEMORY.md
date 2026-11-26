@@ -1789,3 +1789,18 @@ Symptom: energy measurement on macOS VMs → check: powermetrics cpu_power sampl
 Symptom: browser idle battery drain → check: paint-gating + Metal present path (status: verified fixed — feather idle measures 0.1 CPU ms/s and ZERO package-idle wakeups vs chrome 12.0/3.6 safari 5.0/15.7; an idle feather genuinely does nothing).
 
 Harness: feather repo shell/tools/ebench/ (measure.sh parse.py runall.sh) — reruns the full 12-cell matrix in ~65min on any mac.
+||||||| parent of 2fb7ed59ce8 (memory: make byte-swap real — sole-owner residency, Drop-balanced accounting (stage 2a-fixed))
+
+## sec1zp — byte-swap made REAL: sole-owner residency; measured -1GB on reddit deep-scroll; corruption gap confirmed (2026-11-26)
+
+CRITICAL FIX over sec1zo: the stage-1 resurrection was accounting fiction — RasterImage kept its original `bytes` field alongside the new residency RwLock, so evict_decoded dropped the lock's Arc while `self.bytes` pinned the same allocation. Eviction counters fired, WR keys died, physical memory never moved (first measurement: cache rows INCREASED 861MB, RSS unchanged 3840 vs 3812 baseline). Fix: deleted the `bytes` field entirely — the RwLock is now the SOLE owner of decoded bytes. Consumer surface was tiny (favicon used first_frame only for width/height; descriptor/snapshot/to_shared already materialize). Accounting made Drop-balanced via ResidentBytes newtype (constructor increments, drop decrements — covers eviction swap, image drop, cache removal with zero manual call-site accounting). Manual MallocSizeOf reports encoded + resident-decoded non-triggeringly (measurement does not re-materialize — verified by design of the impl reading the lock fast-path only).
+
+MEASURED WIN (reddit signed-in, 8x1500px deep scroll, SERVO_MEMDUMP_AFTER=78, budget 100MB):
+- resident total: 3812MB (no eviction) -> 2775MB (eviction on) = -1037MB (-27%)
+- webrender/images: 872 -> 60MB; reddit image-cache rows: 595+221 -> 249+64MB
+- 357 evictions / 1281MB cumulative churn / 26 re-uploads; zero crashes; SURVIVED deep scroll
+- residual cache mass = retained encoded bytes (the insurance cost — larger than the 15-30MB idle estimate on deep scrolls, scales with distinct images seen) + animated + under-budget resident
+
+CORRUPTION GATE — resolved NEGATIVE, exactly as the design predicted: scrollback to top shows BLACK RECTANGLE for images evicted-while-visible (verified visually: kitchen-aid post black, freshly-loaded apple ad renders fine). Zero-corruption is UNACHIEVABLE with budget-only eviction because (a) display lists bake keys and never rebuild on pure scroll, (b) cache-read re-upload only fires on reflow, (c) WR cannot render a deleted key no matter the scroll position. Both directions of the problem need geometric machinery: eviction must not target visible images AND scroll-approach must trigger re-upload. There is no cheaper trigger — confirmed by this measurement. This is stage 2b, the core multi-day cost, now confirmed unavoidable rather than speculative.
+
+Symptom index: symptom "image renders black after scrolling back to it (FEATHER_IMGMEM on)" -> check: display-list key baking (owns: keys permanent once built; pure scroll never rebuilds) prime suspect/confirmed; cache-read re-upload path (status: working but insufficient — only fires on reflow); WR key deletion (status: working as designed); NOT a re-decode failure — re-uploads verified mechanically sound.
