@@ -3774,3 +3774,6 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 ## sec1zt125 — matrix-rebase union parser diff3 bug (2026-11-27)
 - Symptom: union-merge loop leaves files still conflicted → check: diff3-style conflicts have a `|||||||` base section BEFORE `=======` — a parser keying on `=======` mis-slices. Correct walk: <<< then optional ||| base, then ===, then >>>. 248 websockets rebased+pushed clean (no diff3 conflicts); 247/249/250 still conflicted on origin, branches untouched, local repo back on main. Also: matrix classes should batch per-round per coordinator.
 - seek settle-fix (engine 72b6c0fe29d) pushed, VERIFICATION PENDING — testing-agent handoff not yet done.
+
+## definitive-grid-239-of-254 (2026-11-27) — matrix comprehensive
+- 37 classes, 254 probes, 239 passing, EVERY red categorized zero-unknowns. Union PR #251 supersedes conflicting per-round PRs (closed 245/247/248/249/250 — per-round branches conflict on shared matrix.py registration line; union carries identical content + definitive grid). LESSON: matrix rounds that all edit the same registration line should batch 2-3 classes per branch, or accept the union-merge pattern.
