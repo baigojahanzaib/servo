@@ -44,7 +44,19 @@ pub(crate) struct SourceBuffer {
     /// Streaming webm indexer — parses the concatenated byte stream with
     /// cross-append state, immune to clusters split across appendBuffer calls.
     webm_indexer: script_bindings::cell::DomRefCell<crate::dom::media::ebml::WebmIndexer>,
+    /// Retained media fragments (start_secs, end_secs, bytes) — the MSE-spec
+    /// behavior: appended data persists across seeks, so a backward seek into
+    /// buffered media needs NO new appends from the page. The push pipeline
+    /// genuinely discards everything on seek reset, so the engine must own
+    /// retention and re-feed. Without this, spec-correct players (youtube)
+    /// never re-append post-seek and playback starves (sec1zt119/123).
+    retained: script_bindings::cell::DomRefCell<Vec<(f64, f64, Vec<u8>)>>,
 }
+
+/// Cap on retained media bytes per track — mirrors the engine-side appsrc
+/// queue cap. Eviction drops the oldest-ending fragments first, which matches
+/// what playback consumes first.
+const MAX_RETAINED_BYTES: usize = 48 * 1024 * 1024;
 
 impl SourceBuffer {
     fn new_inherited(mime_type: DOMString, _buffered: &TimeRanges) -> SourceBuffer {
@@ -60,6 +72,7 @@ impl SourceBuffer {
             media_source: script_bindings::cell::DomRefCell::new(None),
             track_id: Cell::new(0),
             webm_indexer: script_bindings::cell::DomRefCell::new(crate::dom::media::ebml::WebmIndexer::new()),
+            retained: script_bindings::cell::DomRefCell::new(Vec::new()),
         }
     }
 
@@ -78,12 +91,78 @@ impl SourceBuffer {
     }
 
     /// MSE seek support: the pipeline's flush+reset genuinely drops all
-    /// pipelined media, so the buffered index is cleared (deviation from spec,
-    /// which retains ranges across seeks) and the next append re-feeds init.
-    pub(crate) fn handle_seek(&self) {
-        *self.buffered.borrow_mut() = TimeRangesContainer::default();
+    /// pipelined media, but the RETAINED fragment cache survives — re-feed it
+    /// so spec-correct players (which never re-append, since per spec buffered
+    /// data persists across seeks) keep playing. The buffered index is kept
+    /// intact: it describes the retention, and the re-feed restores exactly
+    /// what it promises. The re-feed itself retries as a task chain because
+    /// the engine pipeline reset is asynchronous — pushes landing mid-reset
+    /// are rejected by the not-yet-playing appsrc.
+    pub(crate) fn handle_seek(&self, seek_target: f64) {
         self.needs_init_refeed.set(true);
         self.webm_indexer.borrow_mut().reset();
+        self.refeed_retained(seek_target, 0, 0);
+    }
+
+    /// Push init + retained fragments one at a time, in time order, each as a
+    /// chained task. Per-fragment pushes matter: the engine enforces a per-
+    /// track byte quota and a single mega-push of the whole retention would
+    /// exceed it and permanently fail. Failures retry the same fragment —
+    /// early attempts commonly land while the pipeline is mid-reset (not-yet-
+    /// playing appsrcs reject) or momentarily full (backpressure drains as
+    /// playback resumes). Each chain link yields the event loop.
+    fn refeed_retained(&self, seek_target: f64, fragment_index: usize, retries: u32) {
+        if retries >= 200 {
+            return;
+        }
+        let payload = {
+            let init = self.init_cache.borrow().clone();
+            let retained = self.retained.borrow();
+            let mut frags: Vec<(f64, f64, Vec<u8>)> = retained
+                .iter()
+                .filter(|(_, end, _)| *end > seek_target)
+                .cloned()
+                .collect();
+            frags.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+            if fragment_index == 0 && !init.is_empty() {
+                // The first push carries the init segment ahead of the first
+                // media fragment so the fresh demuxer sees stream headers.
+                frags.first().map(|(fs, fe, data)| {
+                    let mut joined = init.clone();
+                    joined.extend_from_slice(data);
+                    (0usize, (*fs, *fe, joined), frags.len())
+                })
+            } else {
+                frags.get(fragment_index).map(|f| (fragment_index, f.clone(), frags.len()))
+            }
+        };
+        let Some((idx, (_, _, bytes), total_frags)) = payload else {
+            return;
+        };
+        if fragment_index >= total_frags && fragment_index != 0 {
+            return;
+        }
+        let pushed = if let Some(ref ms) = *self.media_source.borrow() {
+            ms.push_appended_data(self.track_id.get(), bytes)
+        } else {
+            false
+        };
+        let (next_index, next_retries) = if pushed {
+            (idx + 1, 0)
+        } else {
+            (idx, retries + 1)
+        };
+        if pushed && idx + 1 >= total_frags {
+            return;
+        }
+        let this = Trusted::new(self);
+        self.global()
+            .task_manager()
+            .media_element_task_source()
+            .queue(task!(mse_refeed_retry: move |_cx| {
+                let this = this.root();
+                this.refeed_retained(seek_target, next_index, next_retries);
+            }));
     }
 
     pub(crate) fn buffered_ranges(&self) -> Vec<(f64, f64)> {
@@ -236,9 +315,11 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
             let ranges = crate::dom::media::ebml::scan_fmp4_timecodes(&bytes, &self.init_cache.borrow());
             fmp4_range = ranges.first().copied();
         }
+        let mut retained_range = None;
         if let Some((fs, fe)) = fmp4_range {
             let mut ranges = self.buffered.borrow_mut();
             let _ = ranges.add(fs, fe);
+            retained_range = Some((fs, fe));
         }
         if let (Some(first), Some(last)) = (timecodes.first(), timecodes.last()) {
             // Segments are appended in presentation order by real players;
@@ -258,6 +339,29 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
                 1.0
             };
             let _ = ranges.add(*first, last + span);
+            retained_range = Some((*first, last + span));
+        }
+        // Fragment retention (spec-persistent buffering): keep the appended
+        // bytes keyed by their time range so seeks can re-feed without the
+        // page re-appending. Bytes are the post-timestampOffset-rewrite
+        // canonical stream. Eviction is oldest-end-first once over the cap.
+        if let Some((fs, fe)) = retained_range {
+            let mut retained = self.retained.borrow_mut();
+            retained.push((fs, fe, bytes.clone()));
+            let total: usize = retained.iter().map(|(_, _, b)| b.len()).sum();
+            if total > MAX_RETAINED_BYTES {
+                let mut excess = total - MAX_RETAINED_BYTES;
+                retained.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                while excess > 0 && retained.len() > 1 {
+                    let (_, _, b) = retained.first().unwrap();
+                    let len = b.len();
+                    if len > excess + MAX_RETAINED_BYTES / 2 {
+                        break;
+                    }
+                    excess = excess.saturating_sub(len);
+                    retained.remove(0);
+                }
+            }
         }
         let this = Trusted::new(self);
         self.global()
@@ -309,6 +413,12 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
             }
         }
         *self.buffered.borrow_mut() = kept;
+        // Retention must follow the same eviction: fragments overlapping the
+        // removed range are dropped (spec removes the coded frames in range;
+        // re-feeding them afterward would resurrect media the page discarded).
+        self.retained
+            .borrow_mut()
+            .retain(|(fs, fe, _)| *fe <= rs || *fs >= re);
         let this = Trusted::new(self);
         self.global()
             .task_manager()

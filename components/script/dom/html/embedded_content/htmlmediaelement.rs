@@ -2308,7 +2308,7 @@ impl HTMLMediaElement {
         // to happen before the seeking event so handlers observe empty ranges.
         let is_mse = self.media_source.borrow().is_some();
         if let Some(ref ms) = *self.media_source.borrow() {
-            ms.notify_seek();
+            ms.notify_seek(time);
         }
 
         // Step 10. Queue a media element task given the media element to fire an event named
