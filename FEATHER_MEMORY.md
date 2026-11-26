@@ -3081,3 +3081,14 @@ Initial search-results screenshots showed missing/black thumbnails — investiga
 ## f2-verification-1 (2026-11-26, macOS lane): marathon campaign mid-flight
 Post-merge verification design: 12-round sustained mixed-use marathon (8 heavy sites/round, cmd+l omnibox navigations — cmd+t does NOT auto-focus the omnibox, typed urls go to the page: testing gotcha indexed; page scroll keys, aggressive tab churn, tab cycling) on the oscillation-guard build, instrumented FEATHER_ACTIONS+INPUT+WEDGE. First 2min checkpoint: 125 actions applied, 5 legit renavs, ZERO loop suppressions, zero panics, CPU 0.0 idle — healthy.
 ANALYSIS for closure honesty: the writeback-convergence design makes oscillation rare in practice — the guard is insurance against a documented historical wedge mechanism, not a proven fix for the reported stall (which never reproduced in-session on ANY build). Correct closure position: guard+instrumentation in place, sustained scripted use healthy, decisive test is the user's next live dogfood with the instrumented build. Ledger statuses refreshed for F1/F3/F4/F5/F8/F14 (fixed in merged PRs, never updated by the original authors).
+||||||| parent of d96d9fa05f4 (memory: sec1zt67 ctrl+shift+T in-progress state)
+
+
+## sec1zt67 — ctrl+shift+T reopen-closed-tab: IN-PROGRESS state (session context exhausted mid-debug)
+
+**Branch**: devin/1795708770-reopen-closed in baigojahanzaib/feather, one WIP commit pushed? (check — commit 0586ee5 local, verify push state).
+**What exists**: state.rs closed_tabs recording on CloseTab (http(s), non-private, cap 25), ReopenClosedTab action → Action::Open; app.rs reopen_closed_tab; main.rs intercept accepts BOTH "t" and "T" (REQUIRED — ctrl held suppresses shift-case mapping in winit logical key; the t-only first version never fired).
+**Verified working**: key intercept fires (debug log `[reopen] fired`), recording works (queue len=1 after closing tab via X click).
+**UNRESOLVED — the live bug**: after ctrl+shift+t with len=1, no visible new tab appears in the strip. Debug eprintln in the state handler silently failed to apply in one edit (indentation mismatch — python replace without assert), so it is UNKNOWN whether the handler executes. Suspects: (a) Action::Open semantics — may navigate current tab rather than opening new; (b) reopen executes but tab opens offscreen/in wrong workspace. NEXT STEP: check what Action::Open actually does in state.rs; add asserted debug or read code directly.
+**Testing gotcha**: xdotool clicks need correct coords — feather tab strip tabs start ~x=720 real (not 560); inactive tabs show no X, must activate first; first click after launch may only focus window. windowactivate via xdotool search --name feather helps.
+**Disk/memory state**: all committed on branch. feather-ui running with instrumented binary.
