@@ -2465,3 +2465,33 @@ NEXT PROBES (cheap, decisive):
 Symptom index: YouTube truthy hidden write (object zClosurez) → check Trusted Types createPolicy/
 createHTML object-materialization semantics (components/script/dom/trustedtypes*), polymer_resin
 policy path in kevlar bundle.
+
+## sec1zt30 — ROOT CAUSE PINNED TO EXACT PRIMITIVE: resin sanitizeDOMValue(undefined) diverges
+
+Direct A/B probe on live pages, identical probe code, same Polymer.sanitizeDOMValue function:
+```
+input undefined → SERVO: object "zClosurez" TRUTHY   | CHROME: undefined FALSY
+input false     → both boolean false
+input 'abc'     → both string 'abc'
+input null      → both null
+```
+THE YOUTUBE INVISIBLE-RESULTS DEFECT = this one divergence. Chain: binding `hidden="[[data.hideContents]]"`
+evaluates undefined (identical in both — verified ytInitialData/live data have NO hideContents anywhere in
+EITHER browser; endgame-13's false-in-chrome claim was WRONG) → sanitizeDOMValue transform → servo returns
+the INNOCUOUS_STRING fallback (TrustedHTML object wrapping "zClosurez", truthy) → tc.hidden = truthy →
+results hidden forever. Chrome passes undefined through → hidden=false → renders.
+
+TT object materialization itself EXONERATED: createPolicy/createHTML(undefined) behavior byte-identical
+in both browsers (truthy objects both). Data layer exonerated identically. rIC/CE/IO/upgrade/scheduler
+all previously exonerated. The divergence is INSIDE the resin sanitizer's undefined-handling branch —
+same JS, different result ⇒ it depends on a browser primitive that differs. Prime suspects in servo:
+  (a) TT type-check primitives the resin safeTypesBridge uses (instanceof TrustedHTML / isUnwrappable
+      detection failing on servo's TT object identity) making the sanitizer misroute undefined;
+  (b) a typeof/String coercion difference on undefined inside vNk machinery.
+NEXT STEP (final): trace the resin z4M inner path (vNk + safeTypesBridge @2458537) — determine which
+branch undefined takes in chrome (passthrough) vs servo ($_ fallback), identify the primitive the branch
+keys on, probe that primitive directly. HIGHEST-VALUE TARGETS: servo's TrustedTypes implementation
+(components/script/dom/trustedtypes*.rs) object identity/type-tag behavior, and resin's isUnwrappable check.
+
+Symptom index: framework sanitizeDOMValue diverges ONLY for undefined input → check Trusted Types
+object identity/unwrap detection (isUnwrappable) and TT type-tag primitives in servo.
