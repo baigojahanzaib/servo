@@ -2932,3 +2932,12 @@ append ellipsis shaped run; (3) paint happens naturally since it's just glyphs i
 Cheap v1 scope: single-line nowrap blocks only (covers bbc headlines, youtube titles); multi-line
 (-webkit-line-clamp) explicitly out of scope. Verification harness: data:text/html page with fixed-width
 divs, screenshot compare ellipsis presence; then bbc.com live.
+
+sec1zt50 — text-overflow scoping CORRECTION: no parser support either
+======================================================================
+Grep confirms ZERO hits in components/style — not just layout ignoring it; the property does not
+exist in servo's CSS parser/cascade at all. WPT input-text-overflow tests exist in-tree (meta .ini only).
+So implementation is TWO parts: (a) full property plumbing in the style crate (servo style uses the
+derive-based values system — look at a comparable simple longhand like overflow-wrap/white-space in
+components/style/values for the pattern), (b) the layout ellipsis rendering. Part (a) is mechanical
+but touches the property database; estimate is bigger than initially scoped — still the top compat item.
