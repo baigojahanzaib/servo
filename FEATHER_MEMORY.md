@@ -1624,3 +1624,17 @@ RESUME INSTRUCTIONS (exact):
 **Fix pattern** (shell-side): coalesce wakeups (~8ms spin window), gate redraws on actually-new-frames (notify_new_frame_ready), throttle engine sync, and make writeback loop-free by recording the written-back url as the new commanded url. See feather shell-new/src/main.rs user_event + app.rs writeback/composite.
 
 **Suspect locations if this recurs**: servo compositor wake generation (paint feedback), embedder event-loop user_event handler, any url/title writeback path that can re-trigger load.
+
+## CLOSED CASE: embedder idle CPU burn (~1-2 cores, zero web content) — Windows shell-new, Nov 2026
+
+**Symptom**: continuous CPU burn at idle with no web pages loaded; constant ~55fps redraws.
+
+**Mechanism chain** (four compounding embedder-side causes, each verified by measurement):
+1. egui-winit returns `repaint=true` for `WindowEvent::RedrawRequested` ITSELF — honoring `response.repaint` blindly chains every redraw into the next: a fully self-sustaining loop needing no external input. PRIMARY cause.
+2. `egui::Context::send_viewport_cmd` requests a repaint internally — sending any viewport command (e.g. window title) every frame self-sustains repaints. Change-gate all viewport commands.
+3. `ControlFlow::WaitUntil` is sticky in winit — once set and expired, the event loop polls at full speed forever unless reset to `ControlFlow::Wait`.
+4. Eager creation of servo webviews for all seeded/background tabs — background pages' compositor/JS activity floods wakes (the 32kHz mechanism). Create webviews lazily on activation.
+
+**Diagnostic method worth reusing**: egui 0.37 `ctx.repaint_causes()` gives file:line of repaint requesters; combined with counters (frames/wakes/events per window) the loop becomes obvious (evrepaint≈frames, wakes=0 → self-chain).
+
+**Suspect locations if idle burn recurs**: the embedder's window_event/redraw handling, viewport-command senders, control-flow re-arm logic, webview creation policy. Servo itself was fully silent (0 wakes) — embedder-side entirely.
