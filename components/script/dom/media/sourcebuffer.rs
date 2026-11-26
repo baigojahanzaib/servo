@@ -112,7 +112,28 @@ impl SourceBuffer {
     /// playing appsrcs reject) or momentarily full (backpressure drains as
     /// playback resumes). Each chain link yields the event loop.
     fn refeed_retained(&self, seek_target: f64, fragment_index: usize, retries: u32) {
-        if retries >= 200 {
+        if retries >= 400 {
+            return;
+        }
+        // Reset-settle delay: the gstreamer pipeline reset cycles on a detached
+        // thread, and pushes landing mid-reset are silently dropped by the
+        // flushing appsrc with NO feedback to script — the push call reports
+        // success because it only means "handed to the media thread" (verified
+        // sec1zt124: re-feed pushes error Err(Flushing) deep in the player while
+        // script believes the chain completed). Burn the first ~90 event-loop
+        // turns (~1.5s at 60fps) before pushing fragment 0 so the state cycle
+        // has completed; re-feed ordering is preserved since the chain is
+        // strictly sequential. Failure retries only start counting after the
+        // settle window.
+        if fragment_index == 0 && retries < 90 {
+            let this = Trusted::new(self);
+            self.global()
+                .task_manager()
+                .media_element_task_source()
+                .queue(task!(mse_refeed_settle: move |_cx| {
+                    let this = this.root();
+                    this.refeed_retained(seek_target, 0, retries + 1);
+                }));
             return;
         }
         let payload = {
