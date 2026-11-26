@@ -1679,3 +1679,6 @@ Probe: work/probe/input.html on 8998 (input + input-event logger, mirrors to doc
 
 ## Addendum — keyboard modifiers (2026-11-26, feather PR #149)
 Shell now forwards modifier state (ModifiersChanged tracked on FeatherApp; new_without_event with ctrl/shift/alt/meta + repeat). Pages receive correct modifier flags. OPEN engine-side question: does servo script execute editing operations (select-all, copy, paste) on ctrl+key in text inputs? Unverified — check components/script textinput/editing handling if ctrl+A selection doesn't appear in dogfooding.
+
+## F7 localhost connect — negative result Windows (2026-11-26)
+http://localhost:8998/input.html loads fine in shell-new on Windows (dual-stack python http.server). Either macOS-specific resolution behavior (no happy-eyeballs fallback to IPv4 when localhost resolves ::1) or environment-specific. Mac lane: repro with an IPv4-only server to isolate.
