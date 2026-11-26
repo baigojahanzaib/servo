@@ -2037,3 +2037,30 @@ Decisive test: identical r/pics 15×1500px deep-scroll with MALLOC_ARENA_MAX=2 e
 
 Post-cap measurement (MALLOC_ARENA_MAX=2, r/pics scrolled, RSS 4.5GB): a **single 2.6GB contiguous anonymous rw-p mmap** persists plus [heap] 173MB and several 100-250MB mmaps. Since arenas are now capped, the giant contiguous mmap CANNOT be glibc thread arenas — revised attribution: most likely **jemalloc's own extent regions** (jemalloc mmaps large contiguous chunks; heap-mapped was ~2GB in the uncapped measurement, consistent scale) — meaning the residual giant-mmap mass IS inside jemalloc accounting after all, and the real question becomes the sec1zt4 second gap: jemalloc-heap-allocated 1.68GB vs sum-of-category-rows — i.e. LIVE-but-unaccounted allocation inside the Rust heap, not retention. Suspects for unaccounted live jemalloc mass: (a) mozjs GC/JS objects measured only partially by gc-heap rows; (b) layout/script structures outside the reporter tree; (c) WR internal structures. RESUMPTION: compare jemalloc-heap-allocated vs heap-mapped and category-sum at matched timestamps; if allocated≈1.7GB ≈ giant mmap, the frontier is 'unaccounted live rust heap' — use heaptrack or jemalloc prof (MALLOC_CONF=prof:true) for definitive attribution. The arena-cap fix (feather#153 merged) already removed 3.2GB; the residual ~4.5GB decomposes as ~2GB jemalloc (partially unaccounted) + [heap]+glibc ~0.7GB + remainder TBD.
 ||||||| parent of a49fec672 (memory: youtube boot instability — OOM + define_properties panic, unifying theory)
+||||||| parent of 090076e5d0b (memory: sec1zt9 — memory program closeout 7.4GB→1.46GB)
+
+## sec1zt9 — MEMORY PROGRAM CLOSEOUT: combined eviction+arena-cap measurement (2026-11-26)
+
+Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identical protocol across all runs, signed-out feed with video posts:
+
+| config | RSS at depth 22500 |
+|---|---|
+| baseline (pre-program, growing unbounded) | 7.4GB |
+| eviction only (FEATHER_IMGMEM=1) | ~7.2GB |
+| arena cap only (MALLOC_ARENA_MAX=2) | 4.2GB |
+| **combined (feather shell default config)** | **1.46GB FLAT** |
+
+**−5.9GB, 80% reduction, zero panics, zero playerleaks.** Settled flat (1458→1462→1463MB across minutes). Non-obvious interaction: combined is far better than either lever alone — eviction frees jemalloc image mass fast enough that less churn crosses into glibc arenas, and capped arenas can't retain what little gst churn remains. IMPORTANT nuance for all lanes: eviction-only measurements were nearly useless against RSS BECAUSE the freed masses were being re-captured by arena retention — the two levers are multiplicative, and any future memory fix must be measured with BOTH active or its effect will be invisible. This is the closeout number for the memory program; residual 1.46GB decomposes as bounded jemalloc live set (DOM/text/XHR/sourcebuffer categories documented in sec1zr-zs) + gst working set — the unaccounted-jemalloc question of sec1zt8 is largely ANSWERED by this measurement: most of the 'unaccounted' mass was arena retention after all.
+## sec1zt9 — MEMORY PROGRAM CLOSEOUT: combined eviction+arena-cap measurement (2026-11-26)
+
+Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identical protocol across all runs, signed-out feed with video posts:
+
+| config | RSS at depth 22500 |
+|---|---|
+| baseline (pre-program, growing unbounded) | 7.4GB |
+| eviction only (FEATHER_IMGMEM=1) | ~7.2GB |
+| arena cap only (MALLOC_ARENA_MAX=2) | 4.2GB |
+| **combined (feather shell default config)** | **1.46GB FLAT** |
+
+**−5.9GB, 80% reduction, zero panics, zero playerleaks.** Settled flat (1458→1462→1463MB across minutes). Non-obvious interaction: combined is far better than either lever alone — eviction frees jemalloc image mass fast enough that less churn crosses into glibc arenas, and capped arenas can't retain what little gst churn remains. IMPORTANT nuance for all lanes: eviction-only measurements were nearly useless against RSS BECAUSE the freed masses were being re-captured by arena retention — the two levers are multiplicative, and any future memory fix must be measured with BOTH active or its effect will be invisible. This is the closeout number for the memory program; residual 1.46GB decomposes as bounded jemalloc live set (DOM/text/XHR/sourcebuffer categories documented in sec1zr-zs) + gst working set — the unaccounted-jemalloc question of sec1zt8 is largely ANSWERED by this measurement: most of the 'unaccounted' mass was arena retention after all.
+>>>>>>> 090076e5d0b (memory: sec1zt9 — memory program closeout 7.4GB→1.46GB)
