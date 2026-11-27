@@ -4147,3 +4147,13 @@ thumbnails fully render (artwork, avatars, duration badges), the boot error
 The months-old youtube-black-thumbnails defect was framework boot death, never an image-path
 bug. Symptom: site feature dead despite all primitives testing healthy in isolation → check:
 framework console errors on the LIVE site first, before mechanism-by-mechanism repro.
+
+## sec1zt155 — PerformanceObserver gap scoped (queue item, NOT a quick fix)
+servo knows 8 entry types (performanceentry.rs enum EntryType): container, mark, measure,
+largest-contentful-paint, navigation, paint, resource, visibility-state. Chrome additionally
+supports: element, event, first-input, layout-shift, longtask (and soft-nav in canary).
+The youtube warning 'No valid entry type provided to observe()' means every type in one
+observe() call was unknown to servo — youtube performance-telemetry only, NON-fatal (site
+works). Implementing event-timing/layout-shift/longtask entry production is real spec-feature
+work (entry generation machinery, not just enum strings). Priority: LOW-MED — telemetry-only
+for most sites, but RUM-dependent frameworks may gate features on it.
