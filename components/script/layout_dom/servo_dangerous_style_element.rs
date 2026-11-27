@@ -843,6 +843,22 @@ impl<'dom> ::selectors::Element for ServoDangerousStyleElement<'dom> {
                             }
                         }
                         // invalid values: fall through to parent per simplified model
+                    } else if el.element.local_name() == &local_name!("bdi") {
+                        // <https://html.spec.whatwg.org/multipage/#the-bdi-element>
+                        // A bdi element with no dir attribute behaves as dir=auto:
+                        // directionality comes from descendant text content via
+                        // the script-precomputed cache, not from the parent.
+                        match el.element.get_directionality_cache_for_layout() {
+                            2 => {
+                                resolved = true;
+                                break;
+                            },
+                            1 => {
+                                resolved = false;
+                                break;
+                            },
+                            _ => {},
+                        }
                     }
                     current = el.parent_element();
                 }
