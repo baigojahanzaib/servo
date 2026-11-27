@@ -2324,11 +2324,13 @@ impl<'a> BuilderForBoxFragment<'a> {
         // NOTE: only solid-style top borders get the gap; other styles (incl. the
         // UA-default groove) still paint through behind the legend.
         // <https://html.spec.whatwg.org/multipage/#the-fieldset-and-legend-elements>
-        if border.border_top_style == BorderStyle::Solid &&
-            self.fragment
-                .base
-                .flags
-                .contains(FragmentFlags::IS_FIELDSET)
+        // Legend gap applies to every border style: solid uses flat rect segments,
+        // all other styles (incl. the UA-default groove) paint each segment as its
+        // own thin border strip so webrender applies the correct shading.
+        if self.fragment
+            .base
+            .flags
+            .contains(FragmentFlags::IS_FIELDSET)
         {
             if let Some(legend_rect) = self.fragment.children.iter().find_map(|child| {
                 child
@@ -2366,6 +2368,7 @@ impl<'a> BuilderForBoxFragment<'a> {
                 let top_thickness = border_widths.top;
                 let left_end = legend_x0.max(self.border_rect.min.x);
                 let right_start = legend_x1.min(self.border_rect.min.x + self.border_rect.max.x - self.border_rect.min.x);
+                let is_solid = border.border_top_style == BorderStyle::Solid;
                 for (x0, x1) in [
                     (self.border_rect.min.x, left_end),
                     (right_start, self.border_rect.min.x + self.border_rect.max.x - self.border_rect.min.x),
@@ -2376,7 +2379,36 @@ impl<'a> BuilderForBoxFragment<'a> {
                             units::LayoutSize::new(x1 - x0, top_thickness),
                         );
                         let common = builder.common_properties(state, seg, style);
-                        builder.wr().push_rect(&common, seg, top_color);
+                        if is_solid {
+                            builder.wr().push_rect(&common, seg, top_color);
+                        } else {
+                            // Non-solid style: draw the segment as a thin border
+                            // strip with only the top side, so groove/inset/outset
+                            // shading is applied by webrender.
+                            let seg_widths = units::LayoutSideOffsets::new(
+                                top_thickness, 0.0, 0.0, 0.0,
+                            );
+                            let seg_details = wr::BorderDetails::Normal(wr::NormalBorder {
+                                top: self.build_border_side(style_color.top.clone()),
+                                right: wr::BorderSide {
+                                    color: top_color,
+                                    style: wr::BorderStyle::None,
+                                },
+                                bottom: wr::BorderSide {
+                                    color: top_color,
+                                    style: wr::BorderStyle::None,
+                                },
+                                left: wr::BorderSide {
+                                    color: top_color,
+                                    style: wr::BorderStyle::None,
+                                },
+                                radius: wr::BorderRadius::zero(),
+                                do_aa: true,
+                            });
+                            builder
+                                .wr()
+                                .push_border(&common, seg, seg_widths, seg_details);
+                        }
                     }
                 }
                 return;
