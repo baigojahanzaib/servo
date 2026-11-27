@@ -6115,3 +6115,5 @@ IMPLEMENTATION PLAN for rotated session:
 OTHER LANE already in this area (commits #4/#5/#7/#11 merged) — rebase carefully,
 their legend-shift code in same_formatting_context_block.rs assumes flat children and
 may need adaptation once the wrapper exists (legend stays direct child so probably fine).
+
+sec1zt309-addendum: construction site located — components/layout/flow/construct.rs is the box construction path (has anonymous wrapping machinery); IS_FIELDSET flag set in fragment_tree/base_fragment.rs:227. Start implementation in construct.rs where block children are processed.
