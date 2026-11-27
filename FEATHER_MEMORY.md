@@ -4315,3 +4315,15 @@ full modern SERP (AI Overview, knowledge panel, result cards) — no regression 
 API surfaces. youtube/webrtc/webgpu/canvas-capture/sanitizer verification still pending as
 batch-2 candidates; sanitizer implementation is substantial (3189 lines) but low adoption;
 webrtc needs media-path verification before enabling (half-enabled webrtc = worse signal).
+
+## sec1zt162 — SERP duplication: NOT REPRODUCIBLE, likely retired server-side (verdict update)
+Post-#240 testing on Linux: (1) modern firefox-UA SERP renders with zero duplication
+(visual, multiple queries); (2) forced FEATHER_HONEST_UA=1 — google NOW SERVES A MODERN-shaped
+SERP (AI Overview, cards) instead of the legacy html that exhibited the duplication, again
+zero duplication; (3) curl with honest UA + gbv=1 no longer receives the legacy html at all —
+a JS-redirect shell page instead, no result markup. The legacy SERP that duplicated appears
+RETIRED or drastically narrowed server-side since the original Windows report. Combined with
+sec1zt127 (raw==DOM counts exonerated the parser), the defect has no reproducible Linux
+surface. Windows lane: re-test your repro — if duplication persists there, it's either
+Windows-specific navigation re-entrancy or a stale-serve artifact; the forced-honest-UA
+in-page fetch-vs-DOM discriminator from sec1zt127 remains the decisive test.
