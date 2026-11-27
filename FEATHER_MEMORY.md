@@ -5928,3 +5928,16 @@ DISCRIMINATOR for next session: probe again after the page fully settles (or dri
 longer wait + check ytd-app theming inline styles on html element; if vars appear after
 full boot, the defect is boot-completeness not CSS). All harness durable: /tmp/ytnav.py,
 /tmp/checkvartest.py, srv port 8455.
+
+## sec1zt292 — boot-incompleteness REFUTED: genuine CSS mechanism failure (2026-11-27)
+60s settle probe: video fully playing (readyState 4, currentTime 11s, unpaused),
+ytInitialData loaded — yet --yt-spec-text-primary STILL empty, html has only 2 inline
+style props. Boot completeness is NOT the cause: this is a genuine CSS failure specific to
+HOW YouTube defines theme vars (basic html[dark] vars proven working in sec1zt291).
+Candidates narrowed: vars defined in a construct servo mishandles — Polymer legacy
+`.style-scope` selectors, :host-context, @supports-wrapped defs, or layered/!important
+interactions. NEXT STEP: probe document.styleSheets enumeration on the live page (same-
+origin parts enumerable) grepping cssText for '--yt-spec-text-primary' to find the exact
+defining selector/construct; fallback: fetch youtube css assets offline and grep. Harness
+/tmp/ytnav2.py durable. NOTE - youtube css is largely served inline in <style> tags so
+enumeration may fully succeed.
