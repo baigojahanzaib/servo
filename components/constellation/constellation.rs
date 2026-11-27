@@ -6151,17 +6151,18 @@ where
                 // webview's live content — treating it as Inactive disregarded
                 // every escape navigation out of a hung first load.
                 if let Some(pipeline) = self.pipelines.get(&pipeline_id) {
-                    let pending_initial = self
-                        .webviews
-                        .get(&pipeline.webview_id)
-                        .map(|webview| {
-                            webview
-                                .pending_changes
-                                .iter()
-                                .any(|change| change.new_pipeline_id == pipeline_id)
-                        })
-                        .unwrap_or(false);
-                    if pending_initial {
+                    // NOTE: cannot key on pending_changes — the supersede path
+                    // drains them BEFORE this check runs. The only state in
+                    // which a live pipeline has no registered browsing context
+                    // is the pre-commit limbo of a first load that never
+                    // finished; that pipeline IS the visible webview's content
+                    // and must be FullyActive or escape navigations are
+                    // silently disregarded (round-2 verification evidence).
+                    let context_missing = self
+                        .browsing_contexts
+                        .get(&pipeline.browsing_context_id)
+                        .is_none();
+                    if context_missing {
                         return DocumentActivity::FullyActive;
                     }
                 }
