@@ -6228,3 +6228,13 @@ before: border painted through behind legend text on EVERY real form (groove is
 the UA default; solid-only fix didn't cover it). Implementation: segment-as-thin-
 border-strip per non-solid segment, clip-free. Verified pixel-level (75/75 -> 27/75
 darkish behind legend) + visually matches chrome + reftests pass.
+
+## sec1zt314 — fieldset suite verified at scale: 85/88 as-expected, zero regressions (2026-11-28)
+Full directory run (88 tests) after all three fieldset fixes: only 3 unexpected —
+border-gap-position-relative PASS-ahead-of-upstream (positive), translatez +
+legend-position-relative-2 FAIL (both pre-existing edge geometry). All three shipped
+fixes regression-free at scale. Leaf CLOSED.
+CANVAS LAYERS ASSESSMENT: beginLayer/endLayer entirely absent (no webidl even) —
+tests FAIL blank rather than ERROR. Real implementation = offscreen surface +
+filter composite in canvas_state, multi-hour graphics work, ~12 tests across
+element+offscreen. Documented not started — queued behind composite-off-UI-thread.
