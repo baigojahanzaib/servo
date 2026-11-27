@@ -4327,16 +4327,22 @@ sec1zt127 (raw==DOM counts exonerated the parser), the defect has no reproducibl
 surface. Windows lane: re-test your repro — if duplication persists there, it's either
 Windows-specific navigation re-entrancy or a stale-serve artifact; the forced-honest-UA
 in-page fetch-vs-DOM discriminator from sec1zt127 remains the decisive test.
-
-## sec1zt163 — pref-gate batch-2 verdicts
-- sanitizer: SHIPPED (#275) — 3189-line real impl, sanitize() strips scripts verified.
-- canvas_capture: EXCLUDED with evidence — CaptureStream is a stub: returns a MediaStream
-  with a bare video track, no frame source, no canvas-to-track plumbing. Enabling would
-  produce black-stream inconsistency. Real implementation needs canvas→video-frame bridging.
-- webrtc: real structure (signaling state machine, offer/answer queues, 870-line peerconnection)
-  but media transport verification needs actual ICE/DTLS call testing — can't verify in this
-  VM without a peer. DEFERRED pending a loopback-test harness (two peerconnections in one
-  page is the standard trick — still needs the media backend present).
-- webgpu: untested — big surface, needs its own dedicated verification round.
-RULE CONFIRMED: typeof-presence is NOT enablement evidence — captureStream passed the
-presence check but is functionally hollow. Batch-2+ verification must exercise behavior.
+## writing-modes-6: the REAL defect chain measured live (supersedes writing-modes-2/3 framing)
+Empirical probe chain on feather (devtools eval, wmtest2/wmtest3 pages):
+1. `layout_css_writing_mode_enabled` pref DOES reach runtime when set by the shell — CSS.supports('writing-mode','vertical-rl')=true. The earlier negative result was stale-instance/testinfra. Shell passes it verified via eprintln.
+2. INITIAL style pass computes writing-mode as horizontal-tb even when declared — in all forms: stylesheet rule, style attribute, CSSOM. Rect stays wide-horizontal (1256x19).
+3. NO self-heal: waiting 10s changes nothing (not async pref arrival). Attribute mutations that don't invalidate writing-mode don't fix it.
+4. A FULL-DOCUMENT restyle fixes it: setting documentElement.style.writingMode (inherited property, invalidates whole tree) makes every element compute correctly (vertical-rl) with tall-narrow vertical geometry (19x716!). Fresh createElement+append also computes correctly immediately.
+5. So: the cascade and layout machinery WORK when they run — the defect is in the INITIAL style pass only. Prime suspect locations: the first cascade running before some pref/style-init state is ready in the content process, or an initial-pass-specific codepath (possibly style sharing cache or the root/ICB writing-mode propagation poisoning the first pass). Indexed by mechanism: initial-style-pass vs restyle divergence.
+6. Post-restyle text still does NOT flow vertically in the line sense — glyphs paint horizontally in a tall box: the inline progression axis defect from writing-modes-2 stands as a separate layer.
+[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
+## writing-modes-7: orthogonal-flow axis-swap implementation attempt (in tree, compile-pending)
+Implemented the orthogonal sizing core per css-writing-modes-3 §7.3:
+- `ContainingBlockSize::swapped_axes()` in components/layout/containing_block.rs — swaps inline/block for orthogonal children, falling back to parent inline size when block indefinite.
+- flow/mod.rs `solve_containing_block_padding_and_border_for_in_flow_box` (~line 1855): detect `is_orthogonal` (writing-mode horizontality mismatch), resolve sizes against swapped containing block, suppress inline stretch (orthogonal shrink-wraps).
+- flow/mod.rs `layout_float_or_atomic_inline` (~line 2460): same treatment for floats/atomics.
+Status: compile-pending in engine rebuild; behavioral verification blocked behind the initial-pass defect (writing-modes-6) — must force restyle in test pages or fix that first. NOTE: since post-restyle vertical layout already produces vertical geometry upstream, part of this swap may duplicate existing upstream handling — measure before/after, don't assume necessity. If the height-716 stretch behavior is already correct-ish upstream, the stretch-suppression half of this patch is the part to scrutinize first.
+[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: medium]
+## devtools-probing-1: reusable live-eval recipe against feather
+matrix.py's DevTools class works against a manually booted instance: boot `FEATHER_DEVTOOLS=9299 feather-ui <url>`, then `importlib` load matrix.py (guard stdout), `DevTools(9299)`, `.connect()`, `.eval_js(expr)` — no auth token needed despite earlier notes. listTabs DOES return the booted tab when page passed as argv. Connect takes up to ~30s of retries. Verified end-to-end with document.title roundtrips. This is the fast lane for live CSS/DOM experiments — much cheaper than full matrix runs.
+[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]

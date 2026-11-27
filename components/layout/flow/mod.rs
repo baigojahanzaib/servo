@@ -1835,6 +1835,24 @@ fn solve_containing_block_padding_and_border_for_in_flow_box<'a>(
         };
     }
 
+    // <https://drafts.csswg.org/css-writing-modes/#orthogonal-flows>
+    // A box whose writing mode is orthogonal to its containing block's has its
+    // axes swapped: its inline axis maps to the containing block's block axis.
+    // Resolve its sizes against an axis-swapped containing block so that
+    // percentages, stretch, and fit-content operate on the correct physical axes.
+    let is_orthogonal =
+        style.writing_mode.is_horizontal() != containing_block.style.writing_mode.is_horizontal();
+    let orthogonal_containing_block;
+    let containing_block = if is_orthogonal {
+        orthogonal_containing_block = ContainingBlock {
+            size: containing_block.size.swapped_axes(),
+            style: containing_block.style,
+        };
+        &orthogonal_containing_block
+    } else {
+        containing_block
+    };
+
     let ContentBoxSizesAndPBM {
         content_box_sizes,
         pbm,
@@ -1843,7 +1861,13 @@ fn solve_containing_block_padding_and_border_for_in_flow_box<'a>(
     } = layout_style.content_box_sizes_and_padding_border_margin(&containing_block.into());
 
     let pbm_sums = pbm.sums_auto_is_zero(ignore_block_margins_for_stretch);
-    let inline_stretch_size = containing_block.inline_stretch_size(pbm_sums.inline);
+    // Orthogonal flows shrink-wrap in their inline axis rather than stretching
+    // into the containing block's block axis.
+    let inline_stretch_size = if is_orthogonal {
+        None
+    } else {
+        containing_block.inline_stretch_size(pbm_sums.inline)
+    };
     let block_stretch_size = containing_block.block_stretch_size(pbm_sums.block);
     let automatic_block_size = automatic_block_size(layout_context, base);
 
@@ -2429,6 +2453,20 @@ impl IndependentFormattingContext {
         let style = self.style();
         let container_writing_mode = containing_block.style.writing_mode;
         let layout_style = self.layout_style();
+        // <https://drafts.csswg.org/css-writing-modes/#orthogonal-flows>
+        // Orthogonal boxes resolve sizes against an axis-swapped containing block.
+        let is_orthogonal =
+            style.writing_mode.is_horizontal() != containing_block.style.writing_mode.is_horizontal();
+        let orthogonal_containing_block;
+        let containing_block = if is_orthogonal {
+            orthogonal_containing_block = ContainingBlock {
+                size: containing_block.size.swapped_axes(),
+                style: containing_block.style,
+            };
+            &orthogonal_containing_block
+        } else {
+            containing_block
+        };
         let content_box_sizes_and_pbm =
             layout_style.content_box_sizes_and_padding_border_margin(&containing_block.into());
         let pbm = &content_box_sizes_and_pbm.pbm;
@@ -2437,7 +2475,11 @@ impl IndependentFormattingContext {
         let preferred_aspect_ratio = self.preferred_aspect_ratio(&pbm.padding_border_sums);
         let is_table = self.is_table();
 
-        let inline_stretch_size = containing_block.inline_stretch_size(pbm_sums.inline_sum());
+        let inline_stretch_size = if is_orthogonal {
+            None
+        } else {
+            containing_block.inline_stretch_size(pbm_sums.inline_sum())
+        };
         let block_stretch_size = containing_block.block_stretch_size(pbm_sums.block_sum());
 
         let automatic_block_size = Size::FitContent;
