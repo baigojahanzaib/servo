@@ -5914,3 +5914,15 @@ CSS layers or scope. YouTube nav items queried DO compute color rgb(232,232,232)
 simple vars partially work — the invisibility may be narrower than full var failure:
 possibly specific to the guide's background surface tokens. Harness: /tmp/ytnav.py,
 /tmp/yt-dark.png, SERVO_FORCE_THEME=dark + webdriver execute/sync probing.
+
+## sec1zt291 — dark-nav refinement: basic var mechanism healthy; suspect incomplete boot (2026-11-27)
+Minimal repro /tmp/crashtest/vartest.html PROVES html[dark]-selector custom properties
+apply correctly in servo (v1[#aabbcc]v2[#112233] both resolve). Therefore the missing
+--yt-spec-* variables are NOT a CSS cascade failure — YouTube's own theming JS injects
+those vars, and the probe snapshot showed the boot INCOMPLETE (video still spinner at 30s).
+New leading theory: the black-on-black nav is downstream of incomplete YouTube boot (the
+boot flake — same family as the media/script wedges) rather than a discrete CSS bug.
+DISCRIMINATOR for next session: probe again after the page fully settles (or drive with a
+longer wait + check ytd-app theming inline styles on html element; if vars appear after
+full boot, the defect is boot-completeness not CSS). All harness durable: /tmp/ytnav.py,
+/tmp/checkvartest.py, srv port 8455.
