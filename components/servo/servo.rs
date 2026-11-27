@@ -683,6 +683,13 @@ impl ServoInner {
                         .request_permission(webview, permission_request);
                 }
             },
+            EmbedderMsg::QueryPermissionState(webview_id, feature, response_sender) => {
+                let state = self
+                    .get_webview_handle(webview_id)
+                    .map(|webview| webview.delegate().query_permission_state(webview, feature))
+                    .unwrap_or(servo_embedder_traits::EmbedderPermissionState::Prompt);
+                let _ = response_sender.send(state);
+            },
             EmbedderMsg::RequestPermission(webview_id, requested_feature, callback) => {
                 if let Some(webview) = self.get_webview_handle(webview_id) {
                     let permission_request = PermissionRequest {

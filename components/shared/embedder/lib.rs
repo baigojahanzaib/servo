@@ -313,6 +313,15 @@ pub enum AllowOrDeny {
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+/// The stored permission state for a feature, as answered by the embedder
+/// without any user interaction.
+pub enum EmbedderPermissionState {
+    Granted,
+    Denied,
+    Prompt,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 /// Whether a protocol handler is requested to be registered or unregistered.
 pub enum RegisterOrUnregister {
     Register,
@@ -529,6 +538,9 @@ pub enum EmbedderMsg {
     /// Request permission without blocking the script thread. The callback is invoked with the user's
     /// decision once it is known.
     RequestPermission(WebViewId, PermissionFeature, GenericCallback<AllowOrDeny>),
+    /// Ask the embedder for the stored permission state of a feature, without
+    /// prompting the user. Used by `permissions.query()`.
+    QueryPermissionState(WebViewId, PermissionFeature, GenericSender<EmbedderPermissionState>),
     /// Request a single geographic position fix. The callback is invoked exactly once.
     RequestGeolocationPosition(
         WebViewId,

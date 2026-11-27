@@ -3,7 +3,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use dom_struct::dom_struct;
-use embedder_traits::{self, AllowOrDeny, EmbedderMsg, PermissionFeature, WakeLockType};
+use embedder_traits::{
+    self, AllowOrDeny, EmbedderMsg, EmbedderPermissionState, PermissionFeature, WakeLockType,
+};
 use js::context::JSContext;
 use js::conversions::ConversionResult;
 use js::jsapi::JSObject;
@@ -333,7 +335,33 @@ pub(crate) fn descriptor_permission_state(
     // Step 8. Return the PermissionState enum value that represents the permission state
     // of feature, taking into account any permission state constraints for descriptor's
     // name.
-    PermissionState::Prompt
+    //
+    // The permission store lives in the embedder; ask it for the stored state without
+    // prompting. Falls back to "prompt" when there is no associated webview or the
+    // embedder does not answer.
+    query_embedder_permission_state(feature, &global_scope)
+}
+
+/// Ask the embedder for the stored permission state of a feature, synchronously.
+/// Mirrors the prompt_user_from_embedder round-trip but never triggers UI.
+fn query_embedder_permission_state(
+    name: PermissionName,
+    global_scope: &GlobalScope,
+) -> PermissionState {
+    let Some(webview_id) = global_scope.webview_id() else {
+        return PermissionState::Prompt;
+    };
+    let (sender, receiver) = generic_channel::channel().expect("Failed to create IPC channel!");
+    global_scope.send_to_embedder(EmbedderMsg::QueryPermissionState(
+        webview_id,
+        name.convert(),
+        sender,
+    ));
+    match receiver.recv() {
+        Ok(EmbedderPermissionState::Granted) => PermissionState::Granted,
+        Ok(EmbedderPermissionState::Denied) => PermissionState::Denied,
+        Ok(EmbedderPermissionState::Prompt) | Err(_) => PermissionState::Prompt,
+    }
 }
 
 /// <https://w3c.github.io/permissions/#request-permission-to-use>
