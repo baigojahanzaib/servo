@@ -4345,4 +4345,27 @@ Status: compile-pending in engine rebuild; behavioral verification blocked behin
 [source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: medium]
 ## devtools-probing-1: reusable live-eval recipe against feather
 matrix.py's DevTools class works against a manually booted instance: boot `FEATHER_DEVTOOLS=9299 feather-ui <url>`, then `importlib` load matrix.py (guard stdout), `DevTools(9299)`, `.connect()`, `.eval_js(expr)` — no auth token needed despite earlier notes. listTabs DOES return the booted tab when page passed as argv. Connect takes up to ~30s of retries. Verified end-to-end with document.title roundtrips. This is the fast lane for live CSS/DOM experiments — much cheaper than full matrix runs.
-[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
+
+## sec1zt163 — pref-gate batch-2 verdicts
+- sanitizer: SHIPPED (#275) — 3189-line real impl, sanitize() strips scripts verified.
+- canvas_capture: EXCLUDED with evidence — CaptureStream is a stub: returns a MediaStream
+  with a bare video track, no frame source, no canvas-to-track plumbing. Enabling would
+  produce black-stream inconsistency. Real implementation needs canvas→video-frame bridging.
+- webrtc: real structure (signaling state machine, offer/answer queues, 870-line peerconnection)
+  but media transport verification needs actual ICE/DTLS call testing — can't verify in this
+  VM without a peer. DEFERRED pending a loopback-test harness (two peerconnections in one
+  page is the standard trick — still needs the media backend present).
+- webgpu: untested — big surface, needs its own dedicated verification round.
+RULE CONFIRMED: typeof-presence is NOT enablement evidence — captureStream passed the
+presence check but is functionally hollow. Batch-2+ verification must exercise behavior.
+
+## sec1zt164 — webrtc EXCLUDED with crash evidence; batch-2 verdicts final
+Enabling dom_webrtc + constructing RTCPeerConnection PANICS the media backend:
+components/media/backends/gstreamer/lib.rs:358 `webrtc::construct(...).expect("WebRTC creation
+failed")` — gstreamer's webrtc controller fails to construct in this environment (missing
+gstwebrtcbin/rswebrtc plugins most likely). Even where constructible, hard-panicking on a
+missing system plugin is wrong — upstream defect worth a graceful-degradation fix (return
+construction error to JS instead of expect). Until then webrtc stays off: presence-then-crash
+is the worst possible surface. crash artifacts confirm the capture pipeline works (class: panic).
+webgpu remains the only unverified batch-2 gate.
+BATCH-1+storage+sanitizer all MERGED: #271 #272 #273 #275.
