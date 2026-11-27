@@ -1346,9 +1346,17 @@ impl ScriptThread {
             .map(|last_render_opportunity_time| Instant::now() - last_render_opportunity_time)
             .unwrap_or(Duration::MAX)
             .min(animation_delay);
-        self.schedule_update_the_rendering_timer_if_necessary(
-            animation_delay - time_since_last_rendering_opportunity,
-        );
+        let delay = animation_delay - time_since_last_rendering_opportunity;
+        if delay.is_zero() {
+            // The rendering update is already due — scheduling a zero-duration
+            // timer makes the event loop wake-spin: the deadline is never in
+            // the future, so the timed wait never blocks and the thread burns
+            // a core re-entering the wait primitive. Set the flag directly
+            // instead of round-tripping through the scheduler.
+            self.needs_rendering_update.store(true, Ordering::Relaxed);
+        } else {
+            self.schedule_update_the_rendering_timer_if_necessary(delay);
+        }
     }
 
     /// Fulfill the possibly-pending pending `document.fonts.ready` promise if
