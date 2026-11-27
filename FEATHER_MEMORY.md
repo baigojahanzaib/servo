@@ -4675,3 +4675,6 @@ thread spinning at 100% would starve the load — consistent with the user's
 roundtrip verified HEALTHY on the same build — freeze is post-auth only.
 Repro evidence files on macOS lane VM: /tmp/yt-wedged-sample.txt (full
 sample), /tmp/gmail-baseline-sample.txt.
+||||||| parent of b61bd1f5580 (memory: sec1zt205 wedge smoking gun)
+
+## sec1zt205 — WEDGE SMOKING GUN: gdb of blank-wedged youtube watch page — Script#1 BLOCKED in futex inside gst_pad_set_active (libgstreamer pthread_mutex_lock). The script thread wedging in gstreamer pad activation = whole page dead while idle. EXPLAINS: blank boot wedge + dead devtools + idle cpu + plausibly the seek-kill (same lock family — seek pipeline reset churns pad activation). Deadlock partner = whoever holds mutex 0x75e30c2df430 — analyze /tmp/wedge-bt.txt (SAVED, 1226 lines, 252 threads): find threads inside gst code holding locks (media thread, GstBus sync handler, decodebin). Full bt preserved — grep gst_pad_set_active\\|gst_element\\|decodebin\\|media in it. This is likely batch-6-window media-commit regression — bisect candidates: 5e6df4c001b (seek pipeline-reset on worker thread), 4c126d64190/0cc27425170 (deferred-dispose reaper) — pad activation during teardown vs seek is the classic gst deadlock pair.
