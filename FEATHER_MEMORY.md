@@ -5514,3 +5514,18 @@ when adoption is in progress. ALSO the deeper progressive-playback wedge: if pau
 preroll wedges the pipeline (state never completes), the seek-fix serialization pattern
 needs generalizing to progressive pause/play. Repro test stands: single-test mach invocation
 in sec1zt274.
+
+## sec1zt276 — media wedge is RACY and precedes playback (2026-11-27)
+pause-move-to-other-document flake rate ~1/3 (pass/crash/pass/crash samples). CRITICAL:
+in the crashed run there are ZERO player calls — not even the initial play() — the wedge
+fires BEFORE media playback starts, so the preroll/bt analysis (sec1zt274) captured the
+AFTERMATH state not the trigger. Correlated warning in failing runs: "Trying to exec media
+action on an unknown client context" appears even before the test loads (leftover actions
+from the PREVIOUS page hitting a torn-down media session — the deferred-dispose/registration
+mismatch from batch-6). New hypothesis space: the wedge is in the media session registration/
+teardown race — client context teardown from the harness-setup page interleaves with the
+test page's media setup. Same-doc move verified HEALTHY (playback continues ct=1.76);
+cross-document repro harness was flaky for setup reasons (autoplay didn't fire) — use the
+wpt single-test as the only reliable repro. UNCOMMITTED instrumentation in working tree:
+player.rs has eprintln [playerdbg] in play/pause/stop — strip before any engine commit or
+keep for debugging. Repro recipe: loop the single test until CRASH, grep playerdbg.
