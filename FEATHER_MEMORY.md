@@ -4488,3 +4488,11 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 - Note: youtube may recreate/reconfigure the video element across seeks (SPA player) — but even so, the new element never reaches readyState>0, so media feeding is broken post-seek.
 - Discriminator needed: direct MSE seek repro (test page with MediaSource+mp4 segments) vs progressive mp4 seek (multivid) to isolate MSE-specific vs general. Progressive mp4 seek test pending.
 - User-facing impact: HIGH — youtube seeking is core daily usage; any seek currently kills the video requiring page reload.
+
+## SYMPTOM: silent process death during rapid navigation (batch-5, REPRODUCED — the dormant crash class is NOT dormant)
+- Symptom: during fastnav stress (8 rapid site-to-site navigations ~4s apart: google-serp, github servo, wikipedia, github pulls, google-serp, HN), feather-ui.exe VANISHED mid-chain — process gone from tasklist, log ends mid-request with no panic, no error, no crash artifact. Death timestamp ~09:25:07 during google ValidationAsync retry fetch in the wikipedia/HN phase of the chain.
+- Evidence: work/dogfood/dog2.log ends mid-stream; zero panic lines; crash-capture wrote nothing (capture hooks catch Rust panics — this is hard process death, consistent with the 0xC0000374 heap-corruption class seen in batch-3/4 era).
+- Mechanism notes: heap corruption in the engine teardown path (per-navigation destruction racing new-page construction under rapid navigation) fits perfectly: silent death, no Rust panic, no artifact. The per-navigation memory leak (~30-45MB/nav structural) and this crash may share the same teardown-path root cause — corrupt/never-freed document teardown.
+- User-facing impact: CRITICAL — rapid browsing kills the browser silently. All session state lost. This was the user's original freeze/crash complaint class.
+- Repro: 8 rapid navigations 4s apart across heavy sites. Not 100% deterministic but reproduced on first dedicated try on batch-5.
+- Next discriminator for engine lane: enable WindowsWER full dumps or run under a debugger to catch the corruption site; correlate with the memory-leak teardown investigation — likely same root.
