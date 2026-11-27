@@ -4496,3 +4496,7 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 - User-facing impact: CRITICAL — rapid browsing kills the browser silently. All session state lost. This was the user's original freeze/crash complaint class.
 - Repro: 8 rapid navigations 4s apart across heavy sites. Not 100% deterministic but reproduced on first dedicated try on batch-5.
 - Next discriminator for engine lane: enable WindowsWER full dumps or run under a debugger to catch the corruption site; correlate with the memory-leak teardown investigation — likely same root.
+
+## UPDATE: gmail wedge reproduces on batch-6 too (verification pass)
+- Batch-6 boot test FEATHER_START_URL=https://mail.google.com: 52 stall entries in first 60s, 1 transient recovery, still wedged. The batch-6 engine changes (subgrid, writing-modes, designMode, webrtc, notifications, layout-pref batch) do NOT fix it. Navigation-to-gmail (vs boot) on batch-6 rendered the workspace marketing redirect fine with zero stalls — the wedge may be specific to boot-time load or the mail.google.com deep path. Discriminator: boot vs navigation differs; boot-time wedge consistent.
+## Dogfood batch-5 summary entries (all above): gmail permanent wedge; youtube MSE seek death; silent process death under fastnav; HEALTHY: discord, SERP modern+AI Overview, mp4 fwd/back seeks, multitab+rapid switching, wikipedia.
