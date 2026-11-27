@@ -3887,3 +3887,22 @@ to ALL custom mesh work in the shell.
 MockBackend — it fabricates WebDocument models (titles, colors, blocks) while
 servo independently renders real content. Anything the mock fabricates can
 surface as demo data. When in doubt, the honest default is empty/neutral.
+
+## drag-drop-matrix-verdict: class fully GREEN (verified live 2026-11-27)
+
+All six matrix probes pass on the merged tree: draggable-attribute,
+dragevent-constructor (typeof=function), datatransfer-in-event,
+datatransfer-roundtrip (readback=matrix-drag), drag-events-dispatch
+(synthetic dragstart/dragover/drop), datatransfer-effects. DragEvent absence
+is CLOSED as a matrix red — implementation + upstream effectAllowed fix both
+verified end-to-end (trusted-input drag: dragstart|setdata-ok|drag|dragenter|
+dragover|drop:payload|dragend).
+
+**Devtools harness lesson**: the eval chain (listTabs→getTarget→evaluateJS
+with Ok-envelope unwrap) works perfectly against a manually-launched instance.
+The run_one_page "devtools never came up"/stall failures are LAUNCH-PATH
+issues, not protocol: prime suspects are the single-instance handoff (a fresh
+launch forwards argv to a lingering primary that has no devtools env and
+exits) and FEATHER_DEVTOOLS being a PORT/address value not a boolean
+(=1 binds port 1). When automating: always pass FEATHER_DEVTOOLS=9222 and
+verify no feather process survives the pkill before launch.
