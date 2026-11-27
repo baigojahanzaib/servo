@@ -3983,3 +3983,16 @@ parked prompt UI. Engine needed ZERO changes. Geolocation also gated on
 dom_geolocation_enabled + test-position prefs (both off by default).
 NOTE for other lanes: the permission flow uses EmbedderMsg::RequestPermission (callback variant)
 not just PromptPermission — both route to the same delegate method.
+
+## sec1zt146 — notifications: engine resource-less-show bug + shell wiring
+Symptom: "new Notification() constructor succeeds, permission granted, but nothing
+displays, no error" → check: notification.rs fetch_resources_and_show_when_ready —
+with no image/icon/badge resources the pending list is EMPTY, the fetch loop is a
+no-op, and show() is never invoked. Engine bug upstream: resource-less notifications
+never display. Fix: empty-check calls show() immediately.
+Engine notification architecture notes:
+- DOM complete in serviceworker/notification.rs; pref dom_notification_enabled default FALSE
+- script sends EmbedderMsg::ShowNotification DIRECTLY to embedder channel (no constellation)
+- permission flow: Notification.requestPermission routes the SAME generic embedder
+  permission mediation as geolocation — the shell prompt infra is feature-generic (verified)
+- shell display hook: WebViewDelegate::show_notification (default no-op)
