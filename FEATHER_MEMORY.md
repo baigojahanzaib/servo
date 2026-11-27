@@ -4231,3 +4231,20 @@ contribution, capped by available space per spec section 7.3). Ladybird's
 implementation in BlockFormattingContext is the cross-reference. This is the
 multi-day engine mission; plan doc WRITING-MODES-PLAN.md phases stand but
 phase 1 should be retitled "orthogonal flow implementation".
+## sec1zt156 — permissions.query() plumbing IMPLEMENTED, compile-verification pending
+Full chain written, NOT yet compile-verified (session context exhausted mid-check;
+verify first thing on resume — cargo check -p feather-ui in ~/feather/shell-new, log at
+/tmp/permcheck.log may be stale-pre-edit):
+1. embedder/lib.rs: new EmbedderPermissionState tri-state enum (Granted/Denied/Prompt) +
+   EmbedderMsg::QueryPermissionState(WebViewId, PermissionFeature, GenericSender<...>)
+2. servo/webview_delegate.rs: query_permission_state default method returning Prompt
+3. servo/servo.rs: arm answering synchronously from the delegate (never hangs —
+   servo itself sends the response, fallback Prompt when webview missing)
+4. script/permission/permissions.rs: descriptor_permission_state step 8 now does a
+   SYNCHRONOUS embedder round-trip (query_embedder_permission_state) mirroring the
+   prompt_user_from_embedder channel pattern — precedent exists so no architectural surgery.
+5. feather shell engine.rs: query_permission_state impl reading the PermissionStore.
+KEY DESIGN FACT: prompt_user_from_embedder ALREADY does sync channel+recv from the script
+thread — sync embedder queries are precedented, no store-push complexity needed.
+NOTE: invocation cache (step 5-7) is per-global so cross-page consistency now correct;
+revocation within a page still cached (spec-tolerable).
