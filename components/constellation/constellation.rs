@@ -4446,15 +4446,47 @@ where
                 ctx.upgrade_insecure_navigations_set.clone(),
             ),
             None => {
-                // This should technically never happen (since `load_url` is
-                // only called on existing browsing contexts), but we prefer to
-                // avoid `expect`s or `unwrap`s in `Constellation` to ward
-                // against future changes that might break things.
-                warn!(
-                    "{}: Loaded url in closed {}",
-                    source_id, browsing_context_id,
-                );
-                return None;
+                // Feather: the initial navigation may still be pending — the
+                // browsing context registers only when the FIRST load commits,
+                // so a hung first load leaves no entry. Fall back to the
+                // pending change's pipeline and metadata so the user can
+                // navigate away (the timeout-regression wedge, sec1zt141).
+                match self
+                    .webviews
+                    .get(&webview_id)
+                    .and_then(|webview| {
+                        webview
+                            .pending_changes
+                            .iter()
+                            .find(|change| change.browsing_context_id == browsing_context_id)
+                    })
+                {
+                    Some(change) => (
+                        change.viewport_details,
+                        change.new_pipeline_id,
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .and_then(|info| info.parent_pipeline_id),
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .map(|info| info.is_private)
+                            .unwrap_or(false),
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .map(|info| info.upgrade_insecure_navigations_set.clone())
+                            .unwrap_or_default(),
+                    ),
+                    None => {
+                        warn!(
+                            "{}: Loaded url in closed {}",
+                            source_id, browsing_context_id,
+                        );
+                        return None;
+                    },
+                }
             },
         };
 
@@ -6114,6 +6146,25 @@ where
                 }
             }
             if pipeline_id == ancestor_id {
+                // Feather: a pipeline whose browsing context has not committed
+                // yet (the initial navigation never finished) is still the
+                // webview's live content — treating it as Inactive disregarded
+                // every escape navigation out of a hung first load.
+                if let Some(pipeline) = self.pipelines.get(&pipeline_id) {
+                    let pending_initial = self
+                        .webviews
+                        .get(&pipeline.webview_id)
+                        .map(|webview| {
+                            webview
+                                .pending_changes
+                                .iter()
+                                .any(|change| change.new_pipeline_id == pipeline_id)
+                        })
+                        .unwrap_or(false);
+                    if pending_initial {
+                        return DocumentActivity::FullyActive;
+                    }
+                }
                 return DocumentActivity::Inactive;
             } else {
                 return DocumentActivity::Active;
