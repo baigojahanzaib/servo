@@ -1151,6 +1151,14 @@ impl ScriptThread {
                 continue;
             }
 
+            // Input events are processed ahead of any render-state skip below:
+            // every event forwarded to the document must produce its outcome
+            // (and the embedder acknowledgement that comes with it) regardless of
+            // whether the document can render right now. Skipping input processing
+            // for a canvas-image wait, a render block or a hidden document loses
+            // the acknowledgement forever and wedges input-driven callers.
+            self.process_pending_input_events(cx, *pipeline_id);
+
             if document.waiting_on_canvas_image_updates() {
                 continue;
             }
@@ -1178,12 +1186,8 @@ impl ScriptThread {
             document.clear_rendering_update_reasons();
 
             // TODO(#31581): The steps in the "Revealing the document" section need to be implemented
-            // `process_pending_input_events` handles the focusing steps as well as other events
-            // from `Paint`.
-
-            // TODO: Should this be broken and to match the specification more closely? For instance see
-            // https://html.spec.whatwg.org/multipage/#flush-autofocus-candidates.
-            self.process_pending_input_events(cx, *pipeline_id);
+            // `process_pending_input_events` (which handles the focusing steps as well as
+            // other events from `Paint`) already ran above, ahead of the render-state skips.
 
             // > 8. For each doc of docs, run the resize steps for doc. [CSSOMVIEW]
             let resized = document.window().run_the_resize_steps(cx);
