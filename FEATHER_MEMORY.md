@@ -4423,3 +4423,11 @@ PREF-GATE AUDIT FINAL: every one of the 26 gated-off prefs has a verdict — shi
 (#273: visualViewport/cookieStore/adoptedStyleSheets/composition/entries/wakeLock/protocol),
 permissions+storage (#271/#272), sanitizer (#275), webgpu (#280); excluded with evidence:
 captureStream (hollow stub), webrtc (gstreamer panic); all others documented deferred.
+
+## grid-2: subgrid is upstream-scale, not a lane increment — mission-blocker evidence
+Chased the subgrid implementation path per the grid-1 verdict:
+- feather fork pins taffy 0.15.1; upstream servo main pins the SAME version (verified in servo/servo@main Cargo.toml) — no upstream upgrade to ride.
+- taffy main (0.16.0-dev, DioxusLabs/taffy) still lacks production subgrid: changelog keeps subgrids in the unsupported list; zero subgrid handling in the grid compute modules.
+CONCLUSION: subgrid-in-servo requires implementing subgrid track-sizing participation IN taffy itself (upstream-scale, multi-week algorithmic work — nested tracks must resolve against parent track sizes recursively) or architectural surgery in servo's bridge to bypass taffy for subgridded axes (comparable scale). Neither is a lane increment; this is a coordinator/funding-model decision. Cross-reference: Ladybird implements its own grid (subgrid included) — no shortcut there either since servo delegates all grid sizing to taffy.
+RECOMMENDATION: deprioritize subgrid as a standalone upstream mission; the grid mission at mechanism level is otherwise CLOSED-green per grid-1.
+[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
