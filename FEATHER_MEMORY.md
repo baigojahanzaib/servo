@@ -4384,3 +4384,15 @@ BATCH-1+storage+sanitizer all MERGED: #271 #272 #273 #275.
    'honest-absence' categorization is STALE — servo's drag machinery (script/drag/html_drag.rs,
    drag_gesture wired in document_event_handler) is real and input-driven. MATRIX-DOC-NEEDS-
    REGEN: drag-drop x4 reds should flip green on next matrix.py run.
+
+## sec1zt166 — webgpu verdict: cargo-feature-gated, NOT just a pref — batch-2 audit COMPLETE
+navigator.gpu absent even with dom_webgpu_enabled=true because the implementation is behind
+the `webgpu` cargo feature in components/script/Cargo.toml (dep:script_webgpu, webgpu_traits,
+codegen cfg). Enabling requires feature passthrough in feather's dependency chain + heavy
+wgpu dep compilation — a build-system change, not a pref flip. Verdict: defer to a dedicated
+round (measure build cost first; wgpu backend in components/webgpu/wgpu_thread.rs is real,
+upstream demos work).
+BATCH-2 FINAL STATE: sanitizer shipped (#275), canvas-capture excluded (hollow stub, evidence
+sec1zt163), webrtc excluded (gstreamer panic, evidence sec1zt164), webgpu deferred
+(cargo-feature, this entry). The pref-gate audit is fully closed: every one of the 26
+gated-off prefs has a verdict.
