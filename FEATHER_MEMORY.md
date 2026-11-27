@@ -3856,3 +3856,37 @@ Two independent defects fixed in one round: (1) base=0/clock-continuity (sec1zt1
 
 ## sec1zt134 — round-6 regression + retry-cap interaction: re-poll chains must never count toward attempt caps (2026-11-27)
 Round-6 harness verdict: WORSE — zero refeed bytes delivered. Prep+rewrite+reset all ran, then permanent engine silence after `restore Ok(Async)`. Cause: the settle re-poll incremented retries on every turn; back-to-back re-polls hit the 400-cap in milliseconds (long before the 1500ms wall-clock window) and the chain silently returned forever. Fix b81a6ac92d7: re-poll passes retries=0 — the wall-clock condition itself bounds the settle. RULE: in a self-requeueing task chain, distinguish ATTEMPTS (real work tried and failed — count toward caps) from POLLS (condition re-checks — must never count). Symptom: async chain armed but never fires, total silence after correct setup logs → check: cap/counter interactions in the re-poll path. Also notable from round-6 log: running_time_ns=99.7s on second seek confirms running time does NOT reset across Ready cycles — validates the base-continuity premise.
+
+## ui-shell-1: egui mesh vertex alpha — the premultiplied trap (verified live)
+
+**Symptom**: custom egui Mesh shapes (gaussian/organic blob gradients) render as
+strong solid color even at very low alpha; reducing alpha barely changes the look.
+
+**Root cause**: egui composites mesh vertex colors as PREMULTIPLIED alpha.
+`Color32::from_rgba_unmultiplied` stores channels without scaling, so the rgb
+contribution hits the framebuffer at full strength regardless of alpha. Fix:
+construct vertices with `Color32::from_rgba_premultiplied(r*a/255, g*a/255, b*a/255, a)`
+or scale channels manually. Fixed in shell-new ui/icons.rs organic_blob. Applies
+to ALL custom mesh work in the shell.
+
+## ui-shell-2: round-4 demo data + stroke-bar root causes (verified live 2026-11-27)
+
+**Symptom → suspect index**:
+- "demo favicons/icons in the tab strip after restart" → MockBackend quick tiles
+  (backend/mock.rs Default), the host-hash saturated letter-tile color in
+  tab_strip.rs tab_favicon fallback, and web_page.rs's fake favicon+site header.
+  NOT a persistence bug — the state layer was already clean; the demo data came
+  from the backend fabrication layer.
+- "thin stroke/bar empty area near navigation area, appearing/disappearing" →
+  ui/web_page.rs skeleton() invocation: skeleton placeholder bars painted at the
+  TOP of the content area (directly under the nav) for any non-engine-live web
+  tab while loading. With servo live-rendering most pages, the skeleton only
+  flashes transiently — reads as a stray artifact, not a loading affordance.
+- "demo/placeholder content anywhere" → grep for `web_page::show` — the mock
+  article renderer (fake headline/paragraphs/figures) painted for ANY web tab
+  the engine hadn't attached to (restored background tabs, startup transient).
+
+**Architecture lesson**: the shell's BrowserBackend abstraction is ALWAYS
+MockBackend — it fabricates WebDocument models (titles, colors, blocks) while
+servo independently renders real content. Anything the mock fabricates can
+surface as demo data. When in doubt, the honest default is empty/neutral.
