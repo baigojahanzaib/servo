@@ -694,12 +694,14 @@ impl<'dom> NodeExt<'dom> for ServoLayoutNode<'dom> {
             return None;
         }
 
-        // TODO: This is the what the legacy layout system did, but really if Servo
-        // supports any `<object>` that's an image, it should support those with URLs
-        // and `type` attributes with image mime types.
         let element = self.as_element()?;
-        if element.attribute(&ns!(), &local_name!("type")).is_some() {
-            return None;
+        // A `type` attribute only opts the object out of image rendering when it
+        // declares a non-image mime type. Image mime types (or an absent attribute,
+        // where the type is sniffed from the response) still render as images.
+        if let Some(type_attr) = element.attribute_as_str(&ns!(), &local_name!("type")) {
+            if !type_attr.trim().to_ascii_lowercase().starts_with("image/") {
+                return None;
+            }
         }
         element
             .attribute_as_str(&ns!(), &local_name!("data"))
