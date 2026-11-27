@@ -5941,3 +5941,21 @@ origin parts enumerable) grepping cssText for '--yt-spec-text-primary' to find t
 defining selector/construct; fallback: fetch youtube css assets offline and grep. Harness
 /tmp/ytnav2.py durable. NOTE - youtube css is largely served inline in <style> tags so
 enumeration may fully succeed.
+
+## sec1zt293 — youtube dark-nav root-cause chain: NOT CSS — JS guide-state logic (2026-11-27)
+INVESTIGATION COMPLETE THROUGH CSS LAYER — all CSS theories refuted, defect is in YouTube's
+JS guide-state decisions in servo. Evidence chain: (1) theme tokens --tffXXXX resolve
+CORRECTLY in dark mode (#f1f1f1 etc — verified live); (2) the legacy --yt-spec-text-primary
+probe was a red herring — YouTube no longer uses those vars at all (0 usages in served CSS);
+(3) mini-guide element is properly defined/upgraded (shady-dom content present) but keeps
+its skeleton `hidden` attribute forever — YouTube JS never unhides it / never sets
+mini-guide-visible on ytd-app even at 1600px width; (4) NOT a boot-completeness issue
+(video plays, readyState 4); (5) display-mode media feature was genuinely missing in servo
+(all four values false — spec violation) — FIXED this session (stylo: display-mode always
+browser, compile-verified, pushed) but does NOT lift the nav defect by itself. NEXT STEP:
+probe iron-media-query elements' query/matches state on the live page — YouTube's guide
+visibility is gated through polymer media-query bindings; find which query mis-evaluates.
+ALSO durable: kevlar.css token system documented (:root double-assign + [dark]/[light] bare
+attribute overrides — servo handles correctly, verified vartest2.html). Harnesses:
+/tmp/ytnav*.py chain, checkvartest.py <page> for fast media/var probes. SERVO_FORCE_THEME
+tooling in tree. Files: /tmp/kevlar.css (3.4MB full css), /tmp/yt-dark.png.
