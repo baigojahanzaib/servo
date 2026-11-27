@@ -6213,6 +6213,7 @@ where
         webview_id: WebViewId,
         browsing_context_id: BrowsingContextId,
     ) -> Option<BrowsingContext> {
+        eprintln!("[timeout-instr] close_browsing_context ENTRY");
         debug!("{}: Closing", browsing_context_id);
 
         self.close_browsing_context_children(
@@ -6341,6 +6342,7 @@ where
     // Close all pipelines at and beneath a given browsing context
     #[servo_tracing::instrument(skip_all)]
     fn close_pipeline(&mut self, pipeline_id: PipelineId, dbc: DiscardBrowsingContext) {
+        eprintln!("[timeout-instr] close_pipeline {:?} discard={:?}", pipeline_id, dbc);
         debug!("{}: Closing", pipeline_id);
 
         // Sever connection to browsing context
