@@ -964,6 +964,9 @@ struct NavigationParams {
     about_base_url: Option<ServoUrl>,
     /// <https://html.spec.whatwg.org/multipage/#navigation-params-iframe-referrer-policy>
     iframe_element_referrer_policy: ReferrerPolicy,
+    /// Whether the response requested an origin-keyed agent cluster via the
+    /// `Origin-Agent-Cluster` header.
+    origin_agent_cluster: bool,
 }
 
 /// The context required for asynchronously fetching a document
@@ -1031,6 +1034,7 @@ impl ParserContext {
                 about_base_url: Default::default(),
                 iframe_element_referrer_policy: Default::default(),
                 redirect_taint: Default::default(),
+                origin_agent_cluster: false,
             },
             target_snapshot_params,
             source_origin,
@@ -1095,6 +1099,7 @@ impl ParserContext {
         document.set_document_readiness_to_loading_for_initialization();
         // about base URL: navigationParams's about base URL
         document.set_about_base_url(self.navigation_params.about_base_url.clone());
+        document.set_origin_agent_cluster(self.navigation_params.origin_agent_cluster);
         // Step 11. Set document's internal ancestor origin objects list to the result of
         // running the internal ancestor origin objects list creation steps given
         // document and navigationParams's iframe element referrer policy.
@@ -1481,6 +1486,7 @@ impl ParserContext {
             redirect_taint,
             content_disposition,
             content_length,
+            origin_agent_cluster,
         ) = metadata
             .as_ref()
             .map(|metadata| {
@@ -1510,6 +1516,12 @@ impl ParserContext {
                         .and_then(|headers| headers.get("Content-Length"))
                         .and_then(|header| header.to_str().ok())
                         .and_then(|string| string.parse::<u64>().ok()),
+                    metadata
+                        .headers
+                        .as_ref()
+                        .and_then(|headers| headers.get("Origin-Agent-Cluster"))
+                        .and_then(|header| header.to_str().ok())
+                        .is_some_and(|value| value.trim() == "?1"),
                 )
             })
             .unwrap_or_default();
@@ -1621,6 +1633,7 @@ impl ParserContext {
                 .target_snapshot_params
                 .iframe_element_referrer_policy,
             redirect_taint,
+            origin_agent_cluster,
         };
         self.submit_resource_timing(cx);
 

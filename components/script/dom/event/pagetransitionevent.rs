@@ -28,7 +28,7 @@ pub(crate) struct PageTransitionEvent {
 }
 
 impl PageTransitionEvent {
-    fn new_inherited() -> PageTransitionEvent {
+    pub(crate) fn new_inherited() -> PageTransitionEvent {
         PageTransitionEvent {
             event: Event::new_inherited(),
             persisted: Cell::new(false),
@@ -75,6 +75,12 @@ impl PageTransitionEvent {
             event.init_event(type_, bubbles, cancelable);
         }
         ev
+    }
+}
+
+impl PageTransitionEvent {
+    pub(crate) fn set_persisted(&self, persisted: bool) {
+        self.persisted.set(persisted);
     }
 }
 

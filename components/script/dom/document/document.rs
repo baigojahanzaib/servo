@@ -206,6 +206,8 @@ use crate::dom::node::virtualmethods::vtable_for;
 use crate::dom::node::{Node, NodeDamage, NodeFlags, NodeTraits};
 use crate::dom::nodeiterator::NodeIterator;
 use crate::dom::nodelist::NodeList;
+use crate::dom::pagerevealevent::PageRevealEvent;
+use crate::dom::pageswapevent::PageSwapEvent;
 use crate::dom::pagetransitionevent::PageTransitionEvent;
 use crate::dom::performance::performancecontainertiming::PerformanceContainerTiming;
 use crate::dom::performance::performanceentry::PerformanceEntry;
@@ -594,6 +596,9 @@ pub(crate) struct Document {
     page_showing: Cell<bool>,
     /// Whether the document is salvageable.
     salvageable: Cell<bool>,
+    /// Whether the document's agent cluster is origin-keyed,
+    /// as requested by the response's `Origin-Agent-Cluster` header.
+    origin_agent_cluster: Cell<bool>,
     /// Whether the document was aborted with an active parser
     active_parser_was_aborted: Cell<bool>,
     /// Whether the unload event has already been fired.
@@ -1219,9 +1224,7 @@ impl Document {
                 document.update_visibility_state(cx, DocumentVisibilityState::Visible);
                 // Fire pagereveal ahead of pageshow: the incoming document's
                 // reveal event precedes pageshow in the navigation lifecycle.
-                // Typed as a plain PageTransitionEvent until the PageRevealEvent
-                // interface is implemented.
-                let reveal = PageTransitionEvent::new(
+                let reveal = PageRevealEvent::new(
                     cx,
                     window,
                     atom!("pagereveal"),
@@ -2211,6 +2214,14 @@ impl Document {
         self.update_upgrade_insecure_navigations_set();
     }
 
+    pub(crate) fn set_origin_agent_cluster(&self, origin_keyed: bool) {
+        self.origin_agent_cluster.set(origin_keyed);
+    }
+
+    pub(crate) fn origin_agent_cluster(&self) -> bool {
+        self.origin_agent_cluster.get()
+    }
+
     pub(crate) fn set_csp_list(&self, csp_list: Option<CspList>) {
         StdArc::make_mut(&mut *self.policy_container.borrow_mut()).set_csp_list(csp_list);
         self.update_upgrade_insecure_navigations_set();
@@ -2582,11 +2593,10 @@ impl Document {
         self.incr_ignore_opens_during_unload_counter();
         // Fire pageswap ahead of pagehide: per the navigation lifecycle the
         // outgoing document receives pageswap when the navigation is committed,
-        // before its unload sequence proceeds. Typed as a plain
-        // PageTransitionEvent until the PageSwapEvent interface (with its
-        // activation and viewTransition attributes) is implemented.
+        // before its unload sequence proceeds. The activation and
+        // viewTransition attributes of PageSwapEvent are not yet implemented.
         if self.page_showing.get() {
-            let event = PageTransitionEvent::new(
+            let event = PageSwapEvent::new(
                 cx,
                 &self.window,
                 atom!("pageswap"),
@@ -2788,7 +2798,7 @@ impl Document {
 
                 // Fire pagereveal ahead of pageshow in the initial-load path,
                 // mirroring the reactivation path above.
-                let reveal_event = PageTransitionEvent::new(
+                let reveal_event = PageRevealEvent::new(
                     cx,
                     window,
                     atom!("pagereveal"),
@@ -4658,6 +4668,7 @@ impl Document {
             throw_on_dynamic_markup_insertion_counter: Cell::new(0),
             page_showing: Cell::new(false),
             salvageable: Cell::new(true),
+            origin_agent_cluster: Cell::new(false),
             active_parser_was_aborted: Cell::new(false),
             fired_unload: Cell::new(false),
             responsive_images: Default::default(),
