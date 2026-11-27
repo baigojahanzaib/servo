@@ -4272,3 +4272,15 @@ forwarding match on EmbedderMsg variants and the new QueryPermissionState varian
 registering there (grep for PromptPermission/RequestPermission in components/constellation —
 whichever file matches on those variants is where QueryPermissionState must be added).
 sec1zt157's event-loop-reentrancy theory deprioritized.
+
+CORRECTION to sec1zt158 top-suspect: grep finds NO PromptPermission/RequestPermission matches
+in components/constellation — routing is direct-to-embedder, constellation NOT involved.
+Revised suspect list: (1) the servo.rs arm placement — verify the match it was added to is
+the ACTIVE embedder-message handler (there may be multiple event loops: servo.rs vs
+running in servoshell-vs-embedder contexts — the arm exists at servo.rs:686 in
+handle_embedder_message but perhaps feather's embedding path processes EmbedderMsg in a
+DIFFERENT consumer — grep where handle_embedder_message/the embedder channel receiver is
+polled: if feather-ui itself polls the embedder channel rather than servo-internal servo.rs,
+then the shell must implement the arm, not servo.rs!). THIS IS THE LIKELY ANSWER: feather as
+embedder may consume EmbedderMsg itself — check shell-new engine.rs for where embedder
+messages are received/polled.
