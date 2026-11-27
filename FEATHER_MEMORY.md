@@ -5529,3 +5529,18 @@ cross-document repro harness was flaky for setup reasons (autoplay didn't fire) 
 wpt single-test as the only reliable repro. UNCOMMITTED instrumentation in working tree:
 player.rs has eprintln [playerdbg] in play/pause/stop — strip before any engine commit or
 keep for debugging. Repro recipe: loop the single test until CRASH, grep playerdbg.
+
+## sec1zt277 — media registry mechanics for the adoption race (2026-11-27)
+gstreamer/lib.rs: players register per ClientContextId (per-document). media_instance_action
+warns "unknown client context" when the context has no registered instances. BackendMsg::
+Shutdown{context,id} removes instances for a context — sent at document teardown. KEY
+INSIGHT for the adoption wedge: the player keeps the ORIGINAL document's context id after
+cross-document adoption (htmlmediaelement never re-registers) — so if/when the original
+document tears down, Shutdown strips the registration while the element lives on in the new
+document: subsequent media actions no-op (warnings) and worse, whatever teardown path runs
+may NULL/flush the pipeline out from under the still-playing element — matches both the
+mysterious pre-test warnings (previous page's teardown orphaning actions) and the racy wedge.
+FIX SHAPE candidate: on adopting_steps, re-register the player under the new document's
+media client context (or use a context id that survives adoption — e.g. webview-scoped
+rather than document-scoped). Verify what ClientContextId is (document? pipeline? webview?)
+before choosing — grep media client context creation in htmlmediaelement/document.
