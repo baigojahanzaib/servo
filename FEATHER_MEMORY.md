@@ -5026,3 +5026,32 @@ when a re-raster invalidation arrives mid-scroll. Next experiment for
 whoever picks this up: add async-loading images to the async.html harness
 (mid-scroll insertion) — if ghosts appear, the mechanism is
 're-raster invalidation during active scroll drops the clear'.
+
+## serp-ghost-repro-POSITIVE 2026-11-27 (mac lane, mechanism confirmed)
+
+MINIMAL REPRO FOUND — /tmp/htdocs/imgtest.html (served :8899): 40 static
+text rows + async image injection in waves (picsum 80x60 thumbnails
+prepended to random rows every 900ms). Repro recipe: load page, scroll
+down WHILE image waves are inserting. Result: ghost copies of rows +
+images stuck semi-transparent near the viewport top-edge / overlapping
+the shell chrome area, exactly matching the google SERP artifact. The
+trigger is precisely: REFLOW-CAUSING content injection (images prepend
+shifts layout down — every injection moves rows) WHILE a scroll is in
+flight. Neither plain static, sticky, nor text-only innerHTML replacement
+repro'd — text replacement without layout shift is insufficient; the
+images matter because they arrive async and each insertion REFLOWS.
+
+Mechanism, refined to engine-lane actionable: during an active scroll,
+the compositor blits/translates existing painted content and re-rasters
+only the damage strip. If a layout-changing invalidation lands mid-scroll,
+the damage region computed pre-reflow no longer matches post-reflow
+geometry — the stale blit is composited (alpha-blended, hence
+semi-transparency) rather than cleared. Suspect locations by function:
+compositing scroll implementation in components/compositing — the
+path that handles ScrollOffset updates + damage rect computation when
+a reflow arrives between frames; specifically the interaction between
+pinch/scroll viewport translation and repaint scheduling. EXPERIMENT
+for engine lane: force full-canvas repaint on any layout dirtying that
+overlaps an in-flight scroll (disable damage-strip optimization
+temporarily) — if ghosts disappear, mechanism confirmed; the fix is then
+damage-rect recomputation on reflow-during-scroll, not full repaints.
