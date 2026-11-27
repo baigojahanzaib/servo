@@ -22,12 +22,18 @@ pub struct WebRtcController {
 }
 
 impl WebRtcController {
-    pub fn new<T: WebRtcBackend>(signaller: Box<dyn WebRtcSignaller>) -> Self {
+    pub fn new<T: WebRtcBackend>(signaller: Box<dyn WebRtcSignaller>) -> Option<Self> {
         let (sender, receiver) = channel();
 
         let t = WebRtcController { sender };
 
-        let mut controller = T::construct_webrtc_controller(signaller, t.clone());
+        let mut controller = match T::construct_webrtc_controller(signaller, t.clone()) {
+            Ok(controller) => controller,
+            Err(error) => {
+                error!("WebRTC controller construction failed: {error:?}");
+                return None;
+            },
+        };
 
         thread::spawn(move || {
             while let Ok(event) = receiver.recv() {
@@ -38,7 +44,7 @@ impl WebRtcController {
             }
         });
 
-        t
+        Some(t)
     }
     pub fn configure(&self, stun_server: String, policy: BundlePolicy) {
         let _ = self

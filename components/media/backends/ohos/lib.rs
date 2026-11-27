@@ -203,8 +203,9 @@ impl Backend for OhosBackend {
     fn create_webrtc(
         &self,
         _signaller: Box<dyn servo_media_webrtc::WebRtcSignaller>,
-    ) -> servo_media_webrtc::WebRtcController {
-        todo!()
+    ) -> Option<servo_media_webrtc::WebRtcController> {
+        warn!("OhosBackend: create_webrtc not supported");
+        None
     }
 
     fn can_play_type(&self, media_type: &str) -> servo_media::SupportsMediaType {
