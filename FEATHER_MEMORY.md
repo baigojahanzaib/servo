@@ -6064,3 +6064,27 @@ CLOSED-BY-FIX leaves (do not re-hunt): Location setter edges (15+ subtests — w
 artifacts, now pass), pageswap, most history-traversal rows, cssom crash.
 NEXT SESSION: start with fieldset containing-block — read the spec section on fieldset
 layout + the reftest, implement in components/layout/flow/ (block.rs fieldset handling).
+
+## sec1zt308 — ROTATION HANDOFF: state, orders, fieldset scoping (2026-11-28)
+COORDINATOR ORDERS IN FORCE: (1) disk hygiene DONE — freed 63GB (shell-new/target 56G
+deleted, stale 14h+, regenerable; WPT raw dirs, old binaries, logs) — 99%→48% full.
+(2) fieldset/legend containing-block fix = current task. (3) this handoff.
+KEY FACTS FOR NEXT SESSION:
+- Targeting doc feather#321 is INVALIDATED — most leaves were input-wedge artifacts.
+  Remaining real leaves (sec1zt307): fieldset containing-block (current), canvas
+  layer-filter, location_replace ERROR, COOP reporting (blocked), waitAsync (needs decision).
+- composite-off-UI-thread (feather#335) is highest-leverage: youtube script saturation
+  evidence (sec1zt305).
+- Wedge regression VERIFIED FIXED (sec1zt306).
+FIELDSET SCOPING (done this session, don't redo): servo lays out fieldset as ordinary
+block — NO anonymous fieldset-content wrapper exists. Legend straddle-shift exists in
+same_formatting_context_block.rs:443+ but the spec model (anonymous content box wrapping
+non-legend children; containing block for abs-pos = that content box, NOT the fieldset
+padding box) is unimplemented. Test: fieldset-containing-block.html — abs div top:0 in
+position:relative fieldset must resolve against the content-box area per HTML rendering
+spec ("the fieldset and legend elements" section). Implementation shape: wrap non-legend
+children in anonymous box during box construction (components/layout/flow construction),
+give fieldset special containing-block behavior. Estimated: half-to-full session.
+Repro: mach test-wpt /html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/fieldset-containing-block.html
+NOTE add134a8a47 'legend straddles fieldset border in vertical writing modes' commit
+exists in log — check what's already merged before writing anything.
