@@ -61,6 +61,14 @@ pub fn set(preferences: Preferences) {
         preferences.layout_css_hyphens_enabled
     );
     stylo_static_prefs::set_pref!(
+        "layout.css.masking.enabled",
+        preferences.layout_css_masking_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.scroll-behavior.enabled",
+        preferences.layout_css_scroll_behavior_enabled
+    );
+    stylo_static_prefs::set_pref!(
         "layout.css.columns.enabled",
         preferences.layout_css_columns_enabled
     );
@@ -352,6 +360,8 @@ pub struct Preferences {
     // feature: CSS Multicol | #22397 | Web/CSS/Guides/Multicol_layout
     pub layout_css_columns_enabled: bool,
     pub layout_css_hyphens_enabled: bool,
+    pub layout_css_masking_enabled: bool,
+    pub layout_css_scroll_behavior_enabled: bool,
     pub layout_css_container_queries_enabled: bool,
     pub layout_css_ellipse_corners_enabled: bool,
     pub layout_css_starting_style_enabled: bool,
@@ -620,6 +630,8 @@ impl Preferences {
             layout_css_backdrop_filter_enabled: false,
             layout_css_columns_enabled: false,
             layout_css_hyphens_enabled: false,
+            layout_css_masking_enabled: false,
+            layout_css_scroll_behavior_enabled: false,
             layout_css_container_queries_enabled: false,
             layout_css_starting_style_enabled: false,
             layout_css_ellipse_corners_enabled: false,
