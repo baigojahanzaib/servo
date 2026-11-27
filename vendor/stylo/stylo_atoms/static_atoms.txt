@@ -130,7 +130,9 @@ open
 orientation
 outside
 pagehide
+pagereveal
 pageshow
+pageswap
 password
 pause
 play
