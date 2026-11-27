@@ -5243,3 +5243,18 @@ defeats it; (3) measuring per-cycle delta is the right leak detector — +34MB r
 is the true leak-rate upper bound worth chasing. Harness note: webdriver window/new starts
 failing 'no such window' after the first close-round — servo's bookkeeping drops handles;
 single-cycle-per-session measurements only.
+
+## sec1zt267 — dnd crash cluster investigation state (2026-11-27)
+100 of 123 unexpected WPT crashes are in /html/editing/dnd — ZERO upstream .ini files expect
+CRASH there, so all actionable. Drag code is NEW (Nov 24-26): components/script/drag/
+drag_gesture.rs (unreachable! at line 33 in a DragHandler::Html arm), html_drag.rs:150
+borrow.as_ref().unwrap() — both prime crash candidates. crashers/dialog-001.html needs real
+user drags (alert-interrupted drag) — not webdriver-automatable. Prior session reproduced a
+0%-CPU wedge mid-PerformActions with webdriver drag — SAME family, wedge vs crash may depend
+on timing. NEXT SESSION PLAN: (1) run a single crashing dnd test via wptrunner with stderr
+captured to get the exact panic location — command shape: ./mach test-wpt /html/editing/dnd/
+<name> --product servoshell (verify exact mach invocation); (2) the panic message will
+pinpoint which of the two candidates; (3) gdb backtrace needs debug symbols — consider a
+CARGO_PROFILE_DEV_DEBUG=1 targeted rebuild of just the script crate if panic msg insufficient.
+Also pending from before: WPT report regeneration PR (/tmp/wpt-html-report.md exists,
+uncommitted); gmail/svg real-site verification blocked on Windows repro detail.
