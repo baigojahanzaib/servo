@@ -5337,3 +5337,14 @@ implementing. (3) subtest-level dnd functionality (drop completion etc) still ge
 incomplete — separate feature work. LESSON INDEXED: speculative fixes without repro
 verification can regress worse than the original — the wake-spin fix was never verified
 against an actual repro.
+
+## sec1zt271 — upstream scan 2026-11-27 evening (last-checked now 9c793b64a4b)
+5 new commits since 98dc7f94673. Cherry-pick queue (AFTER wpt run — compiles forbidden during):
+1. 74e17f9c485 webdriver: synchronize navigation state with constellation inside wait —
+   HIGH VALUE, same navigation-completion-signaling family as our wedge fixes, may clear
+   more harness timeout noise.
+2. fdc6077f3a5 script: NavigationTiming duration per spec — small spec fix, cheap.
+3. 806d6369990 weak-referenceable elements — memory-relevant (GC semantics for elements,
+   interacts with the retention story) but big/risky — evaluate carefully, possibly defer.
+SKIP: 9c793b64a4b (crown lint cleanup), 460066e6176 (servoshell context-menu widget —
+feather uses its own shell). Apply order: 74e17 first (verify wpt harness behavior), then fdc.
