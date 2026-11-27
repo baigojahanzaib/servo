@@ -1028,6 +1028,14 @@ impl PlatformWindow for HeadedWindow {
     }
 
     fn theme(&self) -> servo::Theme {
+        // Testing override: SERVO_FORCE_THEME=dark|light wins over the platform
+        // theme so `prefers-color-scheme` rendering paths can be exercised on
+        // hosts whose toolkit theme detection does not reach winit.
+        match std::env::var("SERVO_FORCE_THEME").ok().as_deref() {
+            Some("dark") => return servo::Theme::Dark,
+            Some("light") => return servo::Theme::Light,
+            _ => {},
+        }
         match self.winit_window.theme() {
             Some(winit::window::Theme::Dark) => servo::Theme::Dark,
             Some(winit::window::Theme::Light) | None => servo::Theme::Light,

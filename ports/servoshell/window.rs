@@ -466,7 +466,11 @@ pub(crate) trait PlatformWindow {
     /// This returns [`RenderingContext`] matching the viewport.
     fn rendering_context(&self) -> Rc<dyn RenderingContext>;
     fn theme(&self) -> servo::Theme {
-        servo::Theme::Light
+        // Testing override, see the matching override in headed_window.rs.
+        match std::env::var("SERVO_FORCE_THEME").ok().as_deref() {
+            Some("dark") => servo::Theme::Dark,
+            _ => servo::Theme::Light,
+        }
     }
     fn window_rect(&self) -> DeviceIndependentIntRect;
     fn maximize(&self, _: &WebView) {}
