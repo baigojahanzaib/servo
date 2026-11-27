@@ -4109,3 +4109,20 @@ decoded light-DOM fallbacks) but not reproducible piecewise — remaining suspec
 NEXT ROUND menu (pick by cost): test srcset+picture repro first (cheapest untested mechanism),
 then upgrade-clone ordering. Evidence gathering that DOESN'T need reproduction: servoshell-upstream
 comparison, or net-log correlation of which urls never fetch on the live page.
+
+## sec1zt153 — ROOT CAUSE PIVOT: youtube thumbnails likely framework-death, not image-path defect
+LIVE EVIDENCE: youtube.com in feather throws during kevlar_base init:
+  "can't access property 'then', navigator.serviceWorker.ready is undefined"
+servo's ServiceWorkerContainer has `ready` COMMENTED OUT in the WebIDL
+(components/script_bindings/webidls/ServiceWorkerContainer.webidl). YouTube's app-framework
+boot throws on `.ready.then(...)` — plausibly killing or crippling the lazy-src population
+machinery for shadow thumbs. Explains every observation: SSR/light-DOM fallback imgs decode fine
+(srcs in initial markup), isolated repros all pass (image path healthy), yet live shadow thumbs
+never populate. Also present: "No valid entry type provided to observe()" (PerformanceObserver
+entryTypes gaps — secondary).
+SPEC SEMANTICS of .ready: promise resolving with the active registration for the container's
+scope once one exists; NEVER REJECTS; sites with no SW → promise never resolves (spec-correct!).
+Implementation path: lazy RootedPromise per container + resolve hook in registration-matching
+(serviceworkercontainer.rs handle_match_registration_result already matches active registrations).
+Symptom: youtube black thumbnails / framework dead → check: ServiceWorkerContainer.ready +
+framework console errors BEFORE image-path forensics.
