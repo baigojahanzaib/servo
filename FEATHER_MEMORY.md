@@ -6250,3 +6250,7 @@ ROTATION STATE: all work pushed through 52a3b2b94aeb. Leaf inventory bottomed:
 cheap leaves exhausted; remaining = canvas layers (multi-hour, no webidl even),
 composite-off-UI-thread (design-complete, top priority), COOP infra (multi-day),
 waitAsync (coordinator decision pending). Fieldset leaf closed at 85/88 as-expected.
+
+## Post-handoff additions (2026-11-28, same lane)
+- data: URLs fully working everywhere post-#408: omnibox in-session AND boot-path both render. The boot-path about:blank was the same normalize() mangling, not a separate seam. Non-http scheme support is substantively complete: file: renders+persists+reopens (#403/#405), data: renders boot+omnibox (#408).
+- Verification trick that worked well: data:text/html;base64 fixtures typed into the omnibox — but any literal '#' in the payload truncates at the fragment (correct URL-spec behavior, cost one debugging round). base64-encode everything.
