@@ -4094,3 +4094,18 @@ its light-DOM fallback state; or use servo's image-cache instrumentation to see 
 the shadow img URL is ever FETCHED (net logs for oar2/hqdefault requests per element).
 If shadow-img fetches never happen → framework-side population failure (YouTube JS);
 if fetches happen but no paint → servo shadow-image invalidation.
+
+## sec1zt152 — youtube thumbnail hunt: full-pattern repro PASSES (framework-internal likelihood rises)
+The exact YouTube pattern reproduces HEALTHY on localhost: closed shadow root on a sized host
+div + img inside shadow + IntersectionObserver-driven lazy src population on scroll — RENDERS.
+Every isolated mechanism now exonerated: late-src, node insertion, no-dims, shadow open/closed,
+shadow-late-src, IO-driven shadow population. The defect on youtube.com is real (black thumbs,
+decoded light-DOM fallbacks) but not reproducible piecewise — remaining suspects:
+(a) interaction between custom-element UPGRADE ordering and src population timing
+    (youtube sets src pre-upgrade then upgrade clones/moves content — the node.rs
+    copy_elem.attach_shadow path); (b) youtube uses srcset/picture/source machinery rather
+    than plain src — untested variant; (c) genuinely framework-internal logic failing on a
+    servo JS/DOM primitive outside the image path entirely.
+NEXT ROUND menu (pick by cost): test srcset+picture repro first (cheapest untested mechanism),
+then upgrade-clone ordering. Evidence gathering that DOESN'T need reproduction: servoshell-upstream
+comparison, or net-log correlation of which urls never fetch on the live page.
