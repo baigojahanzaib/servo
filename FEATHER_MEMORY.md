@@ -5348,3 +5348,18 @@ against an actual repro.
    interacts with the retention story) but big/risky — evaluate carefully, possibly defer.
 SKIP: 9c793b64a4b (crown lint cleanup), 460066e6176 (servoshell context-menu widget —
 feather uses its own shell). Apply order: 74e17 first (verify wpt harness behavior), then fdc.
+
+## sec1zt272 — canvas-wait input-skip: second latent input-loss path, fix scoped (2026-11-27)
+Found during wedge hunt: update_the_rendering skips the ENTIRE document (including
+process_pending_input_events) when waiting_on_canvas_image_updates is true — set when dirty
+canvases flush, cleared only by handle_no_longer_waiting_on_asynchronous_image_updates
+(webrender upload confirmation). If that confirmation is ever lost (frame never generates,
+hidden-then-shown races, compositor edge), the document is skipped FOREVER: input queues,
+acks never sent — SAME wedge shape as the timer regression but canvas-triggered. Canvas-heavy
+pages (youtube/gmail both use canvases) — unproven but plausible real-user wedge path.
+DESIGN CRITIQUE: input processing has no dependency on canvas image readiness — the skip is
+over-broad even in the correct case (input latency for no reason). FIX SHAPE (small,
+principled): hoist process_pending_input_events BEFORE the waiting_on_canvas_image_updates
+check in update_the_rendering so input is always processed; visual updates still gate.
+Queue after the WPT run + upstream cherry-picks. Verify: repro = page with a dirty canvas
+in a state where confirmation is delayed, confirm input latency/loss before and after.
