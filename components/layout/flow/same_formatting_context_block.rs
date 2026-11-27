@@ -26,7 +26,7 @@ use crate::flow::{
     ResolvedMargins, solve_containing_block_padding_and_border_for_in_flow_box, solve_margins,
 };
 use crate::fragment_tree::{
-    BoxFragment, CollapsedBlockMargins, CollapsedMargin, FragmentChildren, FragmentFlags,
+    BoxFragment, CollapsedBlockMargins, CollapsedMargin, Fragment, FragmentChildren, FragmentFlags,
 };
 use crate::geom::{LogicalRect, LogicalSides1D, LogicalVec2};
 use crate::layout_box_base::LayoutBoxBase;
@@ -456,10 +456,29 @@ impl SameFormattingContextBlock {
         if is_fieldset
         {
             if let FragmentChildren::PhysicalDeprecated(children) = &mut fragments {
+                // Spec: only the FIRST legend child with float:none and position
+                // neither absolute nor fixed is the "rendered legend" — a floated or
+                // positioned legend is ordinary content and must not be straddle-shifted.
+                // <https://html.spec.whatwg.org/multipage/#the-fieldset-and-legend-elements>
                 if let Some(legend) = children.iter().find(|child| {
-                    child
+                    if !child
                         .base()
                         .is_some_and(|base| base.flags.contains(FragmentFlags::IS_LEGEND))
+                    {
+                        return false;
+                    }
+                    match child {
+                        Fragment::Box(box_fragment) => {
+                            let box_style = box_fragment.style.borrow().get_box().clone();
+                            box_style.float == style::computed_values::float::T::None &&
+                                !matches!(
+                                    box_style.position,
+                                    style::computed_values::position::T::Absolute |
+                                        style::computed_values::position::T::Fixed
+                                )
+                        },
+                        _ => true,
+                    }
                 }) {
                     if let Some(base) = legend.base() {
                         let rect = base.rect();
