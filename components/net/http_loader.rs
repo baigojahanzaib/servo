@@ -1607,7 +1607,7 @@ async fn http_network_or_cache_fetch(
             // accounts never did, and the honest UA costs unsupported-browser
             // banners on UA-sniffing subapps, so the narrowest effective list wins.
             let hosts = std::env::var("FEATHER_HONEST_UA_HOSTS")
-                .unwrap_or_else(|_| "www.google.com".to_string());
+                .unwrap_or_else(|_| "www.google.com,accounts.google.com".to_string());
             let host = http_request.current_url().host_str().unwrap_or_default().to_string();
             let honest = hosts
                 .split(',')
@@ -1621,8 +1621,18 @@ async fn http_network_or_cache_fetch(
                 // (sec1zt120/121). firefox-flavor is unwalled AND modern-served;
                 // the honest string remains available via env override.
                 std::env::var("FEATHER_HONEST_UA").unwrap_or_else(|_| {
-                    "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
-                        .to_string()
+                    // Platform-consistent firefox flavor: a Linux UA claim from a
+                    // Windows machine contradicts every OS-revealing signal
+                    // (font metrics, ANGLE/D3D strings, windowing behavior) and
+                    // is itself a prime bot-classification input.
+                    if cfg!(windows) {
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    } else if cfg!(target_os = "macos") {
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    } else {
+                        "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    }
+                    .to_string()
                 })
             } else {
                 context.user_agent.clone()
