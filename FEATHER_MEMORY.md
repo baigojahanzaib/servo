@@ -5206,3 +5206,8 @@ Post-layer-1 residual classification — both sites are GENUINE runaway-JS pages
 - **smartadserver.com**: worse — **3.7 GB RSS in 30 seconds (~120MB/s allocation churn), 197% CPU**, still 93% at 50s. Allocation-churn-driven (consistent with the NumberToAtom observation in the layer-1 analysis).
 - Verdict: the 2 genuine-timeout sites confirm the layer-2 slow-script class is real and user-facing — a page can burn 1-2 cores + gigabytes indefinitely with no browser-level recourse. The layer-2 product decision (slow-script detection/ interruption, like every other browser's "this page is slowing down your browser" bar) is the correct next investment — shell-side UI for it is cheap once the engine exposes script-execution-time signals.
 - Method note: thread attribution on macOS is limited by stripped ??? frames in feather-ui samples; CPU-per-process + healthy-main-thread sampling was sufficient for classification.
+
+## idle-memory-audit-full (2026-11-27, macOS lane)
+The open-close-reclaim test, wiki doc in feather docs/wiki/IDLE-MEMORY-AUDIT.md:
+- 1 idle tab: 160MB/0.1%. +4 real sites (5 tabs): 649MB. **After closing the 4 real tabs: 656MB — ZERO reclaim**, stable at +45s. Memory is monotonic per process lifetime: CPU dies to 0.1% but bytes never return. Same rule as the youtube pause-test, now confirmed for plain tab-close.
+- Chrome comparison (contaminated config, same machine): restored-session idle ~981MB across 10 processes vs feather 132-160MB — "light at idle" is honestly true; the caveat is monotonic growth in long sessions. Engine-lane fix is allocator-level, compounding the memory-bisect finding that forced-reclaim levers make things worse.
