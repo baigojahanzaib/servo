@@ -5804,3 +5804,29 @@ page control next time. Also measured: ~450MB/tab for heavy real sites —
 per-tab infra dominates; youtube alone idles ~1.2GB. All lanes: memory
 reclamation is now a solved primitive, remaining work is per-tab weight
 and active-page churn, not the close-path.
+
+## sec1zt287 — memory investigation CLOSED: no creep exists; monotonic growth was SM heap, fixed (2026-11-27)
+FINAL VERDICTS:
+1. CREEP TEST (unique pages per cycle — the real-world pattern): 4 consecutive cycles of
+   DIFFERENT Wikipedia articles (Linux/Rust/Python/Firefox), 2 tabs each, close-all between:
+   after-close RSS **flat at exactly 510MB every cycle** — zero residual creep. Cache reuse
+   is total; the plateau is bounded and constant. Harness: /tmp/creep-test.py.
+2. Therefore the user-visible MONOTONIC growth Mac measured was dominated by the SpiderMonkey
+   GC heap — and the shrinking-GC-on-close fix (9182287bf) is VERIFIED by Windows: 1GB returns
+   on tab close. Memory issue is resolved as a defect; what remains is plateau-size optimization.
+3. Plateau decomposition (single-run longitudinal memdump, 4x example.com): +124MB retention =
+   +68.6MB system-heap LIVE objects (C-library caches: fontconfig/freetype/mesa/glib — not
+   fragmentation, genuinely allocated) + ~16MB jemalloc-mapped growth + ~24MB one-time
+   lib/binary demand-load. url() js rows collapse properly post-GC-fix.
+4. NEGATIVE RESULTS (do not retest): MALLOC_CONF env is IGNORED in rust _rjem-prefixed jemalloc
+   (symbol precedence — stats_print/tcache:false/dirty_decay_ms:0 all no-ops, verified);
+   MALLOC_ARENA_MAX=2 no change (glibc arena proliferation NOT the mass); heaptrack is BLIND
+   for this binary (static jemalloc doesn't interpose Rust allocs; C-side capture incomplete,
+   15MB peak artifact); thread-count leak ruled out (68→77→69); tcache/dirty-decay hypotheses
+   dead. Blank-tab anomaly: 4 blank tabs retain MORE (258MB) than content tabs (122MB) —
+   infrastructure cost dominates and content pages partially reuse it; unexplained inversion,
+   indexed but deprioritized.
+5. REMAINING optimization path (not a defect): shrink the plateau — attribute the +68MB
+   system-heap live objects (fontconfig/freetype/mesa caches are prime suspects; needs
+   glibc-side profiling or library-by-library eviction audit). Plateau ~250-500MB depending
+   on content weight — matters for the <150MB idle budget but is NOT beta-blocking.
