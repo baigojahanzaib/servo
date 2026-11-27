@@ -5544,3 +5544,20 @@ FIX SHAPE candidate: on adopting_steps, re-register the player under the new doc
 media client context (or use a context id that survives adoption — e.g. webview-scoped
 rather than document-scoped). Verify what ClientContextId is (document? pipeline? webview?)
 before choosing — grep media client context creation in htmlmediaelement/document.
+
+## sec1zt278 — CONFIRMED: ClientContextId is per-PIPELINE, adoption breaks routing (2026-11-27)
+htmlmediaelement.rs:2433-2434: ClientContextId::build(pipeline_id.namespace_id.0,
+pipeline_id.index.0.get()) — the media client context is the PIPELINE. Cross-document
+adoption moves the element to a different pipeline (iframe = own pipeline), but the player
+stays registered under the original pipeline's context. After adoption: (a) media actions
+routed via the element's current pipeline context find no registered player → "unknown
+client context" warnings → actions silently no-op → the element becomes uncontrollable
+(pause/seek/play do nothing); (b) any sync path that awaits a player response wedges;
+(c) if the original pipeline later exits, shutdown strips the registration entirely.
+This is THE root mechanism of the move-to-other-document failures. FIX: player context must
+follow the element — on adopting_steps, migrate the player's registration to the new
+pipeline's context id (or re-key actions to the creation context — but then teardown of
+the original pipeline kills a live player, so migration is correct). Implementation:
+adopting_steps needs access to the player id + backend registry — the GStreamerBackend
+instances map is the thing to update; may need a new BackendMsg::MigrateContext{id,
+old_context, new_context}. Verify Shutdown semantics in the same file (lines ~150-165).
