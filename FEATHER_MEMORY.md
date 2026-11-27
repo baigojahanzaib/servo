@@ -5132,3 +5132,51 @@ focus. keystroke leakage: main.rs already gates page key forwarding on
 egui_wants_keyboard_input — once egui focus is real, no leak.
 ## sec1zt249 — LAYOUT PANIC ROOT CAUSE (batch-7 P0, layout_impl.rs:1587 'Should always have a FragmentTree when layout unnecessary'): feather's OWN hidden-tab memory lever (update_visibility_state → drop_cached_layout_trees, document.rs:5642) drops box+fragment trees. compute_damage_and_rebuild_box_tree (traversal.rs:86) rebuilt the box tree but returned the propagated damage UNCHANGED — when damage was overflow-level only (no Relayout bit), reflow took the overflow-only path which panics on the absent fragment tree. Mechanically: any reflow after tree-drop whose damage is insufficiently severe = crash. Normally hidden→visible transitions carry full damage which is why restore usually works; scroll/image-load-driven overflow-only reflows hit the panic — matches user repro 'repeatedly during real use'. FIX (traversal.rs): when box_tree reconstructs from scratch, return layout_damage | Relayout — a fresh box tree has no fragments by definition so full layout is mandatory. Compile-verifying; interactive verification queued behind the running clean WPT html run (NO interactive servo while it runs — interference lesson sec1zt246).
 ## sec1zt250 — batch-7 rendering-correctness queue (user dogfood, after panic fix): (1) gmail layout 'very off'/not centering — flex/grid in the wild, NEED post-login repro detail or screenshot since botgate blocks Linux gmail; flex gap itself verified exact so look at grid/align/justify-content or missing CSS (text-wrap, @custom-media, container queries are KNOWN absences). (2) gmail SVGs not rendering — inline SVG support partial in servo; reproduce with gmail-style SVG sprite usage. (3) youtube dark side-nav black-on-black — cascade layers exist in stylo, prefers-color-scheme exists in servo; suspects: @property registration gaps, color-scheme property handling, or the fe dark-theme attribute cascade. All three need interactive repro — BLOCKED while clean WPT html run occupies machine memory (started 12:22 UTC). Compile-retry loop /tmp/compile-retry.sh running autonomously for the panic fix (3b071c12b02 committed locally, push after compile-verify).
+
+## perf-telemetry-youtube 2026-11-27 (mac lane, HARD NUMBERS, batch-7 perf class)
+
+10-min instrumented capture, feather release build, Big Buck Bunny 4K60
+playback (aqz-KE-bpKQ), FEATHER_MEMREP=20 + FEATHER_FRAMES=1 + rss/cpu
+sampler (raw csv /tmp/perf-mem.csv, stderr /tmp/perf-stderr.log on mac lane
+VM — ephemeral, numbers banked here).
+
+VERDICT: primary mechanism is UI-THREAD SATURATION, with memory pressure
+compounding. Not layout thrashing.
+
+1. UI-thread stalls (the hover-lag mechanism, user: 'hover feels very
+   delayed'): 34 '[stall] gui frame' events in ~5min playback — one every
+   ~8s. ms values: p50≈370, p90≈1145, max 8486 (an 8.5 SECOND frame).
+   Distribution over time does not decay — lag is continuous, not warmup.
+   The stall instrument sits on gui.run() = egui layout + glow present;
+   the servo surface composite runs on the UI thread through software GL
+   (main.rs comment already flags this). 4K frames make each present a
+   multi-hundred-ms CPU upload — input events (hover!) queue behind them.
+2. Memory growth: rss 630MB boot → 1072 in 15s of playback start → 1430MB
+   at 5min, no steady state (~+130MB/min initial, still climbing at end).
+   js/malloc-heap for the youtube page: 94→318MB in 3min, GC drops it to
+   82MB, regrows to 190MB — JS side DOES collect, but rss never follows
+   the GC down: the retention is native-side. system-heap-allocated
+   386→478MB (gstreamer decode buffers), SourceBuffer 5MB each out-of-tree.
+   Matches user report (12% system memory on youtube alone).
+3. Event-loop churn: wakes=61199 for 4800 produced frames = 12.8 wakes per
+   frame; rearm taken 30 vs skipped 4769 — the loop never idles during
+   playback, compounding input latency.
+4. CPU: 100-170% sustained one-and-a-half cores for 4K60 software decode
+   + composite on this hardware.
+
+ENGINE-LANE actionable ordering:
+- P0: get the video present OFF the UI thread (or GPU-accelerate it —
+  compounds with gpu-video-decode.md scoping: the GL upload path exists,
+  vtdec works on macOS). Every frame of video currently serializes against
+  ALL input handling. This single fix addresses both 'laggy playback' and
+  'delayed hover'.
+- P1: media buffer lifecycle — SourceBuffer backing stores not released
+  after append consumption (5MB each out-of-tree), plus whatever pins
+  native system-heap growth. Instrument: does rss plateau if playback
+  pauses? (not tested — cheap follow-up).
+- P2: event-loop rearm starvation — 12.8 wakes/frame means the repainting
+  logic never settles; possibly the webview_needs_paint loop continuously
+  re-arming. Compare against idle-page baseline (google.com shows ~0.5%
+  cpu, so idle is fine — this is playback-specific churn).
+- Negative evidence: this is NOT a servo-layout-cost problem — stalls
+  localize in the present path, not style/layout.
