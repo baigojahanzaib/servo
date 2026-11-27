@@ -5316,3 +5316,24 @@ including drag-consumed ones.
 gdb repro recipe: run `.venv/bin/python mach test-wpt /html/editing/dnd/canvas/001.html`
 (background), poll log for canvas/001 GET, sleep 6-8s, gdb -p $(pgrep -x servoshell|head -1)
 -batch -ex "thread apply all bt" — full capture at /tmp/dnd-bt2.txt (1917 lines, symbolized).
+
+## sec1zt270 — INPUT WEDGE ROOT CAUSE: my own zero-delay timer regression, FIXED 825fe34188f (2026-11-27)
+The 100 dnd "crashes" + input wedges traced to MY speculative wake-spin fix b786d36902b.
+Mechanism: script thread rendering updates process pending input events; scheduling uses
+timer round-trip where the timer channel integrated in the crossbeam select is the ONLY
+wake mechanism for the parked loop. My zero-delay special case set the flag directly —
+loop parked in recv() with flag set but no wake → input events queued forever → webdriver
+ack never sent → PerformActions wedges → harness reports CRASH. Any input on a page idle
+>20ms hit it 100%. REPRO: single pointerMove on idle page. Instrumentation eprintln chain
+(binary search logging) pinned it in one pass: events noted but update_the_rendering never
+ran again. FIX: always round-trip the scheduler (825fe34188f) — verified move-only 0.0s,
+full drag sequence ok, dnd/canvas/001.html completes instead of CRASH.
+CRITICAL RETRACTIONS: (1) the github wedge fix attribution to b786d36902b is now suspect —
+the wake-spin evidence (Mac's timedwait samples) needs re-examination; the zero-duration
+round-trip is benign-by-design since the timer pops after firing. (2) WPT timeout clusters
+in focus(86)/popovers(45)/forms(41) are likely INPUT-WEDGE ARTIFACTS not feature gaps —
+the leaves doc targeting (feather#321) mis-estimates those clusters; re-measure before
+implementing. (3) subtest-level dnd functionality (drop completion etc) still genuinely
+incomplete — separate feature work. LESSON INDEXED: speculative fixes without repro
+verification can regress worse than the original — the wake-spin fix was never verified
+against an actual repro.
