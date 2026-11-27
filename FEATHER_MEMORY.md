@@ -5959,3 +5959,20 @@ ALSO durable: kevlar.css token system documented (:root double-assign + [dark]/[
 attribute overrides — servo handles correctly, verified vartest2.html). Harnesses:
 /tmp/ytnav*.py chain, checkvartest.py <page> for fast media/var probes. SERVO_FORCE_THEME
 tooling in tree. Files: /tmp/kevlar.css (3.4MB full css), /tmp/yt-dark.png.
+
+## sec1zt294 — youtube-nav: media-query machinery fully cleared — healthy (2026-11-27)
+FINAL REFUTATIONS: (1) all four iron-media-query bindings on the live page evaluate
+CORRECTLY for the actual viewport (verified against 1024x740 arithmetic); (2) matchMedia
+change events fire correctly on resize (minimal repro vartest5: initial:false →
+change:true + legacy:true both fire at 1600 resize) — the entire media layer is healthy.
+(3) height media queries correct. REMAINING DEFECT: at 1600x1000-from-boot (resize before
+nav), YouTube's q4-type breakpoint (min-width 1327 + min-height 630) media conditions are
+satisfied yet miniGuideVisible stays false — the wrong branch is inside YouTube's polymer
+app-shell state logic itself, not any servo media/CSS machinery. NEXT INVESTIGATION SHAPE:
+side-by-side diff of ytd-app property state servo-vs-chrome, or breakpoint YouTube's
+guide-state setter. NOTE: servo JS lacks some API YouTube feature-detects (e.g. check
+navigator.userAgent branching — youtube may serve a fallback experience to unknown agents;
+the skeleton ships mini-guide hidden BY DEFAULT and the upgrade path that unhides it may
+be gated on client-capability detection). PRIORITY-ORDER candidate for next probe: compare
+the full served HTML/JS payload servo-UA vs chrome-UA — bot/unknown-UA degradation is the
+most likely remaining mechanism and cheap to test (diff curl responses). Harnesses durable.
