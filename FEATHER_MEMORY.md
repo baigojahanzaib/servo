@@ -4126,3 +4126,24 @@ Implementation path: lazy RootedPromise per container + resolve hook in registra
 (serviceworkercontainer.rs handle_match_registration_result already matches active registrations).
 Symptom: youtube black thumbnails / framework dead → check: ServiceWorkerContainer.ready +
 framework console errors BEFORE image-path forensics.
+
+## sec1zt154 — serviceWorker.ready SHIPPED + youtube thumbnails VERIFIED FIXED
+Engine commit 113703a37a9 implements ServiceWorkerContainer.ready (was commented out in
+WebIDL). Design: promise created eagerly at container construction, stored ROOTED (not
+traced) because the codegen attribute getter receives NO JSContext making per-access
+re-rooting impossible — TracedPromise.root(cx) unusable; rooted-clone is the escape hatch,
+documented on the field. Resolution hooks: register-job result + match-registration result,
+only when registration carries active_worker. Never rejects; never resolves for clients
+without SWs (spec-correct, matches Chrome).
+CODEGEN GOTCHA (symptom-index worthy): promise-returning ATTRIBUTE getters get `cx` only
+sometimes — streams/FontFace getters receive `cx: &JSContext` but SWC's `fn Ready(&self)`
+got none; typeNeedsCx/needCx don't obviously explain it. If trait signature mismatch E0050
+on a promise getter: check the generated binding FIRST, design storage around no-cx.
+BUILD GOTCHA: `cargo check` does NOT rebuild the feather-ui binary — verification against a
+`cargo check`-only build tests the STALE binary. Always `cargo build` before live verify.
+VERIFICATION: localhost eval: promise-ok, .then no-throw. Live youtube search results page:
+thumbnails fully render (artwork, avatars, duration badges), the boot error
+'navigator.serviceWorker.ready is undefined' GONE from console, zero console errors.
+The months-old youtube-black-thumbnails defect was framework boot death, never an image-path
+bug. Symptom: site feature dead despite all primitives testing healthy in isolation → check:
+framework console errors on the LIVE site first, before mechanism-by-mechanism repro.
