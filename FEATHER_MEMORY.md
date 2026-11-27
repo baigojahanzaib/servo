@@ -5055,3 +5055,40 @@ for engine lane: force full-canvas repaint on any layout dirtying that
 overlaps an in-flight scroll (disable damage-strip optimization
 temporarily) — if ghosts disappear, mechanism confirmed; the fix is then
 damage-rect recomputation on reflow-during-scroll, not full repaints.
+
+## handoff-daily-driver-essentials 2026-11-27 (mac lane, scoping for next lane)
+
+Coordinator batch: (1) find-in-page UI, (2) bookmarks management surface,
+(3) history UI surface. Scoping done, implementable subset clear:
+
+BOOKMARKS — mostly exists already: toolbar.rs has star button wired to
+Action::ToggleBookmark(url) at state.rs:253; state.rs:304 bookmarks:
+Vec<String> with is_bookmarked() at :474. MISSING: management surface —
+a panel/overlay listing bookmarks with click-to-open and remove. All
+shell-side, no engine work. Shape: reuse the downloads-panel pattern in
+ui/ (window.rs or a new bookmarks panel), add a bookmark-list button or
+surface in the ⋯ menu; Action::OpenBookmark(url)->NewTab-or-navigate +
+RemoveBookmark(url) small additions to state.rs handlers.
+
+HISTORY UI — storage exists per coordinator (verify in state.rs/persist
+layer); surface needed: feather://history internal page or overlay list,
+click-to-open, clear. Reuse internal_pages.rs pattern (it already exists
+for settings-like surfaces).
+
+FIND-IN-PAGE — NOT shell-implementable: NO engine API exists. Greps of
+servo/components and ports find no find_in_page/search text API on
+webview. Match highlighting/count requires engine work: script-side
+DOM text traversal + paint-time highlight overlays. Recommend:
+implement shell-side as a TWO-PHASE: phase 1 uses the devtools/JS eval
+channel (javascript_evaluator.rs exists in components/servo!) to run
+in-page JS doing text search + scroll-to-match + count — no engine
+changes needed, eval-based find is what early electron shells did.
+Phase 2 is native engine support upstream. The eval route makes this
+shell-implementable TODAY. Gotcha: devtools eval sandbox — location.*
+throws (see devtools-eval-gotchas entry) but document/innerText access
+worked in probes.
+
+mac-lane gotchas banked repeatedly but still biting: cwd resets EVERY
+exec call — chain cd && in literally every command; install_name_tool
+rpath with ABSOLUTE binary path after every cargo build; build cmd in
+prior memory entries.
