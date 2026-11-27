@@ -6026,3 +6026,12 @@ then rebase + `git push origin HEAD:feather-engine`. This was the root of all pu
 paradoxes this session, including the botched rebase that briefly dropped sec1zt301-303
 (reinstated in 954969fbd93 — verify memory entries survive any future rebase by grepping
 afterward).
+
+## sec1zt305 — youtube script saturation blocks probing (2026-11-28)
+webdriver execute/sync against youtube.com times out 35s into boot — the script thread
+is too saturated to service even a trivial evaluation. This blocks all JS-level probing
+of the dark-nav defect AND signals the real user-facing problem: youtube main-thread
+work in servo is far heavier than in real browsers (polymer boot + our slower JS/DOM).
+Implication for priority: dark-nav correctness is downstream of raw JS/DOM perf — the
+composite-off-UI-thread work + general perf matter more than further dark-nav probing.
+Negative result: zero console errors again confirmed on this run.
