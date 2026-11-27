@@ -2315,6 +2315,74 @@ impl<'a> BuilderForBoxFragment<'a> {
         }
 
         let style_color = BorderStyleColor::from_style(style);
+
+        // The rendered legend of a fieldset straddles its top border: the border
+        // must have a gap behind the legend. Webrender borders cannot express
+        // partial side segments, so for solid top borders the border is pushed
+        // without its top side and the top edge is painted as two solid segments
+        // covering everything except the legend's inline span.
+        // NOTE: only solid-style top borders get the gap; other styles (incl. the
+        // UA-default groove) still paint through behind the legend.
+        // <https://html.spec.whatwg.org/multipage/#the-fieldset-and-legend-elements>
+        if border.border_top_style == BorderStyle::Solid &&
+            self.fragment
+                .base
+                .flags
+                .contains(FragmentFlags::IS_FIELDSET)
+        {
+            if let Some(legend_rect) = self.fragment.children.iter().find_map(|child| {
+                child
+                    .base()
+                    .filter(|base| base.flags.contains(FragmentFlags::IS_LEGEND))
+                    .map(|base| base.rect())
+            }) {
+                let top_color = rgba(style_color.top.color.clone());
+                let radius = self.border_radius();
+                let details = wr::BorderDetails::Normal(wr::NormalBorder {
+                    top: wr::BorderSide {
+                        color: top_color,
+                        style: wr::BorderStyle::None,
+                    },
+                    right: self.build_border_side(style_color.right.clone()),
+                    bottom: self.build_border_side(style_color.bottom.clone()),
+                    left: self.build_border_side(style_color.left.clone()),
+                    radius,
+                    do_aa: true,
+                });
+                let mut widths_without_top = border_widths;
+                widths_without_top.top = 0.0;
+                let common = builder.common_properties(state, self.border_rect, style);
+                builder
+                    .wr()
+                    .push_border(&common, self.border_rect, widths_without_top, details);
+
+                // Legend rects are relative to the fieldset's content box; convert
+                // to border-box coordinates by the left padding+border inset.
+                let inset_x = (self.fragment.border.left + self.fragment.padding.left).to_f32_px();
+                let legend_wr = legend_rect.to_webrender();
+                let legend_x0 = self.border_rect.min.x + inset_x + legend_wr.min.x;
+                let legend_x1 = legend_x0 + legend_wr.size().width;
+                let border_top = self.border_rect.min.y;
+                let top_thickness = border_widths.top;
+                let left_end = legend_x0.max(self.border_rect.min.x);
+                let right_start = legend_x1.min(self.border_rect.min.x + self.border_rect.max.x - self.border_rect.min.x);
+                for (x0, x1) in [
+                    (self.border_rect.min.x, left_end),
+                    (right_start, self.border_rect.min.x + self.border_rect.max.x - self.border_rect.min.x),
+                ] {
+                    if x1 > x0 {
+                        let seg = units::LayoutRect::from_origin_and_size(
+                            units::LayoutPoint::new(x0, border_top),
+                            units::LayoutSize::new(x1 - x0, top_thickness),
+                        );
+                        let common = builder.common_properties(state, seg, style);
+                        builder.wr().push_rect(&common, seg, top_color);
+                    }
+                }
+                return;
+            }
+        }
+
         let details = wr::BorderDetails::Normal(wr::NormalBorder {
             top: self.build_border_side(style_color.top),
             right: self.build_border_side(style_color.right),
