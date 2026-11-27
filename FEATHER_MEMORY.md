@@ -3921,3 +3921,20 @@ Deep read of constellation. The failure `LoadUrl for unknown browsing context` (
 
 ## sec1zt141 — timeout-regression ROOT CAUSE + FIX (2026-11-27)
 ROOT CAUSE confirmed by instrumentation round: nothing ever closes anything — the browsing context NEVER REGISTERS. Mechanism: at webview creation the context is only a PENDING session-history change; `self.browsing_contexts` insertion happens when the initial load COMMITS. A hung first load never commits → context never exists → every embedder LoadUrl dies at the lookup with 'unknown browsing context' → permanent wedge. Explains everything: connect-timeout passes because the error path COMPLETES the load → commits → registers; per-webview not browser-wide; silent (nothing ever existed to log). FIX IMPLEMENTED (2 parts, in build when this was written): (1) embedder LoadUrl falls back to the pending initial navigation's pipeline when the context isn't registered yet, so navigation can supersede; (2) supersede now TRANSFERS new_browsing_context_info from the superseded initial change into the new pending change — without it even a successful replacement load would never register the context. VERIFY ROUND: repro recipe unchanged (server /tmp/timeoutrepro/server.py port 8899, wipe session.json, /hang 20s, navigate /ok full-scheme) — PASS = /ok loads. ALSO still open: during the initial hang itself the tab remains in limbo (blank loading page, input unrouted) — acceptable, matches other browsers' behavior for never-loading pages. Once verified: the [timeout-instr] instrumentation should be removed or kept behind env. Watch for compile issues: partial-move of change.new_browsing_context_info + subsequent use of change.new_pipeline_id is legal but check match-arm scoping of inherited_browsing_context_info.
+
+## shell-nav-1: back/forward wiring chain + servo session-history gap (2026-11-27)
+
+**Symptom → suspect index**:
+- "back/forward clicks do nothing visible" → THREE layered causes, all fixed in
+  feather devin/fwd-button-anim: (1) mock history cursor never moved for engine
+  tabs (routing skipped browser.apply) so renav immediately undid traversals;
+  (2) chrome read mock cursor instead of engine state; (3) click-position
+  confusion — macOS layout c back button center is ~160 not ~140 in tool coords.
+- "servo warns 'Cannot traverse that far into the past'" → shell-driven
+  wv.load(url) navigations do NOT accumulate in servo's back_forward_list
+  (webview.rs embedder state). Session-history accumulation across embedder
+  loads is an open engine integration defect — blocks back/forward end-to-end.
+  Suspect locations: constellation TraverseHistory session-history commit path,
+  webview.rs back_forward_list push conditions on load completion.
+- "egui animate_bool never starts animating" → classic trap: returns stale value
+  on flip frame; repaint must be requested until target reached or 0→1 never runs.
