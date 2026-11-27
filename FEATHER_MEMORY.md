@@ -5092,3 +5092,14 @@ mac-lane gotchas banked repeatedly but still biting: cwd resets EVERY
 exec call — chain cd && in literally every command; install_name_tool
 rpath with ABSOLUTE binary path after every cargo build; build cmd in
 prior memory entries.
+
+## inflight-bookmarks-page 2026-11-27 (mac lane, mid-flight state)
+
+Branch devin/1795784000-bookmarks-page in feather: InternalPage::Bookmarks
+bookmarks management surface PATCHED but NOT yet compile-verified — cargo
+build running at compaction time. Changes: state.rs enum+title+address arms,
+internal_pages.rs bookmarks()/bookmark_row() (parallel to history rows,
+remove via ToggleBookmark, open via Action::Open{url,title:None}), toolbar.rs
+menu row after History. HISTORY UI (batch item 3) ALREADY EXISTED fully
+(search/filter/clear/remove rows) — verification-only. FIND-IN-PAGE still
+untouched — implement the eval route per handoff-daily-driver-essentials.
