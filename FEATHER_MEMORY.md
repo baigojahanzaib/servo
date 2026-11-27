@@ -5716,3 +5716,6 @@ as cheapest-high-value, re-measure.
 - Settings persistence pattern: Prefs struct + prefs.txt key=value lines,
   startup copy into browser.settings, sync_prefs() writes back on change.
   Any new setting must touch all four places or it silently resets.
+
+## memsec: fieldset/legend implementation map (windows lane, PR#4)
+symptom: legend renders fully inside fieldset instead of straddling border -> FIXED in PR#4. mechanisms: (1) FragmentFlags was FULL at u16 — widened to u32 in base_fragment.rs bitflags; IS_FIELDSET=1<<16, IS_LEGEND=1<<17 set in From<ServoLayoutNode> local_name match. (2) shift at same_formatting_context_block.rs layout_in_flow_non_replaced_block_level pre-BoxFragment::new: fragments are PhysicalDeprecated at assembly (NOT Logical — logical rects convert earlier), use base.rect()/set_rect() interior mutation. (3) target: legend center at -(padding.block_start+border.block_start/2) content-relative. REMAINING leaf increments: border-gap paint suppression (fieldset border paints behind legend — needs paint-time clip or border-split), direct-child-only nesting enforcement, vertical writing modes, independent-FC fieldset path (overflow!=visible fieldsets bypass same-formatting assembly entirely). probe: wtest/fsverify.html delta==0.0 straddles=true.
