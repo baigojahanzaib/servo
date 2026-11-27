@@ -1,0 +1,29 @@
+<html><body style="font-family:sans-serif;margin:0">
+<div id="app"></div>
+<script>
+const app = document.getElementById('app');
+for (let i = 0; i < 40; i++) {
+  const d = document.createElement('div');
+  d.style.cssText = 'padding:16px;border-bottom:1px solid #ccc';
+  d.textContent = 'Result ' + i + ' — title line here';
+  d.id = 'row' + i;
+  app.appendChild(d);
+}
+// SERP-like: inject thumbnails into random rows in waves, while user scrolls
+let wave = 0;
+function inject() {
+  for (let k = 0; k < 8; k++) {
+    const row = document.getElementById('row' + Math.floor(Math.random() * 40));
+    if (row && !row.querySelector('img')) {
+      const img = document.createElement('img');
+      img.src = 'https://picsum.photos/seed/' + (wave*8+k) + '/80/60';
+      img.style.cssText = 'float:left;margin-right:10px';
+      row.prepend(img);
+    }
+  }
+  wave++;
+  if (wave < 6) setTimeout(inject, 900);
+}
+setTimeout(inject, 800);
+</script>
+</body></html>
