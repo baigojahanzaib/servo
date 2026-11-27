@@ -5861,3 +5861,15 @@ far faster than gdb for panic-class bugs since the panic hook catches before gdb
 - Open: amazon isolation, sweep remainder (reddit/github/gmail/wiki/notion/
   instagram/facebook/linkedin/whatsapp/stackoverflow-deep), Windows lane
   file-picker verification.
+
+## macOS lane final state 2026-11-27 (sweep complete)
+- 20/20 sweep done, matrix in docs/wiki/COMPATIBILITY.md. The anonymous web
+  works in feather; failures = DRM, datacenter botwalls, amazon intermittent
+  hydration layout. Next frontier: authenticated dogfood.
+- Cmd+T dedupe removed for Chrome parity (#380) — blank tabs no longer
+  dedupe. The "new-tab regression" scare was this dedupe, not a defect.
+- Tab-group persistence re-verified end-to-end on canonical main AGAIN
+  post-sweep — natural cycle, clean.
+- Session format: {"version":1,"active_space":0,"spaces":[{"name","tabs":
+  [{"url","group"}],"active","groups":[{"id","name","color","collapsed"}]}],
+  "pinned":[]} — blank NewTab pages are NOT persisted (no URL).
