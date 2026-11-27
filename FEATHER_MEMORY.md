@@ -3885,3 +3885,37 @@ metrics.jsonl RSS samples during 8-min github browsing session (10 pages cycled)
 ## NASTY-MIX FREEZE HUNT — negative with telemetry infra (2026-11-27)
 47 rapid navigation cycles (9s apart) through 3-simultaneous-video page + discord + gmail + google maps + github pulls + x.com login: ZERO watchdog events, zero panics, zero crash artifacts, process healthy throughout. Memory flat ~770MB single-tab navigation-replacement pattern (vs the growth seen in multi-accumulation browsing). Github segfault heisenbug: NOT reproduced across cumulatively ~30+ heavy github page loads today. Freeze not reproducible on this VM with any mix tried so far.
 CONCLUSION SHIFT: the freeze/segfault heisenbugs are environment-dependent (user machine: real GPU, different drivers, Win11) or already-fixed-media-panic class. THE REAL ANSWER is now shipped: batch-5+ carries metrics.jsonl + crash-artifact capture (#252/#256) — the user dogfooding generates the evidence automatically. Watch for crash-hang artifacts in the user crashes dir.
+
+## Memory leak — DECISIVELY per-navigation, content-independent (Windows measurement, batch-5 binary)
+
+Three-leg discriminator complete, telemetry-driven (metrics.jsonl mem events, 10s sampling):
+
+| leg | result |
+|---|---|
+| idle single page (github servo repo, 9.5min, ZERO navigations) | RSS falls 404→32MB steady state — NO leak, GC/trim working |
+| same-url repeat navigation (location.href every 15s x32, 9.8min) | RSS climbs 10→1746MB monotonic — ~150MB/min |
+| distinct-url heavy browsing (earlier batch-4 measurement) | RSS 459→1878MB in 8min — ~180MB/min |
+
+VERDICT: the leak is STRUCTURAL PER-NAVIGATION-CYCLE, roughly 30-45MB per
+navigation regardless of whether the target is a fresh site or the identical
+URL. Not content-driven, not media-driven, not continuous — purely
+navigate-and-never-free.
+
+Suspect locations by mechanism (function-level, not line numbers):
+- document/script-instance teardown path on cross-document navigation: the
+  constellation's webview/document shutdown — are script threads actually
+  joined and their JS heaps dropped? components/constellation/constellation.rs
+  close/unload paths.
+- JS runtime heap release: mozjs runtime/context destruction per script
+  thread — a runtime that is detached-but-not-GC'd leaks the whole heap in
+  one shot, matching the tens-of-MB-per-nav magnitude.
+- the media session/pipeline teardown already known-suspect (htmlmediaelement
+  reaper exists but covers media only — the magnitude here is larger).
+- NOTE: same-url navigations do NOT fire notify_url_changed — telemetry nav
+  events undercount; mem sampling is the reliable signal.
+
+Measurement method (reusable): FEATHER_EVAL-driven location.href loop with
+distinct comment per write; analyze %APPDATA%/feather/metrics.jsonl mem
+series; idle control leg is mandatory because Windows working-set trim makes
+idle RSS FALL (10→32MB observed) — growth despite trim pressure is the
+strong leak signal.
