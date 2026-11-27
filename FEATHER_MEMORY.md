@@ -5964,6 +5964,7 @@ CONCLUSION: Arabic user-ready in feather. NOTE: the external-scheme engine fix
 by rebuild+retest; non-http primary loads never parse, all cheap hypotheses
 eliminated, needs load-status instrumentation lane.
 
+
 ## sec1zt300 — aol residual: NOT xpath, NOT jit — genuinely stuck JS (2026-11-28)
 Negative results closing the aol investigation for now: (1) SERVO_LOG_XPATH instrumentation
 at the evaluate_internal chokepoint (universal — covers document.evaluate AND
@@ -5978,3 +5979,13 @@ SpiderMonkey's profiling API — both are real implementation work, documented n
 Instrumentation left in tree (env-gated, zero-cost): SERVO_LOG_XPATH in xpathexpression.rs
 evaluate_internal. RECOMMENDATION: deprioritize aol-deep-dive in favor of user-visible P0s;
 the wedge class matters but needs the profiler tooling first.
+||||||| parent of 57571921af4 (mem: youtube error-probe negative + tooling suggestion)
+
+
+## sec1zt301 — youtube boot-error probe negative: no js errors reach stderr (2026-11-28)
+RUST_LOG=script=info + stderr capture during wedged youtube boot shows zero error-ish
+lines — servo's exception reporting does not surface page JS errors to stderr at any log
+level. Cheap high-value tooling addition for ALL future real-site debugging: JS exceptions
+are already plumbed to the embedder as JavaScriptErrorInfo — ports/servoshell just never
+prints them. Patch servoshell to eprintln them; then boot-error probes become trivial.
+
