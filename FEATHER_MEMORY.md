@@ -5286,3 +5286,33 @@ hit_test_from_point_in_viewport → elements_from_point_query is a SYNCHRONOUS L
 drag gesture processing in the script event loop hitting this while layout waits on script
 = circular wait. Check whether drag handling runs on script thread and calls hit-test
 synchronously (drag_gesture.rs / html_drag.rs event flow).
+
+## sec1zt269 — dnd wedge mechanism traced to script-side ack loss (2026-11-27)
+FULL gdb backtrace captured of wedged servoshell mid-test (SYMBOLS PRESENT in dev build — gdb
+is useful after all!): ALL threads idle-parked, no deadlock. Chain:
+1. webdriver dispatcher blocked in Handler::wait_for_input_event_handled (actions.rs:325) —
+   waits on per-event receivers forever.
+2. Flow: webview.notify_input_event → paint hit-tests → ForwardInputEvent to constellation
+   → constellation_webview.forward_input_event → ScriptThreadMessage::SendInputEvent →
+   script handle_input_event (script_thread.rs:3966) → document.event_handler()
+   .note_pending_input_event — events QUEUED, only processed in handle_pending_input_events
+   during UPDATE_THE_RENDERING — acks (EmbedderMsg::InputEventsHandled, script_thread.rs:3982)
+   go out only from that path.
+3. Wedge = queued input events never processed OR processed-but-acked-incompletely.
+   Two candidate sub-mechanisms: (a) update_the_rendering never runs again because nothing
+   invalidates rendering — input events sit in the queue forever (would affect ALL input
+   though — wpt clicks work, so either rendering is continuously driven in wpt mode OR
+   normal events self-trigger rendering); (b) DRAG-SPECIFIC: drag_gesture state machine
+   (document_event_handler has `drag_gesture` field) consumes mousemove/button events during
+   an active drag without pushing InputEventOutcome for them — events processed but acks
+   never sent. coalesced_mouse_move_event_ids IS handled in outcomes, so plain coalescing
+   is acked correctly — the drag path is the prime suspect.
+NEXT STEP: read handle_native_mouse_move_event + handle_native_mouse_button_event drag
+integration in document_event_handler.rs (~lines 400-700) and check whether outcomes are
+pushed for events consumed by drag_gesture.moved()/released(). Compare with what happens
+when drag actually starts (html_drag.rs HtmlDragHandler state machine). FIX SHAPE: every
+input event id that enters the script pipeline must produce exactly one InputEventOutcome,
+including drag-consumed ones.
+gdb repro recipe: run `.venv/bin/python mach test-wpt /html/editing/dnd/canvas/001.html`
+(background), poll log for canvas/001 GET, sleep 6-8s, gdb -p $(pgrep -x servoshell|head -1)
+-batch -ex "thread apply all bt" — full capture at /tmp/dnd-bt2.txt (1917 lines, symbolized).
