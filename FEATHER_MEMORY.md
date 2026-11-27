@@ -4480,3 +4480,11 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 - Discriminators already negative: not a crash (no panic, process alive), not transient overload (never recovers).
 - Next discriminators for engine lane: capture WHAT the script thread is executing when wedged (sampling profiler or JS-stack dump hook); test mail.google.com vs gmail.com/accounts entry variants; check for an unbounded synchronous XHR or eval loop in gmail's boot path that servo executes literally.
 - User-facing impact: CRITICAL — gmail is the user's #1 daily site; the browser is unusable for it in current builds. Repro is deterministic on boot.
+
+## SYMPTOM: youtube (MSE/DASH) video dies permanently on seek (batch-5 dogfood, reproduced)
+- Symptom: youtube watch page plays initially; programmatic seek forward (currentTime+=60) accepted briefly, then the media pipeline collapses: currentTime resets to 0.0, paused=true, readyState=0 (HAVE_NOTHING), buffered.length=0 — and NEVER recovers. UI thread stays healthy throughout (zero watchdog stalls) — pure media-pipeline wedge.
+- Evidence: dogfood dog2.log eval sequence FWD 4.2->64.2 paused=false, then probe BACK 0.0->0.0 paused=true, then t=0.0 paused=true rs=0 ct=0.
+- Mechanism hypothesis: youtube DASH playback uses MediaSource Extensions. A seek requires MSE append-buffer re-establishment at the new position; servo MSE seek handling either fails to re-append (sourceBuffer state machine) or the media engine errors and the element never re-initializes. The batch-5 backward-seek fix targeted progressive mp4; MSE seek path is separate.
+- Note: youtube may recreate/reconfigure the video element across seeks (SPA player) — but even so, the new element never reaches readyState>0, so media feeding is broken post-seek.
+- Discriminator needed: direct MSE seek repro (test page with MediaSource+mp4 segments) vs progressive mp4 seek (multivid) to isolate MSE-specific vs general. Progressive mp4 seek test pending.
+- User-facing impact: HIGH — youtube seeking is core daily usage; any seek currently kills the video requiring page reload.
