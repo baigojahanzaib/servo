@@ -5562,6 +5562,35 @@ adopting_steps needs access to the player id + backend registry — the GStreame
 instances map is the thing to update; may need a new BackendMsg::MigrateContext{id,
 old_context, new_context}. Verify Shutdown semantics in the same file (lines ~150-165).
 
+## sec1zt279 — MEDIA WEDGE ROOT CAUSE: event-ordering race, NOT adoption, NOT gst (2026-11-27)
+pause-move-to-other-document wedge dissected end-to-end with instrumentation:
+- Wedged state is HEALTHY everywhere: script threads idle-parked in crossbeam select,
+  gst pipeline correctly prerolled to PAUSED (sinks in wait_preroll is NORMAL paused
+  state), no deadlock anywhere. gdb bt is a distraction — nothing is blocked.
+- Decisive sequence (crashed run): state_changed Buffering → state_changed Paused →
+  metadata_updated(ready_state=HaveNothing) → change_ready_state HaveMetadata — then
+  silence forever. play() is NEVER called.
+- MECHANISM: playback_state_changed advances readyState HaveMetadata→HaveEnoughData on
+  Paused/Playing, but ONLY if ready_state is already HaveMetadata. Gstreamer delivers the
+  Paused state change BEFORE the metadata signal ~half the time (racy signal ordering).
+  Metadata then caps at HaveMetadata and NOTHING ever advances further — the element never
+  becomes potentially-playing → player.play() never fires → playback never starts →
+  test/promise never resolves → harness CRASH misclassification.
+- NOT adoption-specific: hits ALL progressive media playback — the whole media crash
+  cluster (~5 tests) is one mechanism. Real-world impact: any video on any site can fail
+  to start racily — this is a beta-critical playback bug, plausibly part of YouTube
+  boot/seek flake.
+- FIX (implemented, verifying): advance_after_metadata Cell<bool> — state_changed at
+  HaveNothing records the missed advancement; playback_metadata_updated replays it after
+  reaching HaveMetadata. Order-independent.
+- NEGATIVE RESULTS (do not re-investigate): (1) backend shutdown-thread single-recv is
+  BENIGN — when recvr drops, queued tx_ack senders drop too, rx_ack.recv() errors
+  instantly, no wedge — verified upstream has same code, do not "fix" as a wedge fix;
+  (2) ClientContextId per-pipeline adoption mismatch is real but NOT the wedge mechanism
+  (element is uncontrollable cross-document after adoption but the test wedges before
+  any of that matters); (3) the "unknown client context" warnings appear even in PASSING
+  runs — noise from initial about:blank pipeline teardown, red herring.
+
 ## integration regression pass on merged main (banked 2026-11-27, macOS lane)
 All gesture/embedder work verified composing on integrated main post-merge:
 cmd+click background tabs, dialogs round-trip (confirm:CANCEL into DOM),
