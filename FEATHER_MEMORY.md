@@ -6023,3 +6023,20 @@ full player chrome. prefers-color-scheme verified end-to-end through feather's
 own appearance toggle (embedder pipeline works — youtube dark-nav issue is
 NOT signaling, it's in servo themed-style computation). SERVO_FORCE_THEME is
 servoshell-only, inert in feather. Media remaining gap: DRM/EME only.
+
+## sec1zt297 — external-scheme pipeline-break FIXED: navigate() abort was the mechanism (2026-11-28)
+ROOT CAUSE + FIX SHIPPED (feather-engine HEAD): navigate() in script/navigation.rs queued
+abort_a_document_and_its_descendants (step 24.4) unconditionally BEFORE sending LoadUrl
+to the constellation — so for unnavigable schemes the current document's in-flight load
+was destroyed in script before the constellation could ever drop the navigation. This is
+why deab4229838's navigate-and-cancel could never work: the cancellation path it relied
+on runs AFTER the destructive abort. Fix: early-return in navigate() for schemes outside
+http/https/about/data/blob/file/filesystem (handoff semantics = no-op) + constellation
+early-drop as belt-and-braces. VERIFIED: schemenav2 (parse-time whatsapp click) now
+LOAD-FIRED+complete (was: never-completing load + wedged pipeline, execute 500s); wa.me
+end-to-end completes in 1.2s (was permanent timeout); recovery navs 0.03s; regression
+check on post-load scheme nav + plain navs clean. CONSEQUENCE FOR FLEET: wa.me is FIXED,
+not just non-wedging — the earlier 'residual upstream-class net/fetch-completion bug'
+note in deab4229838's message needs re-evaluation: some or all of those 'script body
+streams never finish' observations may have been cascade artifacts of this abort defect.
+aol.com stall claim should be re-tested on this fix before any net-layer hunt.
