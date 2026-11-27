@@ -912,9 +912,12 @@ impl ServoDelegate for ServoShellServoDelegate {
     }
 
     fn show_console_message(&self, level: ConsoleLogLevel, message: String) {
-        // For messages without a WebView context, apply platform-specific behavior
+        // For messages without a WebView context, apply platform-specific behavior.
+        // stderr, not stdout: println! is block-buffered through pipes and page
+        // JS errors vanish entirely when the process is killed (harness-driven
+        // debugging loses exactly the signal it was looking for).
         #[cfg(not(any(target_os = "android", target_env = "ohos")))]
-        println!("{message}");
+        eprintln!("[console] {message}");
         log::log!(level.into(), "{message}");
     }
 }

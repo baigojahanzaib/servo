@@ -5989,3 +5989,27 @@ level. Cheap high-value tooling addition for ALL future real-site debugging: JS 
 are already plumbed to the embedder as JavaScriptErrorInfo — ports/servoshell just never
 prints them. Patch servoshell to eprintln them; then boot-error probes become trivial.
 
+
+||||||| parent of 8f63aa6 (servoshell: console messages to stderr (eprintln) — survive kill; mem: youtube error-probe refuted)
+
+
+## sec1zt302 — console errors now reach stderr; youtube boot-error hypothesis REFUTED (2026-11-28)
+TOOLING FIX (this commit): servoshell printed console messages via println! — block-
+buffered through pipes, lost on SIGKILL. Now eprintln! in running_app_state.rs +
+headed/headless_window.rs, tagged [console]. Uncaught page JS errors surface as
+"[console] Error at FILE:LINE:COL message" — verified with a deliberately-throwing page.
+This unblocks ALL future real-site JS debugging.
+PROBE RESULT: youtube.com boot produces ZERO uncaught JS errors (verified plumbing with
+positive control in same session). The "thrown exception in polymer handler chain"
+hypothesis for dark-nav (sec1zt295) is REFUTED — the wrong-branch logic is silent.
+Remaining explanations narrow to: wrong values flowing through media-match/feature-detect
+APIs polymer actually consults (matchMedia results, window.innerWidth timing, etc.) or
+upstream-boot differences. Given everything else cleared, dark-nav stays bounded; the
+next probe shape is diffing matchMedia/innerWidth/screen values against a real browser.
+
+## sec1zt303 — upstream scan 2026-11-28: cherry-pick candidates
+Small safe picks adjacent to feather work: 461f99fc59f xpath id() first-element-only
+(perf, adjacent to unroot work), e667861e269 borrow hazard in attribute storage (crash
+fix). Larger: 806d6369990 weak-referenceable elements, 60019507770 input internal value.
+NOT YET APPLIED — cherry-pick attempt hit harness shutdown; queue for next session.
+

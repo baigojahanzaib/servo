@@ -1151,7 +1151,7 @@ impl PlatformWindow for HeadedWindow {
     }
 
     fn show_console_message(&self, level: servo::ConsoleLogLevel, message: &str) {
-        println!("{message}");
+        eprintln!("[console] {message}");
         log::log!(level.into(), "{message}");
     }
 
