@@ -6127,3 +6127,15 @@ ROTATION: implement per sec1zt309 plan. BoxFragment style access pattern (cost m
 3 compile cycles, save them): children are Fragment enum; match Fragment::Box(bf)
 then bf.style.borrow().get_box() — bf is Arc<BoxFragment> no borrow() on it, and
 style is ArcRefCell so .borrow() needed. Fragment enum must be imported.
+
+## Blank-tab group serialization shipped (macOS lane, 2026-11-28)
+PR #401: blank NewTab pages in groups now serialize as {"blank":true,"group":...}
+and restore with membership — last gap from the #381 matrix closed. Verified
+both directions. Session format addition is backwards compatible.
+DISK: cleaned to 2.9GB free (cargo registry, screencasts, screenshots, tmp).
+CoreSimulator 4.1GB deliberately kept (JOT iOS lane tooling). cargo registry
+will re-download on next build (+3-5min first time).
+SERVOSHELL DISCRIMINATOR: infeasible on this box (feature-variant deps don't
+fit disk) BUT unnecessary — servo embedding tests already prove data: reaches
+LoadStatus::Complete; the non-http blank defect is feather-specific. NEXT LANE
+for file://: instrument load-status transitions per scheme in feather's engine.
