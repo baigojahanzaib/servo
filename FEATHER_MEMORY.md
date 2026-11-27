@@ -4450,3 +4450,18 @@ So this may not be a same-day regression at all.
 NEXT: instrument the debugger_global None arm + fire_eval entry/exit + EvalResult with eprintln,
 one build cycle localizes which of the three stages dies. Alternatively engine-bisect across
 11-26/27 window (15-20min per iteration — expensive).
+
+## sec1zt170 — devtools evaluateJS regression SOLVED + FIXED (upstream-candidate)
+Root cause chain, three layers: (1) the sync evaluateJS arm in devtools/actors/console.rs
+serialized the whole Result<EvaluateJSReply> — reply wire-shape {"Ok": {...}} instead of the
+bare object; (2) in DEBUG builds the protocol-layer is_valid_reply debug_assert (protocol.rs:184)
+PANICS on the malformed shape, killing the connection — clients see eternal timeout; (3) in
+release the malformed packet goes out but the matrix harness happened to tolerate the Ok-wrapper
+(`payload = m.get("Ok") or m`), which is why release runs ever worked. The async arm already
+unwrapped correctly — the sync arm was a refactor miss. Fix mirrors it
+(.map_err(|_| ActorError::Internal)). Verified live: evaluateJS returns result 2.0 correctly
+shaped. On feather-engine.
+DURABLE LESSON: devtools breakage can be debug-build-only — debug_asserts in the protocol layer
+turn wire-shape bugs into connection deaths. When devtools eval times out, check feather stderr
+for 'Message is not a valid reply' BEFORE suspecting script-thread plumbing; the three eval-path
+stages (message arrival / fire_eval / EvalResult) can all be healthy while delivery dies.
