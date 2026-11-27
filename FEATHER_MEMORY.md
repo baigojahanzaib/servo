@@ -4284,3 +4284,16 @@ polled: if feather-ui itself polls the embedder channel rather than servo-intern
 then the shell must implement the arm, not servo.rs!). THIS IS THE LIKELY ANSWER: feather as
 embedder may consume EmbedderMsg itself — check shell-new engine.rs for where embedder
 messages are received/polled.
+
+## sec1zt159 — permissions.query VERIFIED END-TO-END; root cause was pref+shim, not plumbing
+query() returns state:granted from seeded store; all four pipeline points fire in order
+(script step8 → servo.rs arm → shell store lookup correct origin+feature). The implementation
+was correct all along — the e2e failure was TWO LAYERS UP: (1) servo's dom_permissions_enabled
+pref DEFAULTS FALSE, so navigator.permissions was undefined in feather; (2) feather's compat
+shim (engine.rs ~line 498, guards `if (!navigator.permissions)`) then installed a stub
+returning perpetual {state:'prompt'} — shadowing even a correct engine. Enabled the pref in
+feather prefs; the shim guard now passes the real API through.
+SYMPTOM INDEX (major): site API behaves as static/stubbed despite correct engine impl → check:
+(a) the pref gate on the webidl interface FIRST (grep Pref= in webidls, check defaults in
+config/prefs.rs), (b) feather's compat shim guards — the shim only fills undefined surfaces,
+so a missing pref silently becomes a permanent stub. Instrumentation eprintlns removed post-verify.
