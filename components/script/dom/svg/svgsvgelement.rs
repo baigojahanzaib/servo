@@ -8,7 +8,7 @@ use atomic_refcell::AtomicRefCell;
 use base64::Engine as _;
 use cssparser::Parser;
 use dom_struct::dom_struct;
-use html5ever::{LocalName, Prefix, local_name, ns};
+use html5ever::{LocalName, Prefix, QualName, local_name, ns};
 use js::context::{JSContext, NoGC};
 use js::rust::HandleObject;
 use layout_api::SVGElementData;
@@ -22,6 +22,7 @@ use style_traits::ParsingMode;
 use uuid::Uuid;
 use xml5ever::serialize::TraversalScope;
 
+use crate::dom::bindings::codegen::Bindings::AttrBinding::AttrMethods;
 use crate::dom::bindings::codegen::Bindings::DocumentBinding::DocumentMethods;
 use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use crate::dom::bindings::inheritance::Castable;
@@ -133,7 +134,17 @@ impl SVGSVGElement {
         use_element: &Element,
         root_node: &Node,
     ) {
-        let href = use_element.get_string_attribute(&local_name!("href"));
+        let mut href = use_element.get_string_attribute(&local_name!("href"));
+        if href.str().is_empty() {
+            // Legacy sprite sheets use the namespaced `xlink:href` — it carries
+            // the same reference per SVG2 and must be honoured when `href` is
+            // absent, otherwise those `<use>` elements render nothing at all.
+            if let Some(attr) =
+                use_element.get_attribute_with_namespace(cx, &ns!(xlink), &local_name!("href"))
+            {
+                href = attr.Value();
+            }
+        }
         let Some(id_string) = href.str().strip_prefix("#").map(DOMString::from) else {
             return;
         };
@@ -167,6 +178,85 @@ impl SVGSVGElement {
             CloneChildrenFlag::CloneChildren,
             None,
         );
+
+        // The `<use>` element's own attributes must apply to the referenced
+        // content: per SVG2 the clone is generated inside a shadow tree that
+        // inherits presentation attributes (`fill`, `stroke`, ...) from the
+        // `<use>`, and the use's `x`/`y` translate it. Since this serialized
+        // rasterization has no shadow tree, approximate it by copying the
+        // use's attributes onto the clone — `set_attribute_from_parser`
+        // never overwrites, so the referenced element's own attributes keep
+        // winning, exactly like the spec's inheritance order. Without this,
+        // sprite-sheet icons rendered black regardless of the use's fill.
+        if let Some(clone_element) = cloned_node.downcast::<Element>() {
+            let mut copies: Vec<(DOMString, Option<Prefix>, DOMString)> = Vec::new();
+            let mut x = DOMString::new();
+            let mut y = DOMString::new();
+            let mut use_transform = DOMString::new();
+            for attr in use_element.attrs().borrow().iter() {
+                let local = attr.local_name().clone();
+                if *attr.namespace() != ns!() {
+                    continue;
+                }
+                if local == local_name!("href") || local == local_name!("id") {
+                    continue;
+                }
+                let value = attr.to_dom_string();
+                if local == local_name!("x") {
+                    x = value;
+                    continue;
+                }
+                if local == local_name!("y") {
+                    y = value;
+                    continue;
+                }
+                if local == local_name!("transform") {
+                    // The use's transform applies to the clone too — merged
+                    // below rather than copied verbatim.
+                    use_transform = value;
+                    continue;
+                }
+                copies.push((
+                    DOMString::from(&**attr.local_name()),
+                    attr.prefix().cloned(),
+                    value,
+                ));
+            }
+            for (name, prefix, value) in copies {
+                // Namespaced attributes were filtered out above, so the
+                // prefix is always None here in practice.
+                let local = LocalName::from(&*name.str());
+                clone_element.set_attribute_from_parser(
+                    cx,
+                    QualName::new(prefix, ns!(), local),
+                    value,
+                );
+            }
+            // `x`/`y` on `<use>` translate the clone; fold them into its
+            // transform attribute ahead of any transform it already has.
+            let x_off = parse_double(&x.str()).unwrap_or(0.0);
+            let y_off = parse_double(&y.str()).unwrap_or(0.0);
+            if clone_element
+                .get_string_attribute(&local_name!("transform"))
+                .str()
+                .is_empty()
+            {
+                let mut parts: Vec<String> = Vec::new();
+                if x_off != 0.0 || y_off != 0.0 {
+                    parts.push(format!("translate({x_off} {y_off})"));
+                }
+                if !use_transform.str().is_empty() {
+                    parts.push(use_transform.str().to_string());
+                }
+                if !parts.is_empty() {
+                    clone_element.set_attribute_from_parser(
+                        cx,
+                        QualName::new(None, ns!(), local_name!("transform")),
+                        DOMString::from(parts.join(" ")),
+                    );
+                }
+            }
+        }
         let _ = root_node.AppendChild(cx, &cloned_node);
     }
 
