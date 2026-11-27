@@ -5784,3 +5784,6 @@ The fix: mse_seek_serial Mutex + mse_seek_gen AtomicU64 on PlayerInner; seek() n
 ## VERIFICATION: MSE seek fix 1883f8d3435 — youtube large-seek FIXED; gmail boot freeze UNFIXED (separate bug)
 - Youtube large seeks on fixed engine (local verification build, feather-engine merged into build-engine 7e93b537454): baseline t=4.7 rs=4; +60s fwd -> t=72.8 rs=4 PLAYING and advancing (t=74.7 six sec later); -40s back -> t=34.7 rs=4 PLAYING. Pre-fix behavior was instant permanent death (t=0 rs=0). PASS.
 - Gmail boot freeze on same binary: 3/3 boots wedge identically (stalls 47,47,47 in 55s windows). The MSE serialization fix is media-pipeline-specific; the font/shader deadlock is a separate engine bug still open. FAIL — awaiting the actual deadlock fix.
+
+## VERIFICATION: x.com input focus/typing FIXED on feather-engine tip (was the React-controlled-input disconnect)
+- Real mouse+keyboard test on x.com login (verify build incl. MSE fix): click lands on email input, typing reaches the DOM — activeElement=INPUT, value reflects typed text exactly. In batch-4/5 this was permanently broken (activeElement stuck on wrapper DIV, value empty) — blocked all x.com login. FIXED somewhere in the recent engine train.
