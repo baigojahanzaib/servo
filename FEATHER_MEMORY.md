@@ -5794,3 +5794,13 @@ MEASUREMENT HARNESS all reusable: /tmp/memab.py (RSS A/B), SERVO_MEMDUMP_AFTER=8
 /tmp/memdump.log rows (categories). Heaptrack capture failed (0-byte output through fifo on
 SIGTERM — do not retry that path). RSS file-backed caveat: ~220MB of resident is servoshell
 binary + libLLVM + fonts demand-loaded file pages — inflate absolute RSS but constant baseline.
+
+## memory-reclaim fix VERIFIED shell-side (2026-11-27, macOS lane)
+shrinking-GC + zero empty-chunk reserve (9182287bf) confirmed working in
+the feather binary: 5 heavy tabs 2257MB → close 4 → 1182MB within seconds
+(-1GB immediately; pre-fix was strictly monotonic). Residual +112MB/90s
+creep on an ACTIVE youtube homepage is unclassified — needs a lightweight-
+page control next time. Also measured: ~450MB/tab for heavy real sites —
+per-tab infra dominates; youtube alone idles ~1.2GB. All lanes: memory
+reclamation is now a solved primitive, remaining work is per-tab weight
+and active-page churn, not the close-path.
