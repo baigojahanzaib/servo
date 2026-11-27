@@ -6238,3 +6238,15 @@ CANVAS LAYERS ASSESSMENT: beginLayer/endLayer entirely absent (no webidl even) �
 tests FAIL blank rather than ERROR. Real implementation = offscreen surface +
 filter composite in canvas_state, multi-hour graphics work, ~12 tests across
 element+offscreen. Documented not started — queued behind composite-off-UI-thread.
+
+## sec1zt315 — html re-baseline in flight + rotation state (2026-11-28)
+BACKGROUND RUN: post-fieldset html re-baseline launched ~23:58 UTC, output dest
+/tmp/wpt-post-fieldset/ (html.log + html-raw.log, status.txt when done). ~40min.
+HARNESS RULE IN EFFECT — no compiles/interactive servoshell until it finishes.
+Next session: generate report with docs/wiki/wpt/wpt-report-v2.py, PR to feather,
+compare against evening baseline — expect fieldset improvements (3 fixed) plus any
+windows-lane deltas. The run REPLACES the need for manual leaf verification.
+ROTATION STATE: all work pushed through 52a3b2b94aeb. Leaf inventory bottomed:
+cheap leaves exhausted; remaining = canvas layers (multi-hour, no webidl even),
+composite-off-UI-thread (design-complete, top priority), COOP infra (multi-day),
+waitAsync (coordinator decision pending). Fieldset leaf closed at 85/88 as-expected.
