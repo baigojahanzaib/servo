@@ -4824,3 +4824,35 @@ path, no gdb/rr needed on this platform.
 
 ## sec1zt224 — gmail freeze hunt state: signed-out wedge DOES NOT REPRODUCE (6/6 clean boots, devtools responsive, idle cpu) — wedge confirmed post-auth-only across both lanes; botgate blocks signin on Linux entirely
 6/6 signed-out boots healthy on current build. Deep signin flow exercise (email entry + botguard roundtrip) also healthy — ends at google's "browser may not be secure" rejection, meaning POST-AUTH REPRO IS IMPOSSIBLE on Linux without both credentials AND passing the anti-bot gate. Meanwhile mechanism analysis of the script-thread wake-spin primitive (mac evidence: Script#1 in semaphore_timedwait 100% of samples): the event loop timed-wait at messaging.rs:532 spins forever if a timer deadline is never in the future. FOUND + FIXED one real instance: script_thread rendering-update timer computes delay = animation_delay - time_since_last_rendering_opportunity which is EXACTLY ZERO when the clamp engages — a zero-duration timer never lets the wait block. Hardened (commit with this entry): delay==0 now sets the flag directly. SPECULATIVE re gmail — no repro to verify against. SYMPTOM INDEX: script thread 100% in timedwait spin, one core saturated, no JS executing → check (a) zero/past-duration timers rescheduling in the event loop scheduler, (b) media clock wait family per mac evidence. NEEDED FROM WINDOWS/COORDINATOR: either test google credentials that pass the botgate, OR a thread-level artifact of the wedged gmail boot (sample/gdb backtrace of Script#1 + UI thread) — the artifact alone is enough for mechanism analysis. NOTE: gmail boot harness from PR #309 exists (tests/scenarios/gmail_boot_harness.py, release-binary-oriented) for verification once repro exists.
+
+## real-site compat sweep 2026-11-27 (mac lane, 20 sites, boot-isolated devtools probe)
+
+Method: tests/scenarios/site_sweep.py — fresh boot per site, readyState/title
+probe, TTI timing, final-window CPU. CAVEAT: readyState=complete means DOM
+readiness, NOT correct rendering — visual verification not in scope here.
+19/20 ready, 1 wedged, 0 died.
+
+READY (TTI / final-cpu): x.com 3.4s/61%, reddit 2.2/133, github 2.0/248,
+stackoverflow 1.5/183 (Cloudflare "Just a moment" — botwall, not feather),
+wikipedia 3.8/103, amazon 1.5/102 (EMPTY TITLE — suspicious), netflix
+21.8/119 (very slow), whatsapp-web 4.6/0 (empty title), google 1.5/0.5,
+youtube 2.7/68, gmail-chain 1.5/11, facebook 3.1/7, instagram 4.9/51,
+linkedin 1.6/64, nytimes 4.2/311, bbc 4.7/104, chatgpt 5.0/113, claude
+1.6/4.5 (Cloudflare "Just a moment"), notion 6.8/126.
+
+WEDGED: twitch.tv — stuck at readyState=interactive forever, 242% cpu
+sustained = livelock signature. Title bar read "Twitch" so SSR shell
+parsed; the wedge hits during app boot. Same class as the youtube/gmail
+script-thread livelock (batch6 entries) — possibly the same underlying
+mechanism firing on a non-media boot path, which would mean it is NOT
+media-specific. Engine lane: twitch.tv is now the easiest non-media repro
+of the wedge class — no auth needed, deterministic-ish.
+
+CPU-AFTER-READY catalog (restyle-storm/idle-CPU problem made visible):
+nytimes 311%, github 248%, stackoverflow 183%, reddit 133%, notion 126%,
+netflix 119%, chatgpt 113%, bbc 104%, amazon 102% — most major sites burn
+1-3 cores after load on this GPU-less VM. Compare google 0.5%,
+whatsapp-web 0%, facebook 7%. Confirms the sec1zt188 idle-CPU budget as
+THE cross-site perf defect. Empty-title oddities (amazon, whatsapp-web)
+worth a follow-up probe — possibly botwall interstitials or title set by
+JS that eval-targeting can't see (first-pipeline artifact).
