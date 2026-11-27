@@ -3996,3 +3996,16 @@ Engine notification architecture notes:
 - permission flow: Notification.requestPermission routes the SAME generic embedder
   permission mediation as geolocation — the shell prompt infra is feature-generic (verified)
 - shell display hook: WebViewDelegate::show_notification (default no-op)
+
+## sec1zt147 — permissions-query store-consistency gap (analysis, unimplemented)
+`navigator.permissions.query()` NEVER reaches the embedder: descriptor_permission_state
+checks (1) secure-context, (2) the per-global invocation cache (populated only AFTER an
+embedder-answered request in THIS page instance), (3) falls through to default 'prompt'.
+Consequence: even with a shell-side persisted grant, a fresh page load's query() returns
+'prompt' until something triggers the actual request (which the store then auto-answers).
+Real browsers return the persisted state at query time. This is the exact fingerprintable
+inconsistency the platform-gap analysis flagged for Google risk scoring.
+Fix requires NEW engine plumbing: a synchronous script→embedder permission-store query
+(script-thread blocking — deadlock-sensitive) OR pushing shell-store decisions into the
+engine at webview creation (no such API exists). Design decision needed before implementing;
+the invocation cache covers within-session consistency already.
