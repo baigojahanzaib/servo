@@ -5990,3 +5990,26 @@ upstream of guide-state init would produce exactly this symptom (everything boot
 one behavior chain). Cheapest next probe: capture window error events + console errors
 during boot (webdriver inject addEventListener('error') collector via early script or
 check servo stderr for js error reports). All harnesses /tmp/ytnav*.py durable.
+
+## sec1zt296 — REPRODUCED: external-scheme nav during initial load breaks pipeline (2026-11-28)
+THE wa.me never-completing-load mechanism in minimal repro, decisive A/B: control page
+(schemenav3.html — hanging subresource img, nothing else): nav completes, LOAD-FIRED,
+readyState complete, probes healthy (servo doesn't block load on hanging images at all).
+Test page (schemenav2.html — IDENTICAL plus a whatsapp:// anchor click fired at parse
+time): navigation NEVER completes (webdriver pageLoad timeout fires), and afterwards
+execute/sync returns HTTP 500 — the script pipeline is wedged/broken, not just the load
+event missing. Mechanism: an unnavigable-scheme navigation fired DURING the initial load
+corrupts the pipeline's load/script state — the navigate-and-cancel path (deab4229838)
+tears down or poisons more than the scheme navigation itself. IMPACT: any real page doing
+a protocol handoff during load (whatsapp/deep-link/app-store redirects) kills the tab —
+user-critical. REFUTED along the way: scheme nav AFTER load completion is harmless
+(schemenav.html — LOAD-FIRED, recovery fine); plain hanging subresources don't wedge
+anything; webdriver recovery machinery per spec is fine (the earlier "wedge regression"
+scare was the 300s spec-default pageLoad wait — NOT an engine wedge; verified with 5s
+timeout: recovery 0.04s). MEMORY RE-VERIFIED on current feather-engine: flat exactly
+500MB across 4 unique-page open-close cycles. Harnesses durable: /tmp/crashtest/
+schemenav{,2,3}.html, /tmp/schemetest2.py <page>, /tmp/hangsrv.py (port 8460 hanging-img
+server), /tmp/wedge-verify*.py chain. NEXT: read the navigate-and-cancel/AbortLoadUrl
+path for how a parse-time scheme nav interacts with the in-flight initial load — suspect
+the abort tears down the pending change of the WRONG (main) navigation or leaves the
+pipeline in a state where load-event completion can never be signalled.
