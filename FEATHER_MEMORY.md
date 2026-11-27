@@ -5625,3 +5625,32 @@ log. For discovery entries prefer hamburger-menu rows — that path is proven.
 already comprehensive — search/startup/animation/theme/tabs/shields/
 browsing-data/site-permissions sections all expose the Settings struct
 fields. No meaningful unexposed options exist; don't manufacture noise here.
+
+## sec1zt280 — media wedge SOLVED+SHIPPED: single ordering race, no second mechanism (2026-11-27)
+Fix 08325d65497 live on feather-engine. The full truth after instrumentation chaos:
+- There was only ONE mechanism all along: StateChanged(Paused/Playing) arriving before
+  MetadataUpdated → element stalled at HAVE_METADATA forever → playback never starts.
+  The apparent "mode 2" (Paused never arrives) was an artifact: the fix had been silently
+  dropped from the working tree by a failed `git stash pop` during the memory-push rebase
+  dance, so post-verification runs were testing the UNFIXED binary.
+- DEFINITIVE event-level proof (evtdbg instrumentation): in wedged runs ALL events —
+  Buffering, Paused, VideoFrameUpdated, MetadataUpdated, DurationChanged — are received
+  by the callback, their tasks run, and they dispatch to the element handlers with zero
+  drops. The gstreamer pipeline is perfectly healthy (prerolled paused, fully fed + EOS).
+  Nothing is ever lost in transit — the state machine just can't advance out of order.
+- VERIFICATION: 10/10 consecutive plain-autoplay runs pass with the fix (rs=4 paused=false)
+  vs ~40-60% stall rate without. Harness repro: ./target/debug/servoshell --headless
+  --hard-fail http://127.0.0.1:8442/plainplay.html (file in /tmp/navtest, loop script
+  /tmp/plainloop.sh) — reproduces WITHOUT any harness or document adoption.
+- PROCESS LESSON (critical): `git stash pop` failures during rebase gymnastics can silently
+  drop in-flight work — the stash entry surviving means the pop did NOT apply cleanly.
+  Always verify the actual diff is in the working tree after pop (`grep` for a known string),
+  and never trust verification results unless the binary is proven to contain the fix
+  (rebuild + grep the source before each verification round).
+- PRINT TRANSPORT LESSON: eprintln evidence in killed/harnessed processes is unreliable —
+  presence is informative, absence is not. Direct servoshell repros preserve full output.
+- Impact: this was racy playback-start failure for ALL progressive video — plausibly a
+  component of the YouTube boot/seek flake the user hits. Windows should re-test YouTube
+  boot reliability after pulling. The remaining media adoption-context mismatch
+  (sec1zt278) is real but untested-independence: element uncontrollable after cross-doc
+  adoption — separate smaller fix, still open.
