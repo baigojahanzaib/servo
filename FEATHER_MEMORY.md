@@ -4079,3 +4079,18 @@ copy is what should render, servo's shadow-image paint path is the suspect; (b) 
 YouTube's specific visibility/upgrade sequencing. Next discriminator: check the black thumbs'
 parent chain — if the light-DOM img is a child of yt-image, test whether servo paints images
 inside shadow roots at all (simple open-shadow repro with img inside attachShadow).
+
+## sec1zt151 — shadow-image repros ALL PASS + the slot insight (next hunt direction)
+Shadow variants all render correctly on localhost: open shadow img, closed shadow img,
+late-src-inside-shadow. Servo's shadow image paint path is HEALTHY.
+KEY THEORETICAL INSIGHT for the next round: light-DOM children of a shadow host DO NOT
+RENDER unless the shadow tree has a <slot> — the measured light-DOM oar2 imgs (218x326,
+'visible' per getComputedStyle) are likely RENDER-INVISIBLE fallback content inside
+yt-image. getBoundingClientRect/computed-style lie about paint visibility for unslotted
+light DOM! What actually paints is the shadow copy, whose src/decode state is JS-opaque
+(closed shadow). REVISED HUNT: the question is whether YouTube's shadow-img src population
+fires — probe indirectly: compare a yt-image's rendered pixels (screenshot crop) against
+its light-DOM fallback state; or use servo's image-cache instrumentation to see whether
+the shadow img URL is ever FETCHED (net logs for oar2/hqdefault requests per element).
+If shadow-img fetches never happen → framework-side population failure (YouTube JS);
+if fetches happen but no paint → servo shadow-image invalidation.
