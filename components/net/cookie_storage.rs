@@ -220,7 +220,8 @@ impl CookieStorage {
     // http://tools.ietf.org/html/rfc6265#section-5.3
     pub fn push(&mut self, mut cookie: ServoCookie, url: &ServoUrl, source: CookieSource) {
         // https://www.ietf.org/id/draft-ietf-httpbis-cookie-alone-01.txt Step 1
-        if cookie.cookie.secure().unwrap_or(false) && !url.is_secure_scheme() {
+        // localhost/127.0.0.1 are potentially-trustworthy — secure cookies must store there.
+        if cookie.cookie.secure().unwrap_or(false) && !url.is_potentially_trustworthy() {
             return;
         }
 

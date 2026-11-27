@@ -204,7 +204,9 @@ impl ServoCookie {
 
         // Step 13. If the request-uri does not denote a "secure" connection (as defined by the user agent),
         // and the cookie's secure-only-flag is true, then abort these steps and ignore the cookie entirely.
-        if secure_only && !request.is_secure_scheme() {
+        // localhost/127.0.0.1 are potentially-trustworthy origins per the secure-contexts
+        // spec — secure cookies must roundtrip there (cookieStore + Set-Cookie alike).
+        if secure_only && !request.is_potentially_trustworthy() {
             return None;
         }
 
@@ -367,8 +369,11 @@ impl ServoCookie {
             return false;
         }
 
-        // If the cookie's secure-only-flag is true, then the retrieval's URI must denote a "secure" connection
-        if self.cookie.secure().unwrap_or(false) && !url.is_secure_scheme() {
+        // If the cookie's secure-only-flag is true, then the retrieval's URI must denote a "secure" connection.
+        // Potentially-trustworthy origins (localhost, 127.0.0.1) count as secure per the
+        // secure-contexts spec — bare-scheme checking breaks cookieStore on localhost,
+        // which Chrome treats as a secure context.
+        if self.cookie.secure().unwrap_or(false) && !url.is_potentially_trustworthy() {
             return false;
         }
 
