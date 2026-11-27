@@ -664,6 +664,8 @@ pub(crate) struct Document {
     is_initial_about_blank: Cell<bool>,
     /// <https://dom.spec.whatwg.org/#document-allow-declarative-shadow-roots>
     allow_declarative_shadow_roots: Cell<bool>,
+    /// <https://html.spec.whatwg.org/multipage/#design-mode>
+    design_mode_enabled: Cell<bool>,
     /// <https://w3c.github.io/webappsec-upgrade-insecure-requests/#insecure-requests-policy>
     #[no_trace]
     inherited_insecure_requests_policy: Cell<Option<InsecureRequestsPolicy>>,
@@ -1305,6 +1307,11 @@ impl Document {
             // Step 2.
             Some(base) => base.frozen_base_url(),
         }
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#design-mode>
+    pub(crate) fn design_mode_enabled(&self) -> bool {
+        self.design_mode_enabled.get()
     }
 
     pub(crate) fn add_restyle_reason(&self, reason: RestyleReason) {
@@ -4631,6 +4638,7 @@ impl Document {
             status_code,
             is_initial_about_blank: Cell::new(is_initial_about_blank),
             allow_declarative_shadow_roots: Cell::new(allow_declarative_shadow_roots),
+            design_mode_enabled: Cell::new(false),
             inherited_insecure_requests_policy: Cell::new(inherited_insecure_requests_policy),
             has_trustworthy_ancestor_origin: Cell::new(has_trustworthy_ancestor_origin),
             intersection_observer_task_queued: Cell::new(false),
@@ -6161,6 +6169,32 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-document-hasfocus>
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-designmode>
+    fn DesignMode(&self) -> DOMString {
+        if self.design_mode_enabled.get() {
+            DOMString::from("on")
+        } else {
+            DOMString::from("off")
+        }
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-document-designmode>
+    fn SetDesignMode(&self, value: DOMString) {
+        // > On setting, the new value must be compared in an ASCII
+        // > case-insensitive manner to the string "on". If it matches, the
+        // > document's design mode must be enabled; otherwise it must be
+        // > disabled.
+        let enabled = value.eq_ignore_ascii_case("on");
+        if enabled == self.design_mode_enabled.get() {
+            return;
+        }
+        self.design_mode_enabled.set(enabled);
+        // Editing host state depends on this flag (the body element of a
+        // designMode-on document is an editing host), and style selectors
+        // like :read-write/:read-only depend on editing state — restyle.
+        self.add_restyle_reason(RestyleReason::DOMChanged);
+    }
+
     fn HasFocus(&self) -> bool {
         // <https://html.spec.whatwg.org/multipage/#has-focus-steps>
         //

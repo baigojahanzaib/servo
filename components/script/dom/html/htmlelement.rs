@@ -236,9 +236,15 @@ impl HTMLElement {
     /// <https://html.spec.whatwg.org/multipage/#editing-host>
     pub(crate) fn is_editing_host(&self) -> bool {
         // > An editing host is either an HTML element with its contenteditable attribute in the true state or plaintext-only state,
-        matches!(&*self.ContentEditable().str(), "true" | "plaintext-only")
-        // > or a child HTML element of a Document whose design mode enabled is true.
-        // TODO
+        if matches!(&*self.ContentEditable().str(), "true" | "plaintext-only") {
+            return true;
+        }
+        // > or the HTML body element of a Document whose design mode enabled is true.
+        // <https://html.spec.whatwg.org/multipage/#editing-host>
+        self.is_body_element() &&
+            self.upcast::<Node>()
+                .owner_doc()
+                .design_mode_enabled()
     }
 
     pub(crate) fn previously_focused_element(&self, no_gc: &NoGC) -> Option<DomRoot<Element>> {
