@@ -5654,3 +5654,13 @@ Fix 08325d65497 live on feather-engine. The full truth after instrumentation cha
   boot reliability after pulling. The remaining media adoption-context mismatch
   (sec1zt278) is real but untested-independence: element uncontrollable after cross-doc
   adoption — separate smaller fix, still open.
+
+## sec1zt281 — upstream picks + dom/elements cluster debunked (2026-11-27)
+Upstream last-checked sha now 461f99fc59f. Cherry-picked live (9c2558929c8):
+74e17f9c485 webdriver navigation-state sync, fdc6077f3a5 NavigationTiming duration,
+461f99fc59f xpath id() first-element, e667861e269 attribute borrow hazard,
+60019507770 input internal value. SKIPPED adc82a5434c (xr-only). 806d6369990 weak-ref
+elements still deferred (big/risky).
+DEBUNK: /html/dom/elements "34 unexpected" is a mirage — ~33 are dir-shadow PASS where
+upstream expects FAIL: positive deltas from OUR :dir() fix (c652b3e1aa3), not bugs.
+Leaves-doc targeting for that row is void; the cluster is closed.
