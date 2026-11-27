@@ -5103,3 +5103,30 @@ remove via ToggleBookmark, open via Action::Open{url,title:None}), toolbar.rs
 menu row after History. HISTORY UI (batch item 3) ALREADY EXISTED fully
 (search/filter/clear/remove rows) — verification-only. FIND-IN-PAGE still
 untouched — implement the eval route per handoff-daily-driver-essentials.
+
+## find-in-page-shipped 2026-11-27 (mac lane, shell-side implementation)
+
+Find-in-page implemented shell-side via evaluate_javascript (servo has NO
+native find API; window.find unimplemented in Window.webidl). Mechanism:
+TreeWalker text-node walk, split+wrap matches in <span class=__ff_hit> with
+inline background styles (real DOM elements — render in any engine state),
+active match recolored + scrollIntoView. Count correct on first shot
+(111/111 on probe page incl. substring overlap rows). Skip list:
+SCRIPT/STYLE/NOSCRIPT/TEXTAREA/INPUT/SELECT/OPTION/contentEditable/[hidden].
+
+KEY ENGINE EVIDENCE for the paint-invalidation family (compounds
+serp-ghost-repro-POSITIVE): DOM mutations injected through eval do NOT
+repaint immediately — highlights/probe-div appear only after a subsequent
+frame trigger (scroll or another mutation). Verified: computed style and
+layout geometry correct in DOM (orange rgba active, 45x16 rect) while
+screen shows nothing. So servo's mutation→repaint path has latency/dropped
+invalidation even WITHOUT scroll-in-flight — the damage-rect suspect in
+serp-ghost is part of a broader invalidation starvation issue, not only a
+scroll-interaction bug. Engine lane: instrument script-initiated reflow →
+compositor frame production on a static page; expect missing or delayed
+damage generation.
+
+egui gotcha banked: singleline TextEdit consumes Enter as focus-loss —
+detect submission via lost_focus()+key_pressed(Enter), then re-request
+focus. keystroke leakage: main.rs already gates page key forwarding on
+egui_wants_keyboard_input — once egui focus is real, no leak.
