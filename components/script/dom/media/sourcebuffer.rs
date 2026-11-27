@@ -57,6 +57,9 @@ pub(crate) struct SourceBuffer {
     /// "reading large block of size 98144024"). Chunks are cut exactly on
     /// cluster/moof boundaries instead.
     refeed_queue: script_bindings::cell::DomRefCell<std::collections::VecDeque<Vec<u8>>>,
+    /// Wall-clock anchor for the post-seek refeed settle window — set in
+    /// handle_seek. Turn-counting cannot measure time on an idle event loop.
+    seek_instant: script_bindings::cell::DomRefCell<Option<std::time::Instant>>,
 }
 
 /// Cap on retained media bytes per track — mirrors the engine-side appsrc
@@ -80,6 +83,7 @@ impl SourceBuffer {
             webm_indexer: script_bindings::cell::DomRefCell::new(crate::dom::media::ebml::WebmIndexer::new()),
             retained: script_bindings::cell::DomRefCell::new(Vec::new()),
             refeed_queue: script_bindings::cell::DomRefCell::new(std::collections::VecDeque::new()),
+            seek_instant: script_bindings::cell::DomRefCell::new(None),
         }
     }
 
@@ -109,6 +113,7 @@ impl SourceBuffer {
         self.needs_init_refeed.set(true);
         self.webm_indexer.borrow_mut().reset();
         self.prepare_cluster_aligned_refeed(seek_target);
+        *self.seek_instant.borrow_mut() = Some(std::time::Instant::now());
         self.refeed_retained(seek_target, 0, 0);
     }
 
@@ -281,18 +286,28 @@ impl SourceBuffer {
         // success because it only means "handed to the media thread" (verified
         // sec1zt124). Burn the first ~90 event-loop turns (~1.5s at 60fps)
         // before the first chunk so the state cycle has completed.
-        if retries < 90 && self.refeed_queue.borrow().len() > 0 && _fragment_index == 0 {
-            let this = Trusted::new(self);
-            let queue_not_yet_started = self.refeed_queue.borrow().len();
-            let _ = queue_not_yet_started;
-            self.global()
-                .task_manager()
-                .media_element_task_source()
-                .queue(task!(mse_refeed_settle: move |_cx| {
-                    let this = this.root();
-                    this.refeed_retained(seek_target, 0, retries + 1);
-                }));
-            return;
+        // Wall-clock settle, NOT turn counting: media_element_task_source
+        // tasks run back-to-back on an idle loop, so 90 turns can elapse in
+        // milliseconds — the turn-count version of this never actually
+        // waited, and the first refeed chunk landed in the mid-teardown
+        // pipeline (round-5 ordering anomaly: push before ready/restore).
+        if _fragment_index == 0 && !self.refeed_queue.borrow().is_empty() {
+            let elapsed = self
+                .seek_instant
+                .borrow()
+                .map(|t| t.elapsed().as_millis())
+                .unwrap_or(u128::MAX);
+            if elapsed < 1500 {
+                let this = Trusted::new(self);
+                self.global()
+                    .task_manager()
+                    .media_element_task_source()
+                    .queue(task!(mse_refeed_settle: move |_cx| {
+                        let this = this.root();
+                        this.refeed_retained(seek_target, 0, retries + 1);
+                    }));
+                return;
+            }
         }
         let chunk = self.refeed_queue.borrow_mut().pop_front();
         let Some(bytes) = chunk else {
