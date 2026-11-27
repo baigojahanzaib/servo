@@ -3097,8 +3097,11 @@ fn set_the_sec_fetch_site_header(r: &mut Request) {
     // Step 3. Set header’s value to same-origin.
     let mut header = SecFetchSite::SameOrigin;
 
-    // TODO: Step 3. If r is a navigation request that was explicitly caused by a
+    // Step 4. If r is a navigation request that was explicitly caused by a
     // user’s interaction with the user agent, then set header’s value to none.
+    if r.is_navigation_request() && r.browser_initiated {
+        header = SecFetchSite::None;
+    }
 
     // Step 5. If header’s value is not none, then for each url in r’s url list:
     if header != SecFetchSite::None {
