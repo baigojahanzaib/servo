@@ -4246,3 +4246,17 @@ KEY DESIGN FACT: prompt_user_from_embedder ALREADY does sync channel+recv from t
 thread — sync embedder queries are precedented, no store-push complexity needed.
 NOTE: invocation cache (step 5-7) is per-global so cross-page consistency now correct;
 revocation within a page still cached (spec-tolerable).
+
+## sec1zt157 — permissions.query e2e: STILL PROMPT despite seeded store (negative, two suspects)
+E2E on fresh binary: seeded store http://localhost:8411|Geolocation=true, query() returns
+state:prompt. The store-key derivation in the shell query impl is IDENTICAL to the proven
+request path (persisted-allow verified in sec1zt145), so a plain key miss is unlikely.
+Two remaining suspects: (a) recv() errors — sender dropped because the QueryPermissionState
+message handling never completes/never fires on this call path, falling back to Prompt
+(test: eprintln in shell query_permission_state + in servo.rs arm — if neither prints, the
+message isn't being processed; the difference vs the prompt path is that prompt responses
+are LATE/async while query expects inline answering — possible event-loop re-entrancy issue:
+script thread blocked in recv while the constellation/servo loop that would process the
+message is somehow dependent); (b) webview.url() empty at query time in the shell delegate.
+NEXT DEBUG STEP: add eprintln instrumentation at all three points (script send, servo arm,
+shell impl) — one build cycle localizes it exactly.
