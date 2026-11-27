@@ -919,7 +919,15 @@ impl GStreamerPlayer {
         signal_adapter.connect_position_updated(move |_, position| {
             run_callback_guarded(|| {
                 if let Some(seconds) = position.map(|p| p.seconds_f64()) {
-                    let _ = notify!(observer, PlayerEvent::PositionChanged(seconds));
+                    // Post-seek the pipeline stream-time restarts at zero, so
+                    // the raw position reports time-since-seek. The seek target
+                    // captured in mse_position_offset re-anchors it to
+                    // presentation time (zero before the first seek — free).
+                    let offset = weak_inner_pos
+                        .upgrade()
+                        .map(|inner| inner.lock().unwrap().mse_position_offset.get())
+                        .unwrap_or(0.0);
+                    let _ = notify!(observer, PlayerEvent::PositionChanged(seconds + offset));
                 }
             });
         });
