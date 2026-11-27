@@ -3944,3 +3944,12 @@ Chain so far: root cause = browsing context registers only when FIRST load commi
 
 ## sec1zt143 — timeout-regression FIXED+VERIFIED round-3 PASS (2026-11-27)
 Round-3 verification PASS end-to-end: 34s hang then same-tab navigation fires GET immediately, /ok renders, eval live (rs:complete), SECOND follow-up navigation also works — genuine recovery. Full chain confirmed in log: fallback resolution → supersede close_pipeline discard=No → activity passes → new pipeline spawns → load commits. Zero error-class warnings. The timeout-regression (Windows' top stability bug) is CLOSED on Linux — Windows lane should re-verify their original repro. The three-part fix on feather-engine: (1) embedder LoadUrl pending-pipeline fallback + new_browsing_context_info transfer through supersede, (2) load_url context-lookup fallback to pending metadata, (3) activity check keys on missing-context not drained pending-changes. RESIDUALS documented: input events during the hang itself still dropped (unknown pipeline for input event — cosmetic post-fix); the [timeout-instr] close_pipeline/close_browsing_context instrumentation remains in the engine — decide keep-or-strip (useful for future forensics, one line per close, cheap); eager-registration redesign documented in sec1zt142 as the architectural cleanup. Symptom final index entry — Symptom: any timed-out/hung load kills all subsequent navigations in the tab, constellation logs 'unknown browsing context' or silent death after supersede → check: whether the FIRST load committed (browsing context registration is commit-gated); the three limbo traps are load_url lookup, embedder LoadUrl lookup, get_activity.
+
+## sec1zt144 — backward-seek ACCEPTANCE BAR FULLY MET (round-10)
+Round-10 PASS on local MSE harness (:8377, bbb60.webm): four alternating seeks all land and
+play, positions AT-target (fwd 30→T30.18, bwd 5→T5.47, bwd 2→T2.17 — round-9's residual
+restarting-near-2.3s gone), zero demux errors, zero panics, no deadlock from the
+position-update mutex path. The mse_position_offset wiring fix (a4922916078) verified correct.
+Mission complete per coordinator's bar: "backward seek lands and plays, forward seek still
+works, repeated seeks in both directions". Quality-switch interaction untestable (bot wall).
+Residual cosmetic: playback initially advances faster than realtime (burst catch-up).
