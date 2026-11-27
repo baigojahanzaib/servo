@@ -304,7 +304,12 @@ impl SourceBuffer {
                     .media_element_task_source()
                     .queue(task!(mse_refeed_settle: move |_cx| {
                         let this = this.root();
-                        this.refeed_retained(seek_target, 0, retries + 1);
+                        // retries stays 0 during settling: the re-poll chain
+                        // runs back-to-back, so counting re-polls toward the
+                        // 400-cap exhausts it in milliseconds — long before
+                        // the wall-clock window — and the chain silently died
+                        // with zero bytes delivered (round-6 regression).
+                        this.refeed_retained(seek_target, 0, 0);
                     }));
                 return;
             }
