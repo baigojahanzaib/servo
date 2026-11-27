@@ -6067,6 +6067,7 @@ blast radius. Verify with aol.com nav completing + execute probes alive. REPRO h
 also worth checking whether document.evaluate heavy loops in WPT explain residual
 timeouts.
 
+
 ## Non-http scheme investigation chain (macOS lane, 2026-11-28)
 file:// AND data: both blank in feather — generalized defect, not file-specific.
 Document never even parses (title-marker probe). servo embedding library is
@@ -6080,3 +6081,19 @@ omnibox normalize() mangles data:/blob:/about: (no "://" in those schemes).
 DISK WARNING: cargo registry cache was deleted to survive a disk-full crisis —
 first rebuild re-downloads crates (+3-5min). servoshell binary build INFEASIBLE
 on this box (feature-variant deps double-compile 8GB tree).
+||||||| parent of c8698004cdc (mem: unroot fix shipped + residual aol analysis)
+
+
+## sec1zt299 — unroot quadratic fix SHIPPED; residual aol cost is genuine JS eval (2026-11-28)
+O(1) unroot fix live on feather-engine (hash side-index ptr→(count,pos), validate-or-scan
+fallback, swap-remove fixup). Verified the aol spin no longer contains unroot frames — the
+hotspot moved into JIT'd JS itself: the residual wedge is genuine evaluation cost, either
+massive intermediate node-set churn in servo_xpath (traverse_preorder over huge documents
+per query, filter_map allocation cascades) or JS-loop-level repetition of xpath queries.
+NEXT investigation: capture WHAT xpath aol runs (instrument document.evaluate logging or
+JS profile) and whether the blowup is per-query algorithmic (node-set sizes exploding
+combinatorially across multi-step paths) or repetition-driven. ALSO NOTE: the unroot fix
+is engine-wide hot-path infrastructure — WPT baseline re-run warranted when convenient;
+smoke tests passed (navs, 2605-node xpath results, alloc churn). HARNESS: /tmp/aolhunt.py
+auto-captures spinning script threads with gdb; /tmp/smoke.py.
+
