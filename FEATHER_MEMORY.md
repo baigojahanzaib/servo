@@ -6046,3 +6046,21 @@ not memory-only 9182287bf. Harness: /tmp/wedge-repro-final.py — REPRO RECIPE N
 navigating directly to a hanging image URL does NOT hang (image-document wrapper
 completes instantly); must embed as subresource in HTML page. Server dies over time —
 restart hangsrv.py before use. DEFECT CLOSED.
+
+## sec1zt307 — leaf rebase post-all-fixes: what actually remains (2026-11-28)
+The targeting-doc leaf list (feather#321) is largely INVALIDATED — most rows were
+input-wedge artifacts. Rebased against the evening baseline (post object-fix):
+REMAINING ACTIONABLE, bottom-up:
+1. fieldset/legend containing-block layout — reftest FAILs (fieldset-containing-block,
+   fieldset-transform-translatez, legend-float). Real-web visible: forms render wrong.
+   Reftest hashes differ = layout geometry bug in fieldset abs-pos containing block.
+   MEDIUM difficulty, highest real-web value of remaining leaves.
+2. canvas 2d.layer blur/filter FAILs (~4) — niche, low priority.
+3. location_replace_session_history ERROR (was TIMEOUT-expected — actually an
+   expectations artifact: ERROR vs expected TIMEOUT both mean broken upstream; needs solo look).
+4. COOP/COEP reporting timeouts — blocked on net-stack reporting infra (multi-day).
+5. timed waitAsync segfault — ONLY remaining crash mechanism; needs mozjs vendoring.
+CLOSED-BY-FIX leaves (do not re-hunt): Location setter edges (15+ subtests — were wedge
+artifacts, now pass), pageswap, most history-traversal rows, cssom crash.
+NEXT SESSION: start with fieldset containing-block — read the spec section on fieldset
+layout + the reftest, implement in components/layout/flow/ (block.rs fieldset handling).
