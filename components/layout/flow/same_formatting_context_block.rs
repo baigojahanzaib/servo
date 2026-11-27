@@ -518,6 +518,35 @@ impl SameFormattingContextBlock {
                             let current_center = rect.origin.y + legend_height / 2;
                             let shift = target_center - current_center;
                             new_rect.origin.y += shift;
+
+                            // Spec: the allocated border space REPLACES the border
+                            // thickness for layout — in-flow content after the legend
+                            // must start at allocated+padding from the border-box top,
+                            // not at border+padding+legend-height. Normal flow already
+                            // consumed the legend's height, so pull subsequent content
+                            // up by the difference. (Margins on the legend are not
+                            // accounted; legend margins are rare in practice.)
+                            let content_pull_up =
+                                pbm.border.block_start + legend_height - allocated;
+                            if content_pull_up > Au::zero() {
+                                let legend_ptr = legend as *const Fragment;
+                                for child in children.iter() {
+                                    if std::ptr::eq(child as *const Fragment, legend_ptr) {
+                                        continue;
+                                    }
+                                    // Only shift in-flow boxes below the legend: those
+                                    // whose block-start origin is at or below the
+                                    // legend's original in-flow position.
+                                    if let Some(child_base) = child.base() {
+                                        let mut child_rect = child_base.rect();
+                                        if child_rect.origin.y >= rect.origin.y + legend_height
+                                        {
+                                            child_rect.origin.y -= content_pull_up;
+                                            child_base.set_rect(child_rect);
+                                        }
+                                    }
+                                }
+                            }
                         }
                         base.set_rect(new_rect);
                     }
