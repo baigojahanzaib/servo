@@ -5976,3 +5976,17 @@ the skeleton ships mini-guide hidden BY DEFAULT and the upgrade path that unhide
 be gated on client-capability detection). PRIORITY-ORDER candidate for next probe: compare
 the full served HTML/JS payload servo-UA vs chrome-UA — bot/unknown-UA degradation is the
 most likely remaining mechanism and cheap to test (diff curl responses). Harnesses durable.
+
+## sec1zt295 — youtube-nav: UA hypothesis refuted — investigation bounded (2026-11-27)
+Clean Firefox UA (no Servo token, --user-agent override) — mini-guide STILL hidden, same
+appAttrs. UA degradation refuted. INVESTIGATION STATE: every servo-side layer cleared with
+live evidence (CSS cascade, theme tokens, custom elements upgrade, all media-query
+machinery incl change events, boot completeness, UA). The wrong branch is inside YouTube's
+obfuscated polymer state logic — further progress needs either (a) side-by-side servo vs
+chrome property diffing of ytd-app internals, or (b) breakpointing YouTube's guide-state
+setter in devtools — both require a dedicated deep-debug session. POSSIBLY RELATED: check
+js error console early in boot — a single thrown exception in a polymer event handler
+upstream of guide-state init would produce exactly this symptom (everything boots except
+one behavior chain). Cheapest next probe: capture window error events + console errors
+during boot (webdriver inject addEventListener('error') collector via early script or
+check servo stderr for js error reports). All harnesses /tmp/ytnav*.py durable.
