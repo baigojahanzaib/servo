@@ -876,7 +876,16 @@ impl GStreamerPlayer {
                 // paused flag stays false forever and a later replay never forwards
                 // a fresh play() into the pipeline, freezing replay after EOS.
                 if let Some(inner_clone) = weak_inner.upgrade() {
-                    inner_clone.lock().unwrap().paused.set(true);
+                    // Never block on the PlayerInner mutex from a gstreamer
+                    // callback: the control path holds it across blocking gst
+                    // calls, so blocking here completes an ABBA deadlock cycle
+                    // (script thread wedged in gst_pad_set_active, callbacks
+                    // wedged on this mutex — verified via gdb on a live wedge).
+                    // State writes skipped under contention converge on the
+                    // next emission; a wedged browser does not recover at all.
+                    if let Some(inner) = inner_clone.try_lock().ok() {
+                        inner.paused.set(true);
+                    }
                 }
                 let _ = notify!(observer, PlayerEvent::EndOfStream);
             });
@@ -898,7 +907,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                inner_clone.lock().unwrap().play_state = play_state;
+                if let Ok(mut inner) = inner_clone.try_lock() {
+                    inner.play_state = play_state;
+                }
 
                 let state = match play_state {
                     gstreamer_play::PlayState::Buffering => Some(PlaybackState::Buffering),
@@ -925,7 +936,7 @@ impl GStreamerPlayer {
                     // presentation time (zero before the first seek — free).
                     let offset = weak_inner_pos
                         .upgrade()
-                        .map(|inner| inner.lock().unwrap().mse_position_offset.get())
+                        .and_then(|inner| inner.try_lock().ok().map(|i| i.mse_position_offset.get()))
                         .unwrap_or(0.0);
                     let _ = notify!(observer, PlayerEvent::PositionChanged(seconds + offset));
                 }
@@ -952,7 +963,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                let mut inner = inner_clone.lock().unwrap();
+                let Ok(mut inner) = inner_clone.try_lock() else {
+                    return;
+                };
 
                 if inner.last_metadata.as_ref() == Some(&metadata) {
                     return;
@@ -1025,7 +1038,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                let mut inner = inner_clone.lock().unwrap();
+                let Ok(mut inner) = inner_clone.try_lock() else {
+                    return;
+                };
                 if let Some(ref mut metadata) = inner.last_metadata
                     && metadata.duration != duration
                 {
