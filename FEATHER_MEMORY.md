@@ -4514,3 +4514,20 @@ SHIPPED (feather#287): font-variations (real impl: font.rs:307 variation axes), 
 layout implementation (grep components/layout for multicol = nothing); test: 300 words same height
 in 1-col vs 3-col. ENABLING-HOLLOW-IS-WORSE-THAN-ABSENCE: sites lose graceful single-column fallback.
 text-orientation red in matrix was flake/stale — computes 'upright' correctly live.
+
+## sec1zt175 — layout-pref phase-2 surface: gated properties need pref FIELDS added (engine work)
+Critical correction to sec1zt174: 'pref-not-in-servo-config' does NOT mean ungated — verified
+counter-reset/hyphens/appearance/scroll-behavior all compute EMPTY even when parsed (style attr
+retains text, computed style empty). servo prefs are a FIXED struct (components/config/prefs.rs)
+— properties whose servo_pref has no struct field are permanently gated off; enabling requires
+ADDING pref fields to servo config first, then feather opt-in.
+Implementation-depth pre-screen (grep components/layout + fonts):
+- appearance: layout/mod.rs hit — plausible-real, TOP CANDIDATE (appearance:none ubiquitous in
+  modern CSS form resets)
+- hyphens: fonts/query.rs hit — plausible-real, moderate value
+- scroll-behavior/masking/transform-box/overscroll: no layout hits — likely parse-only hollow,
+  verify before enabling (enabling hollow = worse than absence, sec1zt174)
+- counters: niche — servo list numbering works through a separate internal path
+NEXT-SESSION BATCH RECIPE: add pref struct fields (default false) for appearance+hyphens first,
+enable in feather, probe computed non-empty + one behavioral check each; batch per round like
+batch-1. Est. small engine diff + shell prefs + verification cycle per candidate.
