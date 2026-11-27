@@ -655,8 +655,6 @@ pub enum MediaSessionEvent {
     SetPositionState(MediaPositionState),
 }
 
-/// The embedder's answer to a `permissions.query()` state lookup: what the
-/// persisted/user decision currently is for an origin+feature pair. `Prompt`
 /// Enum with variants that match the DOM PermissionName enum
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub enum PermissionFeature {
