@@ -4976,3 +4976,4 @@ auto-reloads are explained, and persist crash events to the crashes dir
 alongside the hang artifacts already written there.
 VERIFY: FEATHER_TESTUTILS=1 ServoTestUtils.panic() injection covers crash;
 hang verification via the youtube-seek wedge repro or a busy-loop test page.
+## sec1zt240 — srcdoc nav-block SHIPPED 76c84f93baf (verified live). Trio status: srcdoc DONE; Location-setter edges unexamined; x-origin-topnav activation gate REQUIRES transient-activation primitive that servo lacks entirely — multi-day, defer unless directed. NAV-COMPLETION FAMILY NOTE: navigate() in location.rs is 'ostensibly the navigate algorithm but spec has greatly deviated' per servo's own comment — the completion-signaling timeouts cluster likely lives in this deviation; any systematic pass starts at components/script/dom/window/location.rs:navigate + constellation load bookkeeping.
