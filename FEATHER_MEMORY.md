@@ -4065,3 +4065,17 @@ Methodology note: xdotool input coordinates must hit the feather window geometry
 "youtube doesn't scroll" reading was measurement error (clicks landing above the window).
 YouTube uses CLOSED shadow roots for yt-image (shadowRoot null is spec-correct), but the
 defective thumbs are plain light-DOM imgs — shadow DOM is irrelevant to this defect.
+
+## sec1zt150 — late-image hunt: simple repros all PASS (negative results)
+Minimal repros on localhost all render fine — exonerated mechanisms:
+- img.src set 2s/6s after paint (explicit dims) — RENDERS
+- new Image() node inserted post-paint — RENDERS
+- src set with no width/height attrs — RENDERS (natural size)
+- (hidden-parent untested visually but others passing makes it unlikely)
+CONCLUSION: the youtube defect is NOT generic late-src or node-insertion. Remaining
+suspects narrow to: (a) images inside yt-image light-DOM fallback slots — YouTube's pattern
+is a light-DOM img INSIDE a custom element host; if upgrade replaces/hides it and the shadow
+copy is what should render, servo's shadow-image paint path is the suspect; (b) something in
+YouTube's specific visibility/upgrade sequencing. Next discriminator: check the black thumbs'
+parent chain — if the light-DOM img is a child of yt-image, test whether servo paints images
+inside shadow roots at all (simple open-shadow repro with img inside attachShadow).
