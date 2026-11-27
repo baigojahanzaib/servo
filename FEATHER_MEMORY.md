@@ -3825,3 +3825,10 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 ### Verification status
 - compile-clean (cargo check release, zero errors)
 - constructor-level matrix probes authored; live trusted-drag verification harness: tests/scenarios/pages/drag-drop.html records event sequence into window.__dragLog (src/tgt are big colored boxes at fixed positions for computer-tool drags)
+
+## sec1zt129 — crash isolation phase-1: linux native-crash artifacts (2026-11-27)
+- Status: stage-0 (panic recovery) was already merged+verified. NEW: linux SIGSEGV/SIGABRT/SIGBUS/SIGILL/SIGFPE handler in shell-new crashdump_linux.rs — writes crash-native-<ts>.log (signal, fault addr, tid, thread name, force_capture backtrace) then re-raises with SIG_DFL for stock death semantics. Self-test hook: FEATHER_CRASH_TEST=native segfaults a throwaway thread 2s post-launch.
+- Paths fixed per user directive: crash artifacts go to dirs::data_dir()/feather/crashes (~/.local/share/feather/crashes) — NEVER /tmp (snapshot-wiped) and NOT exe-relative (read-only in real installs). Both the native handler AND the older panic-crash writer in main.rs updated.
+- The round-2 backward-seek silent death is the exemplar reproducible native crash: once artifacts capture, that death class becomes classifiable instead of silent.
+- Async-signal-safety note: backtrace capture allocates — technically unsound in a handler, universally done in crash reporters; the one-shot CAPTURED guard prevents recursive capture.
+- Four crash classes taxonomy (per coordinator): engine-rust-panic (covered stage-0), shell-rust-panic (panic hook writes artifact), native-signal (NOW covered), hang/watchdog (watchdog already logs stalls; no artifact — future).
