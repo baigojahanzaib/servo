@@ -5492,3 +5492,25 @@ check whether htmlmediaelement adoption path triggers player recreation at all, 
 the generation-serialized reset logic (1883f8d3435) covers it; (2) webdriver: implement the
 script timeout so never-resolving async scripts return timeout instead of hanging the transport.
 Full bt at /tmp/media-bt.txt.
+
+## sec1zt275 — media adoption wedge: analysis state for implementation (2026-11-27)
+Findings: (1) htmlmediaelement adopting_steps (htmlmediaelement.rs:3978) does NOT touch
+video_renderer — frame renderer keeps the OLD document's task_source after cross-document
+adoption. (2) pause/play are thin gstplay delegates (player.rs:256-296), no serialization —
+the generation-serialized reset only covers MSE seeks, NOT progressive pause/play cycles.
+(3) bt analysis refinement: BOTH audio and video sinks wait in preroll — audio doesn't
+depend on frame rendering, so the wedge is upstream of frame consumption: the pipeline is
+stuck in a PAUSED/preroll state and never transitions to PLAYING. Sinks waiting in preroll
+with full queues is the correct behavior for a paused pipeline — the defect is the pipeline
+never resuming. (4) PauseIfNotInDocument microtask fires on unbind-before-adoption —
+suspect sequence: unbind queues pause microtask → pause executes (pipeline PAUSED, sinks
+enter preroll-wait) → adoption completes but nothing resumes playback. Spec: moving a
+playing media element across documents must NOT pause it. Even if the microtask correctly
+no-ops when the element is re-inserted, the pause may execute BEFORE reinsertion completes.
+NEXT: read MediaElementMicrotask::PauseIfNotInDocument handler (htmlmediaelement.rs:4048)
+and the exact spec timing — fix likely = cancel/no-op the pause when the element is in a
+document at microtask execution time (may already exist — verify), or don't pause at all
+when adoption is in progress. ALSO the deeper progressive-playback wedge: if pause during
+preroll wedges the pipeline (state never completes), the seek-fix serialization pattern
+needs generalizing to progressive pause/play. Repro test stands: single-test mach invocation
+in sec1zt274.
