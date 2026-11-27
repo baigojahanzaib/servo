@@ -195,11 +195,30 @@ mod imp {
                     // into the live clock domain: pts(target) -> base + 0.
                     let mut segment =
                         gstreamer::FormattedSegment::<gstreamer::ClockTime>::new();
-                    if let Some((target, base_ns)) = *self.pending_resequence.lock().unwrap() {
+                    if let Some((target, _base_ns)) = *self.pending_resequence.lock().unwrap() {
                         segment.set_start(gstreamer::ClockTime::from_nseconds(
                             (target * 1_000_000_000.0) as u64,
                         ));
-                        segment.set_base(gstreamer::ClockTime::from_nseconds(base_ns));
+                        // Base MUST be the live running time at this injection
+                        // moment — not the seek-moment value passed in, and
+                        // never 0. Pipeline running time does NOT restart
+                        // across the Ready cycle (gst re-bases for continuity
+                        // on READY->PLAYING), so a 0/stale base maps refed
+                        // frames into the past: preroll frame renders (sinks
+                        // present it regardless of timestamps) then every
+                        // subsequent buffer is dropped as too-late — the
+                        // exact round-5 symptom. Computing base here, at the
+                        // first post-reset push, aligns pts(target) with NOW:
+                        // immediate display, subsequent frames in real time.
+                        let live_base = (|| {
+                            let clock = self.obj().clock()?;
+                            let now = clock.time().nseconds();
+                            let bt = self.obj().base_time().map(|b| b.nseconds()).unwrap_or(0);
+                            Some(now.saturating_sub(bt))
+                        })()
+                        .unwrap_or(0);
+                        eprintln!("[mse] resequence base live={} passed={}", live_base, _base_ns);
+                        segment.set_base(gstreamer::ClockTime::from_nseconds(live_base));
                     }
                     let r3 = srcpad.push_event(gstreamer::event::Segment::new(&segment));
                     eprintln!(

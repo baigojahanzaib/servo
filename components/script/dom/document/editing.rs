@@ -490,6 +490,29 @@ impl Document {
             return;
         }
 
+        // An HTML5 drag session takes precedence over selection dragging when
+        // the press lands on a draggable element.
+        // <https://html.spec.whatwg.org/multipage/dnd.html#dndevents>
+        if let Some(draggable) =
+            crate::drag::html_drag::HtmlDragHandler::first_draggable_inclusive_ancestor(
+                &hit_test_result.node,
+            )
+        {
+            use crate::dom::bindings::inheritance::Castable;
+            let point = euclid::Point2D::new(
+                hit_test_result.point_in_frame.x,
+                hit_test_result.point_in_frame.y,
+            );
+            self.event_handler().install_drag_gesture(DragGesture::new(
+                DragHandler::Html(crate::drag::html_drag::HtmlDragHandler::new(
+                    draggable.upcast::<crate::dom::node::Node>(),
+                    point,
+                )),
+            ));
+            mouse_event.upcast::<Event>().mark_as_handled();
+            return;
+        }
+
         let Some(action) = MouseButtonSelectionAction::from_mouse_event(mouse_event) else {
             return;
         };

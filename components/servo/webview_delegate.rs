@@ -10,7 +10,8 @@ use embedder_traits::{
     ConfirmResponse, ConsoleLogLevel, ContextMenuAction, ContextMenuElementInformation,
     ContextMenuItem, Cursor, EmbedderControlId, EmbedderControlResponse, FilePickerRequest,
     FilterPattern, InputEventId, InputEventResult, InputMethodType, LoadStatus, MediaSessionEvent,
-    NewWebViewDetails, Notification, PermissionFeature, PromptResponse, RgbColor, ScreenGeometry,
+    EmbedderPermissionState, NewWebViewDetails, Notification, PermissionFeature, PromptResponse,
+    RgbColor, ScreenGeometry,
     SelectElementOptionOrOptgroup, SelectElementRequest, SimpleDialogRequest, TraversalId,
     WebResourceRequest, WebResourceResponse, WebResourceResponseMsg,
 };
@@ -1076,15 +1077,14 @@ pub trait WebViewDelegate {
     /// reading a cached value or querying the user for permission via the user interface.
     fn request_permission(&self, _webview: WebView, _request: PermissionRequest) {}
 
-    /// `permissions.query()` — the embedder answers what the current persisted
-    /// decision is for this origin+feature, without any user interface. The
-    /// default is `Prompt`, matching the spec when no decision is stored.
+    /// Answer the stored permission state for a feature without prompting.
+    /// Default: always prompt, matching pre-plumbing behavior.
     fn query_permission_state(
         &self,
         _webview: WebView,
         _feature: PermissionFeature,
-    ) -> embedder_traits::EmbedderPermissionState {
-        embedder_traits::EmbedderPermissionState::Prompt
+    ) -> EmbedderPermissionState {
+        EmbedderPermissionState::Prompt
     }
 
     /// Request that the embedder supply credentials to use for HTTP authentication.

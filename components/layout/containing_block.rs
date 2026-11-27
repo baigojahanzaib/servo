@@ -226,6 +226,23 @@ impl ContainingBlockSize {
             self.maybe_quirky_block_size.to_definite()
         }
     }
+
+    /// <https://drafts.csswg.org/css-writing-modes/#orthogonal-flows>
+    /// The containing block size with axes swapped, for laying out a box whose
+    /// writing mode is orthogonal to its containing block's. When the parent's
+    /// block size is indefinite, the spec defines a fallback chain; as a
+    /// reasonable approximation we fall back to the parent's inline size.
+    #[inline]
+    pub fn swapped_axes(&self) -> Self {
+        let swapped_inline = self
+            .block_size()
+            .unwrap_or(self.inline_size);
+        Self {
+            inline_size: swapped_inline,
+            maybe_quirky_block_size: SizeConstraint::Definite(self.inline_size),
+            has_quirky_block_size: HasQuirkyBlockSize(false),
+        }
+    }
 }
 
 pub(crate) struct ContainingBlock<'a> {

@@ -51,6 +51,15 @@ pub(crate) struct SourceBuffer {
     /// retention and re-feed. Without this, spec-correct players (youtube)
     /// never re-append post-seek and playback starves (sec1zt119/123).
     retained: script_bindings::cell::DomRefCell<Vec<(f64, f64, Vec<u8>)>>,
+    /// Cluster/moof-aligned re-feed chunks computed at seek time. Appends are
+    /// not cluster-aligned, so re-feeding per-append bytes hands the demuxer
+    /// a mid-cluster guillotined stream it parses as garbage (sec1zt126 —
+    /// "reading large block of size 98144024"). Chunks are cut exactly on
+    /// cluster/moof boundaries instead.
+    refeed_queue: script_bindings::cell::DomRefCell<std::collections::VecDeque<Vec<u8>>>,
+    /// Wall-clock anchor for the post-seek refeed settle window — set in
+    /// handle_seek. Turn-counting cannot measure time on an idle event loop.
+    seek_instant: script_bindings::cell::DomRefCell<Option<std::time::Instant>>,
 }
 
 /// Cap on retained media bytes per track — mirrors the engine-side appsrc
@@ -73,6 +82,8 @@ impl SourceBuffer {
             track_id: Cell::new(0),
             webm_indexer: script_bindings::cell::DomRefCell::new(crate::dom::media::ebml::WebmIndexer::new()),
             retained: script_bindings::cell::DomRefCell::new(Vec::new()),
+            refeed_queue: script_bindings::cell::DomRefCell::new(std::collections::VecDeque::new()),
+            seek_instant: script_bindings::cell::DomRefCell::new(None),
         }
     }
 
@@ -101,7 +112,179 @@ impl SourceBuffer {
     pub(crate) fn handle_seek(&self, seek_target: f64) {
         self.needs_init_refeed.set(true);
         self.webm_indexer.borrow_mut().reset();
+        self.prepare_cluster_aligned_refeed(seek_target);
+        *self.seek_instant.borrow_mut() = Some(std::time::Instant::now());
         self.refeed_retained(seek_target, 0, 0);
+    }
+
+    /// Concatenate retained fragments in time order, scan for cluster/moof
+    /// boundaries, and cut the re-feed exactly on them. Concatenation order
+    /// matters: players append in stream order, so time-sorted fragments
+    /// reconstruct the original byte stream (gaps from forward seeks and
+    /// eviction aside — the boundary scan degrades gracefully there because
+    /// the first boundary after the seek target still demuxes).
+    fn prepare_cluster_aligned_refeed(&self, seek_target: f64) {
+        // NO time-sort: insertion order is append order is byte order.
+        // Sorting by scanned timekeys scrambled contiguous fragments whenever
+        // keys were missing or duplicated — the round-8 byte-stream scramble.
+        let frags: Vec<(f64, f64, Vec<u8>)> = self.retained.borrow().clone();
+        let mut stream = Vec::new();
+        for (_, _, bytes) in &frags {
+            stream.extend_from_slice(bytes);
+        }
+        if stream.is_empty() {
+            return;
+        }
+        // Boundary scan: webm clusters first, fmp4 moofs as fallback — the two
+        // container families youtube actually uses.
+        let full = crate::dom::media::ebml::scan_cluster_full(&stream);
+        let has_timecodes = full.iter().any(|(_, tc, _, _)| *tc > 0.0);
+        let boundaries: Vec<(usize, f64)> = if !full.is_empty() {
+            full.iter().map(|(off, tc, _, _)| (*off, *tc)).collect()
+        } else {
+            crate::dom::media::ebml::scan_moof_offsets(&stream)
+                .into_iter()
+                .map(|off| (off, 0.0))
+                .collect()
+        };
+        if boundaries.is_empty() {
+            return;
+        }
+        // The re-feed starts at the last boundary at-or-before the seek target:
+        // the cluster containing the target began before it, and a demuxer
+        // must see the whole cluster. For moofs (timecode 0) start at the first
+        // boundary — moof ordering is chronological in practice.
+        let start_idx = if boundaries.iter().any(|(_, tc)| *tc > 0.0) {
+            let idx = boundaries
+                .iter()
+                .rposition(|(_, tc)| *tc <= seek_target && *tc > 0.0)
+                .unwrap_or(0);
+            idx
+        } else {
+            0
+        };
+        let start_off = boundaries[start_idx].0;
+        // Timestamp re-basing (sec1zt128/129): the refed clusters carry their
+        // ORIGINAL timecodes, but the post-reset pipeline restarts at zero —
+        // the collision drops/clips frames in the overlap region (the Swiss-
+        // cheese holes) and restarts pts at 0. Rewrite each refed cluster's
+        // timecode in place: new = seek_target + (orig - first_refed_orig),
+        // producing a contiguous stream that starts exactly at the target.
+        // Rewrites are same-length big-endian into the existing timecode
+        // element, so stream length and all offsets are preserved. A cluster
+        // whose value doesn't fit its element size is left as-is (rare —
+        // youtube uses 4+ byte timecodes).
+        if has_timecodes {
+            let mut rewritten = 0u32;
+            let base_tc = full[start_idx].1;
+            let target_ms = (seek_target * 1000.0).round() as u64;
+            let first_ms = (base_tc * 1000.0).round() as u64;
+            for (idx, (_, tc, coff, csize)) in full.iter().enumerate() {
+                if idx < start_idx || *csize == 0 {
+                    continue;
+                }
+                let orig_ms = (*tc * 1000.0).round() as u64;
+                let delta = orig_ms.saturating_sub(first_ms);
+                let new_val = target_ms.saturating_add(delta);
+                let max_val = if *csize >= 8 {
+                    u64::MAX
+                } else {
+                    (1u64 << (*csize as u32 * 8)) - 1
+                };
+                if new_val <= max_val && *coff + *csize <= stream.len() {
+                    let bytes = new_val.to_be_bytes();
+                    stream[*coff..*coff + *csize]
+                        .copy_from_slice(&bytes[8 - *csize..]);
+                    rewritten += 1;
+                }
+            }
+        }
+        if has_timecodes {
+            let scanned: Vec<String> = full
+                .iter()
+                .map(|(off, tc, coff, csize)| format!("off={} tc={:.3} coff={} csize={}", off, tc, coff, csize))
+                .collect();
+            eprintln!("[mse-refeed] scan detail: {}", scanned.join(" | "));
+        }
+        // Diagnostic dump: the exact bytes about to be refed, post-rewrite.
+        // The offline sim validates the ALGORITHM but corruption fires live —
+        // the divergence must be in the live inputs. /tmp is fine: diagnostic
+        // only, not user evidence. FFprobe this file and diff against the sim.
+        if std::env::var("SERVO_MSE_REFEED_DUMP").is_ok() {
+            let dump_path = format!("/tmp/mse-refeed-dump-{}.webm", seek_target);
+            if !std::path::Path::new(&dump_path).exists() {
+                let slice_start = boundaries[start_idx].0;
+                let _ = std::fs::write(&dump_path, &stream[slice_start..]);
+                eprintln!("[mse-refeed] dumped {} bytes to {}", stream.len() - slice_start, dump_path);
+            }
+        }
+        // Cut chunk boundaries: each boundary offset at-or-after start, plus
+        // end-of-stream. Group clusters into pushes of at most ~1.5MB so the
+        // engine per-track quota isn't blown.
+        let mut cuts: Vec<usize> = boundaries[start_idx..]
+            .iter()
+            .map(|(off, _)| *off)
+            .collect();
+        cuts.push(stream.len());
+        const MAX_CHUNK: usize = 1536 * 1024;
+        let mut chunks: std::collections::VecDeque<Vec<u8>> = std::collections::VecDeque::new();
+        let mut cur: Vec<u8> = Vec::new();
+        for w in cuts.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            if b <= a || a < start_off {
+                // the first window starts exactly at start_off by construction;
+                // later ones are contiguous
+            }
+            if b > a {
+                if !cur.is_empty() && cur.len() + (b - a) > MAX_CHUNK {
+                    chunks.push_back(std::mem::take(&mut cur));
+                }
+                cur.extend_from_slice(&stream[a..b]);
+            }
+        }
+        if !cur.is_empty() {
+            chunks.push_back(cur);
+        }
+        // Init segment rides ahead of the first media chunk so the fresh
+        // demuxer sees stream headers (post-reset demuxer state is blank) —
+        // but ONLY if it isn't already there: retained fragment 0 holds the
+        // original first append, which itself begins with the init bytes, and
+        // prepending a second copy produces init+init+media — the exact
+        // garbage the demuxer chokes on (sec1zt128: "large block of size
+        // 1794238142" — a duplicated-ebml-header length misread).
+        let init = self.init_cache.borrow().clone();
+        if !init.is_empty() {
+            let already = chunks
+                .front()
+                .map(|first| first.len() >= init.len() && first[..init.len()] == init[..])
+                .unwrap_or(false);
+            if !already {
+                if let Some(first) = chunks.front_mut() {
+                    let mut joined = init.clone();
+                    joined.extend_from_slice(first);
+                    *first = joined;
+                }
+            }
+        }
+        // Instrumentation (sec1zt129): the offline byte-level refeed validates
+        // clean (ffprobe/ffprobe-decode on a simulated stream) yet the live
+        // demuxer reports corruption — the divergence is in WHAT actually gets
+        // delivered, so log exactly that.
+        let first_hex: String = chunks
+            .front()
+            .map(|c| c[..c.len().min(48)].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+            .unwrap_or_default();
+        eprintln!(
+            "[mse-refeed] prep target={} frags={} streamlen={} boundaries={} start_idx={} chunks={} first48={}",
+            seek_target,
+            frags.len(),
+            stream.len(),
+            boundaries.len(),
+            start_idx,
+            chunks.len(),
+            first_hex
+        );
+        *self.refeed_queue.borrow_mut() = chunks;
     }
 
     /// Push init + retained fragments one at a time, in time order, each as a
@@ -111,7 +294,7 @@ impl SourceBuffer {
     /// early attempts commonly land while the pipeline is mid-reset (not-yet-
     /// playing appsrcs reject) or momentarily full (backpressure drains as
     /// playback resumes). Each chain link yields the event loop.
-    fn refeed_retained(&self, seek_target: f64, fragment_index: usize, retries: u32) {
+    fn refeed_retained(&self, seek_target: f64, _fragment_index: usize, retries: u32) {
         if retries >= 400 {
             return;
         }
@@ -119,70 +302,60 @@ impl SourceBuffer {
         // thread, and pushes landing mid-reset are silently dropped by the
         // flushing appsrc with NO feedback to script — the push call reports
         // success because it only means "handed to the media thread" (verified
-        // sec1zt124: re-feed pushes error Err(Flushing) deep in the player while
-        // script believes the chain completed). Burn the first ~90 event-loop
-        // turns (~1.5s at 60fps) before pushing fragment 0 so the state cycle
-        // has completed; re-feed ordering is preserved since the chain is
-        // strictly sequential. Failure retries only start counting after the
-        // settle window.
-        if fragment_index == 0 && retries < 90 {
-            let this = Trusted::new(self);
-            self.global()
-                .task_manager()
-                .media_element_task_source()
-                .queue(task!(mse_refeed_settle: move |_cx| {
-                    let this = this.root();
-                    this.refeed_retained(seek_target, 0, retries + 1);
-                }));
-            return;
-        }
-        let payload = {
-            let init = self.init_cache.borrow().clone();
-            let retained = self.retained.borrow();
-            let mut frags: Vec<(f64, f64, Vec<u8>)> = retained
-                .iter()
-                .filter(|(_, end, _)| *end > seek_target)
-                .cloned()
-                .collect();
-            frags.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-            if fragment_index == 0 && !init.is_empty() {
-                // The first push carries the init segment ahead of the first
-                // media fragment so the fresh demuxer sees stream headers.
-                frags.first().map(|(fs, fe, data)| {
-                    let mut joined = init.clone();
-                    joined.extend_from_slice(data);
-                    (0usize, (*fs, *fe, joined), frags.len())
-                })
-            } else {
-                frags.get(fragment_index).map(|f| (fragment_index, f.clone(), frags.len()))
+        // sec1zt124). Burn the first ~90 event-loop turns (~1.5s at 60fps)
+        // before the first chunk so the state cycle has completed.
+        // Wall-clock settle, NOT turn counting: media_element_task_source
+        // tasks run back-to-back on an idle loop, so 90 turns can elapse in
+        // milliseconds — the turn-count version of this never actually
+        // waited, and the first refeed chunk landed in the mid-teardown
+        // pipeline (round-5 ordering anomaly: push before ready/restore).
+        if _fragment_index == 0 && !self.refeed_queue.borrow().is_empty() {
+            let elapsed = self
+                .seek_instant
+                .borrow()
+                .map(|t| t.elapsed().as_millis())
+                .unwrap_or(u128::MAX);
+            if elapsed < 1500 {
+                let this = Trusted::new(self);
+                self.global()
+                    .task_manager()
+                    .media_element_task_source()
+                    .queue(task!(mse_refeed_settle: move |_cx| {
+                        let this = this.root();
+                        // retries stays 0 during settling: the re-poll chain
+                        // runs back-to-back, so counting re-polls toward the
+                        // 400-cap exhausts it in milliseconds — long before
+                        // the wall-clock window — and the chain silently died
+                        // with zero bytes delivered (round-6 regression).
+                        this.refeed_retained(seek_target, 0, 0);
+                    }));
+                return;
             }
-        };
-        let Some((idx, (_, _, bytes), total_frags)) = payload else {
-            return;
-        };
-        if fragment_index >= total_frags && fragment_index != 0 {
-            return;
         }
+        let chunk = self.refeed_queue.borrow_mut().pop_front();
+        let Some(bytes) = chunk else {
+            return;
+        };
         let pushed = if let Some(ref ms) = *self.media_source.borrow() {
-            ms.push_appended_data(self.track_id.get(), bytes)
+            ms.push_appended_data(self.track_id.get(), bytes.clone())
         } else {
             false
         };
-        let (next_index, next_retries) = if pushed {
-            (idx + 1, 0)
-        } else {
-            (idx, retries + 1)
-        };
-        if pushed && idx + 1 >= total_frags {
+        if !pushed {
+            // push failure — put the chunk back and retry after a yield
+            self.refeed_queue.borrow_mut().push_front(bytes);
+        }
+        if self.refeed_queue.borrow().is_empty() && pushed {
             return;
         }
+        let next_retries = if pushed { 90 } else { retries + 1 };
         let this = Trusted::new(self);
         self.global()
             .task_manager()
             .media_element_task_source()
             .queue(task!(mse_refeed_retry: move |_cx| {
                 let this = this.root();
-                this.refeed_retained(seek_target, next_index, next_retries);
+                this.refeed_retained(seek_target, 1, next_retries);
             }));
     }
 
@@ -366,13 +539,25 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // bytes keyed by their time range so seeks can re-feed without the
         // page re-appending. Bytes are the post-timestampOffset-rewrite
         // canonical stream. Eviction is oldest-end-first once over the cap.
-        if let Some((fs, fe)) = retained_range {
+        // CONTIGUITY INVARIANT: retain EVERY append in insertion order —
+        // MSE appends for a track are a contiguous byte stream (the demuxer
+        // originally consumed exactly this concatenation), so insertion order
+        // IS the correct byte order. The old time-keyed capture silently
+        // dropped every append whose slice contained no cluster head (most
+        // of them — slices are smaller than clusters), and the time-sort
+        // scrambled the rest: holes + duplicated regions glued mid-cluster,
+        // the deterministic demux corruption (sec1zt135). Keys still serve
+        // eviction; keyless fragments inherit the previous fragment's end.
+        {
+            let prev_end = self.retained.borrow().last().map(|(_, fe, _)| *fe).unwrap_or(0.0);
+            let (fs, fe) = retained_range.unwrap_or((prev_end, prev_end));
             let mut retained = self.retained.borrow_mut();
             retained.push((fs, fe, bytes.clone()));
             let total: usize = retained.iter().map(|(_, _, b)| b.len()).sum();
             if total > MAX_RETAINED_BYTES {
                 let mut excess = total - MAX_RETAINED_BYTES;
-                retained.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                // Eviction must NOT re-sort: front IS oldest in a contiguous
+                // append-order stream. Re-sorting scrambles byte order.
                 while excess > 0 && retained.len() > 1 {
                     let (_, _, b) = retained.first().unwrap();
                     let len = b.len();

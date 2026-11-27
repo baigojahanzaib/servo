@@ -48,6 +48,111 @@ pub(crate) fn scan_cluster_timecodes(data: &[u8]) -> Vec<f64> {
     out
 }
 
+/// Scan a webm/mkv bytestream for cluster byte offsets + timecodes. Same
+/// scanning logic as scan_cluster_timecodes but records where each cluster
+/// starts — the MSE re-feed needs byte-accurate cluster boundaries because
+/// player appends are not cluster-aligned (sec1zt126).
+pub(crate) fn scan_cluster_offsets(data: &[u8]) -> Vec<(usize, f64)> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= data.len() {
+        if data[pos] == 0x1F && data[pos + 1] == 0x43 && data[pos + 2] == 0xB6 && data[pos + 3] == 0x75 {
+            let window_end = (pos + 4 + 512).min(data.len());
+            let mut i = pos + 4;
+            let mut tc = None;
+            while i + 2 <= window_end {
+                if data[i] == 0xE7 {
+                    let (size, vlen) = read_vint(&data[i + 1..]);
+                    if size > 0 && size <= 8 && i + 1 + vlen + size <= window_end {
+                        let mut val: u64 = 0;
+                        for b in &data[i + 1 + vlen..i + 1 + vlen + size] {
+                            val = (val << 8) | (*b as u64);
+                        }
+                        tc = Some(val as f64 / 1000.0);
+                        break;
+                    }
+                }
+                i += 1;
+            }
+            out.push((pos, tc.unwrap_or(0.0)));
+            let (size, vlen) = read_vint_size(&data[pos + 4..]);
+            if size > 0 {
+                let next = pos + 4 + vlen + size as usize;
+                pos = if next > pos { next.min(data.len()) } else { pos + 4 };
+            } else {
+                pos += 4;
+            }
+        } else {
+            pos += 1;
+        }
+    }
+    out
+}
+
+/// Cluster scan with timecode-element byte positions: (cluster_offset,
+/// timecode_secs, tc_content_offset, tc_content_size). The content position
+/// and size let the MSE re-feed rewrite timestamps in place — re-basing the
+/// refed stream onto the post-seek domain without changing stream length
+/// (sec1zt128/129).
+pub(crate) fn scan_cluster_full(data: &[u8]) -> Vec<(usize, f64, usize, usize)> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= data.len() {
+        if data[pos] == 0x1F && data[pos + 1] == 0x43 && data[pos + 2] == 0xB6 && data[pos + 3] == 0x75 {
+            let window_end = (pos + 4 + 512).min(data.len());
+            let mut i = pos + 4;
+            let mut found = None;
+            while i + 2 <= window_end {
+                if data[i] == 0xE7 {
+                    let (size, vlen) = read_vint(&data[i + 1..]);
+                    if size > 0 && size <= 8 && i + 1 + vlen + size <= window_end {
+                        let content_off = i + 1 + vlen;
+                        let mut val: u64 = 0;
+                        for b in &data[content_off..content_off + size] {
+                            val = (val << 8) | (*b as u64);
+                        }
+                        found = Some((val as f64 / 1000.0, content_off, size));
+                        break;
+                    }
+                }
+                i += 1;
+            }
+            if let Some((tc, coff, csize)) = found {
+                out.push((pos, tc, coff, csize));
+            } else {
+                out.push((pos, 0.0, 0, 0));
+            }
+            let (size, vlen) = read_vint_size(&data[pos + 4..]);
+            if size > 0 {
+                let next = pos + 4 + vlen + size as usize;
+                pos = if next > pos { next.min(data.len()) } else { pos + 4 };
+            } else {
+                pos += 4;
+            }
+        } else {
+            pos += 1;
+        }
+    }
+    out
+}
+
+/// Scan an fmp4 bytestream for moof box byte offsets. Each moof+mdat pair is
+/// a self-contained media fragment — the natural re-feed boundary (sec1zt126).
+pub(crate) fn scan_moof_offsets(data: &[u8]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 8 <= data.len() {
+        if &data[pos + 4..pos + 8] == b"moof" {
+            out.push(pos);
+            let size = u32::from_be_bytes(data[pos..pos + 4].try_into().unwrap()) as usize;
+            pos = if size >= 8 { pos + size } else { pos + 8 };
+        } else {
+            pos += 1;
+        }
+    }
+    out
+}
+
 /// read a vint content size (strips the marker bit)
 fn read_vint(data: &[u8]) -> (usize, usize) {
     if data.is_empty() {

@@ -236,9 +236,15 @@ impl HTMLElement {
     /// <https://html.spec.whatwg.org/multipage/#editing-host>
     pub(crate) fn is_editing_host(&self) -> bool {
         // > An editing host is either an HTML element with its contenteditable attribute in the true state or plaintext-only state,
-        matches!(&*self.ContentEditable().str(), "true" | "plaintext-only")
-        // > or a child HTML element of a Document whose design mode enabled is true.
-        // TODO
+        if matches!(&*self.ContentEditable().str(), "true" | "plaintext-only") {
+            return true;
+        }
+        // > or the HTML body element of a Document whose design mode enabled is true.
+        // <https://html.spec.whatwg.org/multipage/#editing-host>
+        self.is_body_element() &&
+            self.upcast::<Node>()
+                .owner_doc()
+                .design_mode_enabled()
     }
 
     pub(crate) fn previously_focused_element(&self, no_gc: &NoGC) -> Option<DomRoot<Element>> {
@@ -1231,6 +1237,31 @@ impl HTMLElementMethods<crate::DomTypeHolder> for HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-inert-attribute
     make_bool_getter!(Inert, "inert");
     make_bool_setter!(SetInert, "inert");
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-draggable>
+    /// The `draggable` content attribute is an enumerated attribute with
+    /// `true`/`false`/`auto` states; the IDL attribute is boolean, returning
+    /// true only in the true state and setting "true"/"false" explicitly.
+    fn Draggable(&self) -> bool {
+        use crate::dom::bindings::inheritance::Castable;
+        use crate::dom::element::Element;
+        self.upcast::<Element>()
+            .get_string_attribute(&html5ever::local_name!("draggable"))
+            .str()
+            .eq_ignore_ascii_case("true")
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#dom-draggable>
+    fn SetDraggable(&self, cx: &mut js::context::JSContext, value: bool) {
+        use crate::dom::bindings::inheritance::Castable;
+        use crate::dom::element::Element;
+        let string_value = if value { "true" } else { "false" };
+        self.upcast::<Element>().set_attribute(
+            cx,
+            &html5ever::local_name!("draggable"),
+            AttrValue::String(string_value.into()),
+        );
+    }
 
     // https://html.spec.whatwg.org/multipage/#globaleventhandlers
     global_event_handlers!(NoOnload);

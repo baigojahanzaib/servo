@@ -864,6 +864,13 @@ impl Notification {
             }
         }
 
+        // With no image/icon/badge resources there is nothing to wait for:
+        // the notification is ready immediately. Without this branch the
+        // show steps never run for resource-less notifications at all.
+        if pending_requests.is_empty() {
+            self.show();
+            return;
+        }
         for (request, resource_type) in pending_requests {
             self.fetch_and_show_when_ready(request, resource_type);
         }

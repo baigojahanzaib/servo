@@ -1360,7 +1360,34 @@ where
                 let pipeline_id = match self.browsing_contexts.get(&ctx_id) {
                     Some(ctx) => ctx.pipeline_id,
                     None => {
-                        return warn!("{}: LoadUrl for unknown browsing context", webview_id);
+                        // The browsing context is registered only when the
+                        // webview's FIRST load commits its session-history
+                        // change. A first load that never completes (hung
+                        // response — no engine response-timeout exists) leaves
+                        // the webview in pre-registration limbo: every
+                        // subsequent LoadUrl died here, permanently wedging the
+                        // tab (the timeout-regression). Fall back to the
+                        // pending initial navigation's pipeline so the new
+                        // navigation can supersede it.
+                        match self
+                            .webviews
+                            .get(&webview_id)
+                            .and_then(|webview| {
+                                webview
+                                    .pending_changes
+                                    .iter()
+                                    .find(|change| change.browsing_context_id == ctx_id)
+                            })
+                            .map(|change| change.new_pipeline_id)
+                        {
+                            Some(pipeline_id) => pipeline_id,
+                            None => {
+                                return warn!(
+                                    "{}: LoadUrl for unknown browsing context",
+                                    webview_id
+                                );
+                            },
+                        }
                     },
                 };
                 // Since this is a top-level load, initiated by the embedder, go straight to load_url,
@@ -4419,15 +4446,47 @@ where
                 ctx.upgrade_insecure_navigations_set.clone(),
             ),
             None => {
-                // This should technically never happen (since `load_url` is
-                // only called on existing browsing contexts), but we prefer to
-                // avoid `expect`s or `unwrap`s in `Constellation` to ward
-                // against future changes that might break things.
-                warn!(
-                    "{}: Loaded url in closed {}",
-                    source_id, browsing_context_id,
-                );
-                return None;
+                // Feather: the initial navigation may still be pending — the
+                // browsing context registers only when the FIRST load commits,
+                // so a hung first load leaves no entry. Fall back to the
+                // pending change's pipeline and metadata so the user can
+                // navigate away (the timeout-regression wedge, sec1zt141).
+                match self
+                    .webviews
+                    .get(&webview_id)
+                    .and_then(|webview| {
+                        webview
+                            .pending_changes
+                            .iter()
+                            .find(|change| change.browsing_context_id == browsing_context_id)
+                    })
+                {
+                    Some(change) => (
+                        change.viewport_details,
+                        change.new_pipeline_id,
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .and_then(|info| info.parent_pipeline_id),
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .map(|info| info.is_private)
+                            .unwrap_or(false),
+                        change
+                            .new_browsing_context_info
+                            .as_ref()
+                            .map(|info| info.upgrade_insecure_navigations_set.clone())
+                            .unwrap_or_default(),
+                    ),
+                    None => {
+                        warn!(
+                            "{}: Loaded url in closed {}",
+                            source_id, browsing_context_id,
+                        );
+                        return None;
+                    },
+                }
             },
         };
 
@@ -4482,7 +4541,16 @@ where
                         )
                     })
                     .unwrap_or_default();
+                // If a superseded change was carrying the browsing-context
+                // creation info (the initial, never-committed navigation),
+                // it MUST be transferred to the new pending change — dropping
+                // it means even a successful replacement load never registers
+                // the browsing context, leaving the webview in permanent limbo.
+                let mut inherited_browsing_context_info = None;
                 for change in superseded_pending_changes {
+                    if inherited_browsing_context_info.is_none() {
+                        inherited_browsing_context_info = change.new_browsing_context_info;
+                    }
                     self.close_pipeline(change.new_pipeline_id, DiscardBrowsingContext::No);
                 }
 
@@ -4527,8 +4595,11 @@ where
                         browsing_context_id,
                         new_pipeline_id,
                         replace,
-                        // `load_url` is always invoked on an existing browsing context.
-                        new_browsing_context_info: None,
+                        // Normally `load_url` is invoked on an existing
+                        // browsing context (None). When the initial navigation
+                        // is being superseded, the creation info is inherited
+                        // so the context registers when THIS load commits.
+                        new_browsing_context_info: inherited_browsing_context_info,
                         viewport_details,
                     });
                 } else {
@@ -6075,6 +6146,26 @@ where
                 }
             }
             if pipeline_id == ancestor_id {
+                // Feather: a pipeline whose browsing context has not committed
+                // yet (the initial navigation never finished) is still the
+                // webview's live content — treating it as Inactive disregarded
+                // every escape navigation out of a hung first load.
+                if let Some(pipeline) = self.pipelines.get(&pipeline_id) {
+                    // NOTE: cannot key on pending_changes — the supersede path
+                    // drains them BEFORE this check runs. The only state in
+                    // which a live pipeline has no registered browsing context
+                    // is the pre-commit limbo of a first load that never
+                    // finished; that pipeline IS the visible webview's content
+                    // and must be FullyActive or escape navigations are
+                    // silently disregarded (round-2 verification evidence).
+                    let context_missing = self
+                        .browsing_contexts
+                        .get(&pipeline.browsing_context_id)
+                        .is_none();
+                    if context_missing {
+                        return DocumentActivity::FullyActive;
+                    }
+                }
                 return DocumentActivity::Inactive;
             } else {
                 return DocumentActivity::Active;
@@ -6213,6 +6304,7 @@ where
         webview_id: WebViewId,
         browsing_context_id: BrowsingContextId,
     ) -> Option<BrowsingContext> {
+        eprintln!("[timeout-instr] close_browsing_context ENTRY");
         debug!("{}: Closing", browsing_context_id);
 
         self.close_browsing_context_children(
@@ -6341,6 +6433,7 @@ where
     // Close all pipelines at and beneath a given browsing context
     #[servo_tracing::instrument(skip_all)]
     fn close_pipeline(&mut self, pipeline_id: PipelineId, dbc: DiscardBrowsingContext) {
+        eprintln!("[timeout-instr] close_pipeline {:?} discard={:?}", pipeline_id, dbc);
         debug!("{}: Closing", pipeline_id);
 
         // Sever connection to browsing context

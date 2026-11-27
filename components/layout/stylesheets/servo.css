@@ -565,8 +565,10 @@ slot {
   background: rgba(176, 214, 255, 1.0);
 }
 
-/* Ensure the entire document uses the same writing mode, until we support orthogonal flows. */
-:not(:root, html:root > body:first-of-type),
+/* Orthogonal flows are supported in block layout (axis-swapped containing
+   blocks), so elements no longer have their writing-mode forced to inherit.
+   Pseudo-elements still inherit it, as they participate in the originating
+   element's writing mode. */
 ::before,
 ::after,
 ::backdrop,

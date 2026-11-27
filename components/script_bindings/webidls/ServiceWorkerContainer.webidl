@@ -6,7 +6,7 @@
 [Pref="dom_serviceworker_enabled", Exposed=(Window,Worker)]
 interface ServiceWorkerContainer : EventTarget {
   readonly attribute ServiceWorker? controller;
-  //readonly attribute Promise<ServiceWorkerRegistration> ready;
+  readonly attribute Promise<ServiceWorkerRegistration> ready;
 
   [NewObject] Promise<ServiceWorkerRegistration> register(USVString scriptURL,
                                                           optional RegistrationOptions options = {});

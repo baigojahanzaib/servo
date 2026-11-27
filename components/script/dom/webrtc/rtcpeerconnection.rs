@@ -178,7 +178,7 @@ impl RTCPeerConnection {
         window: &Window,
         proto: Option<HandleObject>,
         config: &RTCConfiguration,
-    ) -> DomRoot<RTCPeerConnection> {
+    ) -> Fallible<DomRoot<RTCPeerConnection>> {
         let this = reflect_weak_referenceable_dom_object_with_proto(
             cx,
             Rc::new(RTCPeerConnection::new_inherited()),
@@ -186,7 +186,12 @@ impl RTCPeerConnection {
             proto,
         );
         let signaller = this.make_signaller();
-        *this.controller.safe_borrow_mut(cx) = Some(ServoMedia::get().create_webrtc(signaller));
+        let controller = ServoMedia::get().create_webrtc(signaller).ok_or_else(|| {
+            Error::NotSupported(Some(
+                "WebRTC is not available: backend failed to initialize".to_owned(),
+            ))
+        })?;
+        *this.controller.safe_borrow_mut(cx) = Some(controller);
         if let Some(ref servers) = config.iceServers &&
             let Some(server) = servers.first()
         {
@@ -207,7 +212,7 @@ impl RTCPeerConnection {
                     .configure(String::from(server), policy);
             }
         }
-        this
+        Ok(this)
     }
 
     pub(crate) fn get_webrtc_controller(&self) -> &DomRefCell<Option<WebRtcController>> {
@@ -508,7 +513,7 @@ impl RTCPeerConnectionMethods<crate::DomTypeHolder> for RTCPeerConnection {
         proto: Option<HandleObject>,
         config: &RTCConfiguration,
     ) -> Fallible<DomRoot<RTCPeerConnection>> {
-        Ok(RTCPeerConnection::new(cx, window, proto, config))
+        RTCPeerConnection::new(cx, window, proto, config)
     }
 
     // https://w3c.github.io/webrtc-pc/#dom-rtcpeerconnection-icecandidate

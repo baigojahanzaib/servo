@@ -497,8 +497,8 @@ impl Actor for ConsoleActor {
             },
 
             "evaluateJS" => {
-                let msg = self.evaluate_js(registry, msg);
-                request.reply_final(&msg)?
+                let reply = self.evaluate_js(registry, msg).map_err(|_| ActorError::Internal)?;
+                request.reply_final(&reply)?
             },
 
             "evaluateJSAsync" => {

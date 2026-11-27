@@ -49,8 +49,24 @@ pub fn set(preferences: Preferences) {
     // Map between Stylo preference names and Servo preference names.
     stylo_static_prefs::set_pref!("layout.threads", preferences.layout_threads as i32);
     stylo_static_prefs::set_pref!(
+        "layout.css.appearance.enabled",
+        preferences.layout_css_appearance_enabled
+    );
+    stylo_static_prefs::set_pref!(
         "layout.css.backdrop-filter.enabled",
         preferences.layout_css_backdrop_filter_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.hyphens.enabled",
+        preferences.layout_css_hyphens_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.masking.enabled",
+        preferences.layout_css_masking_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.scroll-behavior.enabled",
+        preferences.layout_css_scroll_behavior_enabled
     );
     stylo_static_prefs::set_pref!(
         "layout.css.columns.enabled",
@@ -83,6 +99,14 @@ pub fn set(preferences: Preferences) {
     stylo_static_prefs::set_pref!(
         "layout.css.writing-mode.enabled",
         preferences.layout_css_writing_mode_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.writing-mode.text-orientation.enabled",
+        preferences.layout_css_writing_mode_text_orientation_enabled
+    );
+    stylo_static_prefs::set_pref!(
+        "layout.css.grid-template-subgrid-value.enabled",
+        preferences.layout_css_grid_template_subgrid_value_enabled
     );
 
     *PREFERENCES.write().unwrap() = preferences;
@@ -331,9 +355,13 @@ pub struct Preferences {
     // feature: Largest Contentful Paint | #42000 | Web/API/LargestContentfulPaint
     pub largest_contentful_paint_enabled: bool,
     pub layout_animations_test_enabled: bool,
+    pub layout_css_appearance_enabled: bool,
     pub layout_css_backdrop_filter_enabled: bool,
     // feature: CSS Multicol | #22397 | Web/CSS/Guides/Multicol_layout
     pub layout_css_columns_enabled: bool,
+    pub layout_css_hyphens_enabled: bool,
+    pub layout_css_masking_enabled: bool,
+    pub layout_css_scroll_behavior_enabled: bool,
     pub layout_css_container_queries_enabled: bool,
     pub layout_css_ellipse_corners_enabled: bool,
     pub layout_css_starting_style_enabled: bool,
@@ -343,6 +371,10 @@ pub struct Preferences {
     pub layout_css_webkit_text_fill_color_enabled: bool,
     // feature: CSS writing modes | #2560 | Web/CSS/Guides/Writing_modes
     pub layout_css_writing_mode_enabled: bool,
+    // feature: CSS writing modes text-orientation | #2560
+    pub layout_css_writing_mode_text_orientation_enabled: bool,
+    // feature: CSS grid subgrid value parsing | css-grid-2
+    pub layout_css_grid_template_subgrid_value_enabled: bool,
     pub layout_style_sharing_cache_enabled: bool,
     pub layout_threads: u64,
     /// The minimum number of parallelizable jobs required before turning on parallelism
@@ -594,8 +626,12 @@ impl Preferences {
             container_timing_enabled: false,
             largest_contentful_paint_enabled: false,
             layout_animations_test_enabled: false,
+            layout_css_appearance_enabled: false,
             layout_css_backdrop_filter_enabled: false,
             layout_css_columns_enabled: false,
+            layout_css_hyphens_enabled: false,
+            layout_css_masking_enabled: false,
+            layout_css_scroll_behavior_enabled: false,
             layout_css_container_queries_enabled: false,
             layout_css_starting_style_enabled: false,
             layout_css_ellipse_corners_enabled: false,
@@ -603,6 +639,8 @@ impl Preferences {
             layout_css_text_overflow_enabled: true,
             layout_css_webkit_text_fill_color_enabled: false,
             layout_css_writing_mode_enabled: false,
+            layout_css_writing_mode_text_orientation_enabled: false,
+            layout_css_grid_template_subgrid_value_enabled: false,
             layout_style_sharing_cache_enabled: true,
             // TODO(mrobinson): This should likely be based on the number of processors.
             layout_threads: 3,
