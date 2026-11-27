@@ -88,6 +88,10 @@ pub fn set(preferences: Preferences) {
         "layout.css.writing-mode.text-orientation.enabled",
         preferences.layout_css_writing_mode_text_orientation_enabled
     );
+    stylo_static_prefs::set_pref!(
+        "layout.css.grid-template-subgrid-value.enabled",
+        preferences.layout_css_grid_template_subgrid_value_enabled
+    );
 
     *PREFERENCES.write().unwrap() = preferences;
 
@@ -349,6 +353,8 @@ pub struct Preferences {
     pub layout_css_writing_mode_enabled: bool,
     // feature: CSS writing modes text-orientation | #2560
     pub layout_css_writing_mode_text_orientation_enabled: bool,
+    // feature: CSS grid subgrid value parsing | css-grid-2
+    pub layout_css_grid_template_subgrid_value_enabled: bool,
     pub layout_style_sharing_cache_enabled: bool,
     pub layout_threads: u64,
     /// The minimum number of parallelizable jobs required before turning on parallelism
@@ -610,6 +616,7 @@ impl Preferences {
             layout_css_webkit_text_fill_color_enabled: false,
             layout_css_writing_mode_enabled: false,
             layout_css_writing_mode_text_orientation_enabled: false,
+            layout_css_grid_template_subgrid_value_enabled: false,
             layout_style_sharing_cache_enabled: true,
             // TODO(mrobinson): This should likely be based on the number of processors.
             layout_threads: 3,
