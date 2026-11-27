@@ -1360,7 +1360,34 @@ where
                 let pipeline_id = match self.browsing_contexts.get(&ctx_id) {
                     Some(ctx) => ctx.pipeline_id,
                     None => {
-                        return warn!("{}: LoadUrl for unknown browsing context", webview_id);
+                        // The browsing context is registered only when the
+                        // webview's FIRST load commits its session-history
+                        // change. A first load that never completes (hung
+                        // response — no engine response-timeout exists) leaves
+                        // the webview in pre-registration limbo: every
+                        // subsequent LoadUrl died here, permanently wedging the
+                        // tab (the timeout-regression). Fall back to the
+                        // pending initial navigation's pipeline so the new
+                        // navigation can supersede it.
+                        match self
+                            .webviews
+                            .get(&webview_id)
+                            .and_then(|webview| {
+                                webview
+                                    .pending_changes
+                                    .iter()
+                                    .find(|change| change.browsing_context_id == ctx_id)
+                            })
+                            .map(|change| change.new_pipeline_id)
+                        {
+                            Some(pipeline_id) => pipeline_id,
+                            None => {
+                                return warn!(
+                                    "{}: LoadUrl for unknown browsing context",
+                                    webview_id
+                                );
+                            },
+                        }
                     },
                 };
                 // Since this is a top-level load, initiated by the embedder, go straight to load_url,
@@ -4482,7 +4509,16 @@ where
                         )
                     })
                     .unwrap_or_default();
+                // If a superseded change was carrying the browsing-context
+                // creation info (the initial, never-committed navigation),
+                // it MUST be transferred to the new pending change — dropping
+                // it means even a successful replacement load never registers
+                // the browsing context, leaving the webview in permanent limbo.
+                let mut inherited_browsing_context_info = None;
                 for change in superseded_pending_changes {
+                    if inherited_browsing_context_info.is_none() {
+                        inherited_browsing_context_info = change.new_browsing_context_info;
+                    }
                     self.close_pipeline(change.new_pipeline_id, DiscardBrowsingContext::No);
                 }
 
@@ -4527,8 +4563,11 @@ where
                         browsing_context_id,
                         new_pipeline_id,
                         replace,
-                        // `load_url` is always invoked on an existing browsing context.
-                        new_browsing_context_info: None,
+                        // Normally `load_url` is invoked on an existing
+                        // browsing context (None). When the initial navigation
+                        // is being superseded, the creation info is inherited
+                        // so the context registers when THIS load commits.
+                        new_browsing_context_info: inherited_browsing_context_info,
                         viewport_details,
                     });
                 } else {
