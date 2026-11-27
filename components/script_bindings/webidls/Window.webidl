@@ -25,6 +25,7 @@
   attribute DOMString status;
   [CrossOriginCallable] undefined close();
   [CrossOriginReadable] readonly attribute boolean closed;
+  readonly attribute boolean originAgentCluster;
   undefined stop();
   [CrossOriginCallable] undefined focus();
   [CrossOriginCallable] undefined blur();

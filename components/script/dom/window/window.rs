@@ -1549,6 +1549,11 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-window-closed>
+    /// <https://html.spec.whatwg.org/multipage/#dom-window-originagentcluster>
+    fn OriginAgentCluster(&self) -> bool {
+        self.document.get().map_or(false, |document| document.origin_agent_cluster())
+    }
+
     fn Closed(&self) -> bool {
         self.window_proxy
             .get()
