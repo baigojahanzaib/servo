@@ -4775,3 +4775,16 @@ Facts: bbb.mp4 is 10s/970KB served from localhost (instant). need-data fires rep
 
 ## sec1zt216 — probe: buffered EMPTY, networkState=1 IDLE, rs2, ct frozen 1.3 of dur10
 The element reports networkState NETWORK_IDLE (no active fetch) — either the fetch completed (all 970KB delivered — plausible, localhost instant + duration=10 correctly parsed hints moov/ full-file knowledge) or it stalled-and-was-abandoned. buffered[] empty is unreliable (servo may not implement it for progressive). IF the fetch completed: the starvation is INSIDE the gst decode path — decoder jammed after 30 frames (appsrc hungry because ITS queue drained into the demuxer, but the decoder stops outputting — downstream multiqueue empty). IF fetch incomplete: the body-read pump abandoned the response without error. NEXT DECISIVE: (1) log bytes — eprintln in the media elements fetch-data consumer (wherever DataBuffer::Payload gets queued) printing cumulative bytes — ONE number settles it: 970k+eos = gst-internal, less = fetch-pump defect; (2) also check gst decodebin artifacts — H264 decode of bbb in this container — but FIRST the byte count. ALSO NOTE: playback froze the same way on YOUTUBE (mse) and progressive — a SHARED mechanism in the push/consume path is more likely than two independent ones — the shared piece is the player/appsrc/feed machinery not the demuxers.
+
+## devtools eval gotcha: location.* throws in the sandbox (2026-11-27, macOS lane)
+
+`evaluateJS` on a real page: `1+1` → 2.0 and `document.readyState` work, but
+ANY access to `location.href`/`location.hostname` makes the whole eval return
+None (the access itself throws or fails serialization in servo's devtools
+sandbox). Probe pages with document properties only — readyState,
+querySelector, title all work. Gmail boot harness lives at
+feather/tests/scenarios/gmail_boot_harness.py (PR #309): boot-isolated TTI
+measurement + wedge detection via interactivity probe timeout corroborated
+by the livelock CPU signature (>70% single-core sustained). Verified 2/2
+interactive runs on the signed-out chain; --url accepts signed-in boot URLs
+when credentials exist.
