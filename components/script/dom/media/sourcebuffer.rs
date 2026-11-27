@@ -198,7 +198,23 @@ impl SourceBuffer {
             }
         }
         if has_timecodes {
-            eprintln!("[mse-refeed] timecode rewrites applied (see prep line for counts)");
+            let scanned: Vec<String> = full
+                .iter()
+                .map(|(off, tc, coff, csize)| format!("off={} tc={:.3} coff={} csize={}", off, tc, coff, csize))
+                .collect();
+            eprintln!("[mse-refeed] scan detail: {}", scanned.join(" | "));
+        }
+        // Diagnostic dump: the exact bytes about to be refed, post-rewrite.
+        // The offline sim validates the ALGORITHM but corruption fires live —
+        // the divergence must be in the live inputs. /tmp is fine: diagnostic
+        // only, not user evidence. FFprobe this file and diff against the sim.
+        if std::env::var("SERVO_MSE_REFEED_DUMP").is_ok() {
+            let dump_path = format!("/tmp/mse-refeed-dump-{}.webm", seek_target);
+            if !std::path::Path::new(&dump_path).exists() {
+                let slice_start = boundaries[start_idx].0;
+                let _ = std::fs::write(&dump_path, &stream[slice_start..]);
+                eprintln!("[mse-refeed] dumped {} bytes to {}", stream.len() - slice_start, dump_path);
+            }
         }
         // Cut chunk boundaries: each boundary offset at-or-after start, plus
         // end-of-stream. Group clusters into pushes of at most ~1.5MB so the
