@@ -4480,3 +4480,14 @@ deliberate-off/hollow, range-geometry architectural-documented, transitions load
 (sec1zt171), editing designmode + text-orientation engine-scale documented, writing-modes 1
 remaining. Drag-drop green in-grid. The harness is now a working Linux instrument — use it for
 mechanism regression checks after engine batches.
+
+## grid-3: SUBGRID PHASE-1 IMPLEMENTED AND LIVE-VERIFIED (2026-11-27, mac lane)
+Symptom: `grid-template-columns/rows: subgrid` inert — children of subgridded items don't align to parent tracks.
+Status: IMPLEMENTED in fork/feather-engine@a45709f97, verified live: probe children measure exactly 80/160/80px at x 9/89/249, aligned across rows.
+Mechanism (architecture that matters for future work):
+- Nested grids in servo are SEPARATE formatting contexts, not one taffy tree — compute_child_layout recurses through with_independent_formatting_context. So subgrid plumbing lives in servo's GLUE, not inside taffy.
+- Phase-1 design = construction-time adoption: TaffyContainer::construct inspects each child item; if the child's style is subgrid in an axis AND the parent's tracks in that axis are all definite plain lengths AND the child's placement resolves to explicit lines (positive/negative/span-end), the spanned parent tracks + parent gap are cloned onto the child grid container (SubgridAdoption). The taffy style conversion (grid_template_columns/rows in stylo_taffy/wrapper.rs) then serves the adopted tracks instead of None; gap() is overridden with the parent gap in the adopted axis.
+- INJECTION TRAP: taffy fetches the grid container style via LayoutGridContainer::get_grid_container_style, NOT get_core_container_style — adoption must be injected there (both exist on TaffyContainerContext; missing this cost one iteration).
+- Type/lifetime notes: calc-valued lengths use raw pointers into style memory (resolve_calc_value) — restricting adoption to plain unpacked Length avoids all lifetime hazards. TemplateTrackList associated type is a Map over slice::Iter<TrackListValue> with a fn-pointer closure — adoption stores cloned TrackListValues so both arms share one iterator type.
+Phase-1 limits (fallback to normal grid, no crash): fr/percentage/content-sized/auto tracks, auto-fill/fit repeats, auto or named-line placement, item participation in parent track sizing (the deep upstream-scale part), subgridded line names, child padding/border misaligns track positions vs parent lines slightly.
+Next phases if continued: (2) fr/percentage resolution needs parent geometry at layout time not construction — requires threading sized tracks through the recursion; (3) full content-participation is the multi-week upstream version — see docs/wiki/SUBGRID-PLAN.md.
