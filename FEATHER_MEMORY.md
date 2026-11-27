@@ -5258,3 +5258,13 @@ pinpoint which of the two candidates; (3) gdb backtrace needs debug symbols — 
 CARGO_PROFILE_DEV_DEBUG=1 targeted rebuild of just the script crate if panic msg insufficient.
 Also pending from before: WPT report regeneration PR (/tmp/wpt-html-report.md exists,
 uncommitted); gmail/svg real-site verification blocked on Windows repro detail.
+
+## select-dropdown activation gap (banked 2026-11-27, macOS lane)
+Shell wiring complete (feather #343) but servo never fires SelectElement embedder
+control on click — zero show_embedder_control calls, not even show+hide collapse.
+Activation path: htmlselectelement.rs handle_event, mousedown+IsTrusted+Primary.
+Suspects ranked: focus-event hide ordering (FocusEvent handler hides control for
+element; if focus lands after mousedown the control dies synchronously), shadow-tree
+hit-test, trustedness. Engine-lane investigation; discriminator instrumentation
+noted in feather docs/defect-queue.md. Selects are everywhere on the real web —
+every form with a dropdown currently dead-ends silently for the user.
