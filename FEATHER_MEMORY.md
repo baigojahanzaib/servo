@@ -4861,3 +4861,41 @@ JS that eval-targeting can't see (first-pipeline artifact).
 WPT html results: 32 crashes, CLUSTERED — ~8 in createImageBitmap family + several canvas-video. Single-test repro (mach test-wpt one file, ~1min) gives the exact panic: 'unreachable: invalid raw data request for texture frame' at media/player/video.rs:61. ROOT: VideoFrame::get_data() unreachable on non-raw frames; htmlvideoelement get_current_frame_data treated every non-GL-texture frame as raw BGRA — but NV12 planar frames (what openh264/vpx produce on Linux) are also non-GL — boom. FIX: NV12→BGRA software conversion (BT.601 limited) in the snapshot path. SYMPTOM INDEX: crash in createImageBitmap/drawImage/canvas with video source → check frame FORMAT first (is_nv12 vs is_gl_texture vs raw); unreachable at video.rs get_data/get_texture_id/get_nv12_planes = caller mismatch on format. METHOD NOTE (valuable): WPT crash lists cluster by subsystem — fix the cluster root not individual tests; single-test mach repro is fast (~1min) and yields exact panics — no need for manual reproduction pages. REMAINING CLUSTERS in html run: window-open-features (2), navigation-beforeunload, COOP header-parsing, iframe-move — uninvestigated. canvas offscreen font_variant_caps worker crash also open.
 
 ## sec1zt226 — NV12 fix VERIFIED: createImageBitmap-invalid-args CRASH→76P/17F/0crash; remaining fails are normal conformance gaps
+
+## sweep triage with visual verification 2026-11-27 (mac lane)
+
+Follow-up visual boots on the sweep's suspicious entries — REVISED IMPACT
+TRIAGE, several probe artifacts corrected:
+
+PROBE ARTIFACTS (not real breakage): amazon.com renders fully (nav,
+search, Black Friday deals, product imagery) — the empty-title probe
+result is an eval artifact (title set late by JS, or first-pipeline
+targeting). web.whatsapp.com renders PERFECTLY including the login QR
+code (canvas rendering working) — also probe artifact. Lesson for all
+lanes: readyState/title probes measure DOM readiness only; empty titles
+on JS-set-title sites are expected, not breakage.
+
+TWITCH TRIAGE REVISED: visually renders the full directory page — live
+channels sidebar, stream carousel with live viewer counts, grid. NOT a
+functionality break. The defect is: readyState never leaves interactive
+(load event never fires — a long-lived subresource or stream connection
+holds it) AND ~242% CPU sustained. Impact: battery/heat burn, NOT
+usability. Recategorize from "wedged" to "works-with-cpu-burn". The
+livelock-class wedge confirmed by thread samples (youtube/gmail) remains
+a separate real defect — twitch's CPU burn may or may not share the
+mechanism; needs a thread sample to distinguish restyle-storm (main thread
+busy) from semaphore-wait livelock (script thread parked).
+
+USER-IMPACT PRIORITY ordering from the sweep+triage:
+P0: idle-CPU burn across most major sites (nytimes 311%, github 248%,
+twitch 242%, SO 183%) — affects every session, battery/heat/fan. One
+mechanism fix lifts all of them: sec1zt188 restyle-storm work.
+P1: the livelock wedge class (youtube degraded-boot + seek, twitch cpu,
+gmail post-auth) — random catastrophic freeze on daily-driver sites.
+P2: netflix 21.8s TTI — slow but functional.
+P3: Cloudflare botwall interstitials (stackoverflow, claude.ai) — not
+feather breakage, but real-user-facing; passing the challenge depends on
+JS/wasm features, worth one investigation lane eventually.
+NOT-BROKEN: amazon, whatsapp-web (render fully), x/reddit/github/wiki/
+google/youtube/gmail-signin/fb/ig/linkedin/bbc/chatgpt/notion all reach
+complete with correct titles.
