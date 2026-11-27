@@ -5963,3 +5963,18 @@ CONCLUSION: Arabic user-ready in feather. NOTE: the external-scheme engine fix
 (8967796b1) does NOT cure the file:// blank-render defect — verified distinct
 by rebuild+retest; non-http primary loads never parse, all cheap hypotheses
 eliminated, needs load-status instrumentation lane.
+
+## sec1zt300 — aol residual: NOT xpath, NOT jit — genuinely stuck JS (2026-11-28)
+Negative results closing the aol investigation for now: (1) SERVO_LOG_XPATH instrumentation
+at the evaluate_internal chokepoint (universal — covers document.evaluate AND
+XPathEvaluator.evaluate) logs ZERO evaluations during wedged aol boots — aol does not
+meaningfully use xpath; the original gdb capture's xpath frames were a one-time artifact
+(and the unroot fix remains correct+valuable for genuinely xpath-heavy pages). (2) Wedge
+persists with --pref=js_disable_jit — not a JIT miscompilation. (3) 75s is not enough —
+effectively infinite, not slow. Current state: spin is in interpreter/JIT JS frames with
+no native symbol visibility; further progress needs JS-level profiling (instrument the
+script thread's microtask checkpoint or add a watchdog that dumps the JS stack via
+SpiderMonkey's profiling API — both are real implementation work, documented not started).
+Instrumentation left in tree (env-gated, zero-cost): SERVO_LOG_XPATH in xpathexpression.rs
+evaluate_internal. RECOMMENDATION: deprioritize aol-deep-dive in favor of user-visible P0s;
+the wedge class matters but needs the profiler tooling first.

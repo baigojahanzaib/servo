@@ -7850,6 +7850,10 @@ impl DocumentMethods<crate::DomTypeHolder> for Document {
         expression: DOMString,
         resolver: Option<RootedCallback<XPathNSResolver>>,
     ) -> Fallible<DomRoot<crate::dom::types::XPathExpression>> {
+        // Temporary aol-wedge investigation instrumentation (sec1zt299).
+        if std::env::var("SERVO_LOG_XPATH").is_ok() {
+            eprintln!("[xpath-eval] {:?}", expression.str());
+        }
         let parsed_expression =
             parse_expression(cx, &expression.str(), resolver, self.is_html_document())?;
         Ok(XPathExpression::new(

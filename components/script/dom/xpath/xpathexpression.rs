@@ -77,6 +77,10 @@ impl XPathExpression {
         let global = self.global();
         let window = global.as_window();
 
+        // Temporary aol-wedge investigation instrumentation (sec1zt299).
+        if std::env::var("SERVO_LOG_XPATH").is_ok() {
+            eprintln!("[xpath-eval] {:?}", self.parsed_expression);
+        }
         let result_value = evaluate_parsed_xpath::<XPathImplementation>(
             cx,
             &self.parsed_expression,
