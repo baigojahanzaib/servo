@@ -806,6 +806,30 @@ impl<'dom> ::selectors::Element for ServoDangerousStyleElement<'dom> {
             NonTSPseudoClass::Visited => false,
 
             NonTSPseudoClass::CustomState(ref state) => self.has_custom_state(&state.0),
+            NonTSPseudoClass::Dir(ref dir) => {
+                let want_rtl = {
+                    let dv: &str = dir.as_ref();
+                    dv.eq_ignore_ascii_case("rtl")
+                };
+                let mut current = Some(*self);
+                let mut resolved = false;
+                while let Some(el) = current {
+                    if let Some(attr) = el.element.get_attr_for_layout(&ns!(), &local_name!("dir")) {
+                        let val: &str = attr as &str;
+                        if val.eq_ignore_ascii_case("rtl") {
+                            resolved = true;
+                            break;
+                        }
+                        if val.eq_ignore_ascii_case("ltr") {
+                            resolved = false;
+                            break;
+                        }
+                        // dir=auto or invalid: treat as needing parent per simplified model
+                    }
+                    current = el.parent_element();
+                }
+                resolved == want_rtl
+            },
             NonTSPseudoClass::Lang(ref lang) => self.match_element_lang(None, lang),
 
             NonTSPseudoClass::ServoNonZeroBorder => !matches!(

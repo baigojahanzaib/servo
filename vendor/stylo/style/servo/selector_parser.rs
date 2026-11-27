@@ -377,6 +377,8 @@ pub enum NonTSPseudoClass {
     CustomState(CustomState),
     Default,
     Defined,
+    /// The `:dir()` pseudo-class: directionality matching.
+    Dir(AtomIdent),
     Disabled,
     Enabled,
     Focus,
@@ -450,6 +452,11 @@ impl ToCss for NonTSPseudoClass {
             Self::CustomState(ref state) => {
                 dest.write_str(":state(")?;
                 state.0.to_css(dest)?;
+                return dest.write_char(')');
+            },
+            Self::Dir(ref d) => {
+                dest.write_str(":dir(")?;
+                serialize_identifier(d.as_ref() as &str, dest)?;
                 return dest.write_char(')');
             },
             Self::Default => ":default",
@@ -531,7 +538,7 @@ impl NonTSPseudoClass {
             Self::UserValid => ElementState::USER_VALID,
             Self::Valid => ElementState::VALID,
             Self::Visited => ElementState::VISITED,
-            Self::CustomState(_) | Self::Lang(_) | Self::ServoNonZeroBorder => {
+            Self::CustomState(_) | Self::Dir(_) | Self::Lang(_) | Self::ServoNonZeroBorder => {
                 ElementState::empty()
             },
         }
@@ -692,6 +699,15 @@ impl<'a, 'i> ::selectors::Parser<'i> for SelectorParser<'a> {
         let pseudo_class = match_ignore_ascii_case! { &name,
             "lang" if !after_part => {
                 NonTSPseudoClass::Lang(parser.expect_ident_or_string()?.as_ref().into())
+            },
+            "dir" if !after_part => {
+                let value = AtomIdent::from(parser.expect_ident()?.as_ref());
+                let v: &str = value.as_ref();
+                if !v.eq_ignore_ascii_case("ltr") && !v.eq_ignore_ascii_case("rtl")
+                {
+                    return Err(ParseError::custom(SelectorParseErrorKind::UnexpectedIdent));
+                }
+                NonTSPseudoClass::Dir(value)
             },
             "state" => {
                 let result = AtomIdent::from(parser.expect_ident()?.as_ref());
