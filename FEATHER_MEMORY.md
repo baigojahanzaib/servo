@@ -4184,3 +4184,25 @@ for most sites, but RUM-dependent frameworks may gate features on it.
 - MATRIX HARNESS IS HEALTHY: boot-per-page runs collect probes reliably
   end-to-end (full pass ~210s). The single-instance handoff poisoned earlier
   runs — ALWAYS pkill feather-ui before matrix runs.
+
+## writing-modes-4: chain fully verified, mystery isolated to runtime application (2026-11-27)
+
+Every link of the pref chain verified present in code:
+- feather shell patches stylo with VENDORED copy at repos/servo/vendor/stylo
+  (shell-new/Cargo.toml [patch] section — vendored for the container-queries
+  gecko-gate work). The vendored longhands.toml HAS the writing-mode servo_pref
+  wiring (line 2693) — same as upstream pin.
+- shell sets layout_css_writing_mode_enabled via Preferences → ServoBuilder
+  .preferences() → servo.rs:1055 prefs::set() → config/prefs.rs runs
+  stylo_static_prefs::set_pref! for writing-mode (line 84).
+- generated properties.rs gates longhand 88 with crate::pref! — a static atomic.
+Yet matrix shows pref OFF at runtime (CSS.supports=false). Remaining hypotheses,
+untested: (a) stylo_static_prefs statics duplicated across crate instances in
+the patch setup — vendored stylo_static_prefs vs servo component linking the
+git version; inspect with cargo tree for duplicates; (b) prefs::set ordering —
+servo parses UA sheets before prefs::set applies?; (c) the probe reads a stale
+process — RULED OUT (fresh boot verified). ALSO: text-orientation needs its own
+pref layout.css.writing-mode.text-orientation.enabled — not yet set in shell.
+NEXT STEP: add eprintln debug in config/prefs.rs set() confirming the write,
+and a probe reading the pref state indirectly. OR test servoshell with the
+pref to isolate shell vs engine.
