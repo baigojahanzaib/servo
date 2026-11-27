@@ -4369,3 +4369,18 @@ construction error to JS instead of expect). Until then webrtc stays off: presen
 is the worst possible surface. crash artifacts confirm the capture pipeline works (class: panic).
 webgpu remains the only unverified batch-2 gate.
 BATCH-1+storage+sanitizer all MERGED: #271 #272 #273 #275.
+
+## sec1zt165 — standing backlog closure sweep (all five items)
+1. SERP dup: closed sec1zt162 (not reproducible, legacy retired server-side).
+2. notification permission flow: shipped+verified (#265 era: prompt→toast end-to-end,
+   engine resource-less-notification fix bddb140).
+3. ellipsis scrollWidth: VERIFIED CLOSED live — ellipsized element sw:490 cw:80 (correct,
+   not clamped); fix dde74fc7b93 on feather-engine.
+4. container-queries vs modern SERP: closed — modern SERP fully renders (multiple visual
+   verifications this session incl. regression pass sec1zt161).
+5. drag-drop: VERIFIED WORKING END-TO-END — real mouse-driven drag on the matrix page
+   produces the full spec sequence: dragstart|setdata-ok|drag|dragenter|dragover|
+   drop:feather-drag-payload|dragend, data payload round-trips. The matrix doc's
+   'honest-absence' categorization is STALE — servo's drag machinery (script/drag/html_drag.rs,
+   drag_gesture wired in document_event_handler) is real and input-driven. MATRIX-DOC-NEEDS-
+   REGEN: drag-drop x4 reds should flip green on next matrix.py run.
