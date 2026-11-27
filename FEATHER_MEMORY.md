@@ -77,7 +77,6 @@ Measured (feather-shell, llvmpipe host, same 40-image loop page,
 40x1600x1200 PNG ≈ 307 MiB decoded):
 
 | Build | Page loaded | Tab hidden (~60-90s settled) |
-|---|---|---|
 | stock servoshell (`main` @170fe92389a, no feather patches) | 944 MB, stays resident | n/a — no tab-hide path |
 | feather-engine (image-cache bound only) | 1039 MB | 1027 MB — no release |
 | feather-engine + discard lever | 835 MB | **712 MB** (−315 MB vs no-lever) |
@@ -124,7 +123,6 @@ little RSS. Left at defaults.
 Baseline ~322MB RSS / ~275MB PSS (llvmpipe host):
 
 | Lever | RSS | Verdict |
-|---|---|---|
 | `layout_threads` 3→1 | 323MB | no effect |
 | `js_mem_max` 128 | 321MB | no idle effect; kept at 192 as a runaway cap |
 | `js_mem_gc_malloc_threshold_base_mb` 38→16 | 321MB | no effect |
@@ -145,7 +143,6 @@ on collection pressure. 30-nav WebDriver loop (10 sites ×3), single
 servoshell PID RSS in MB, macOS arm64 16GB host:
 
 | Config | Start→End | Shape |
-|---|---|---|
 | stock servo/main | 411→3355 | monotone |
 | stock `--zealous-gc` | 414→2460 | still climbing |
 | feather-engine (roots released) | 410→2953 | mild sawtooth, real mid-run drops |
@@ -164,7 +161,6 @@ servoshell PID RSS in MB, macOS arm64 16GB host:
 as the rows above, same-window runs:
 
 | Build | End MB | Verdict |
-|---|---|---|
 | stock | 2681 | baseline |
 | reflector-roots only | 3209 | ≈ stock, with reclaim drops |
 | + image-cache bound | 2697 | ≈ stock |
@@ -231,7 +227,6 @@ real visibilityState:
 RESULTS (llvmpipe, looping 40-image slideshow every 350ms):
 
 | Tab state | CPU | net fetches |
-|---|---|---|
 | hidden, before | ~390-460% | 1 fetch+decode/tick |
 | hidden, fixed | **0.0%** | **0** |
 | shown, cycling | ~110-120% (legit per-tick raster) | 0 (warm cache) |
@@ -532,7 +527,6 @@ Unsalvageable docs die sooner via `DiscardDocument` → replace_reloader(Yes).
 Measured (30-nav loop, feather-env prefs, purge already shipped):
 
 | history depth | end RSS | mid-loop |
-|---|---|---|
 | 20 (default) | 2725 / 3500 | 1.4-2.6 GB |
 | 5 | 1884 | 1.6-2.3 GB |
 | 1 | 2386 | 1.3-2.4 GB |
@@ -1105,7 +1099,6 @@ decode (impossible when data is app-driven).
 isTypeSupported true for avc1/mp4a, fMP4 init+media appends decode and play
 (t advancing, rs 4, zero errors). Pure-gst harness agrees.
 
-**Symptom index additions:**
 - Symptom: twitch-class sites black player with working page chrome → check:
   SourceBuffer::SetTimestampOffset (accept-and-ignore — hls.js transmuxing
   rewrites ALL timestamps through it; PRIME SUSPECT), live-edge semantics
@@ -1502,7 +1495,6 @@ End-to-end verification of the §1t seek implementation against signed-in real Y
 
 INSTRUMENTED FACTS (appendtrace): YouTube NEVER uses timestampOffset for regular appends (always 0) — segments carry timeline position in their internal tfdt. Post-seek YouTube re-appends init segments (small 220-266 byte appends) + media segments, including re-appending byte-identical lengths already fed pre-seek. So the "page re-appends on its own seeking handler" assumption holds — data IS flowing post-seek; the failure is in position/timeline machinery, not starvation.
 
-Symptom index additions:
 - Symptom: position frozen at exactly X.001 while playback feeding continues (rs 4, no error) → check: post-flush-recreate position derivation in servomse/mse_source.rs (owns the gst segment base after appsrc recreation — prime suspect: recreated appsrc emits segment starting at/near 0 and position mapping clamps or mismatches), video track decode stall after seek (first-frame-only decode if post-seek media doesn't align), per-track position selection logic in servo-media player (which track provides position and whether it re-bases after recreate). NOT the network layer (appends verified flowing), NOT timestampOffset handling (YouTube uses 0 always).
 - Symptom: buffered ranges disagreeing with playback position on real YouTube (index ahead OR behind position) → check: tfdt-scanning indexer vs multi-init quality-switch streams (YouTube switches init segments across bitrates — each quality has own init; indexer may mis-parse across the switch), appendWindow clipping unimplemented?, the X.001 offset pattern suggesting +1ms frame-duration artifacts. WebM indexer verified accurate on uniform content — fMP4 multi-init real-world content is the untested class.
 - Symptom: media error + emptied events immediately after seek-to-zero → check: seek_reset path with target 0 / pipeline state when seek arrives while previous recreate still in flight (three rapid seeks in probe), error propagation from qtdemux on re-fed init segments.
@@ -1617,7 +1609,6 @@ Honest mission assessment: single-seek sometimes works end-to-end now (correct p
 **THE TABLE — idle reddit tab, signed-out, settled ~45s+, RSS 1162MB, stable across 3 dumps 2min apart:**
 
 | MB | category |
-|---|---|
 | 342 | webrender/images — WR-side decoded+uploaded surfaces |
 | 309 | net image-cache — CPU decoded copies, main pipeline ALONE |
 | 272 | DOM text nodes (reddit shreddit DOM) |
@@ -1854,7 +1845,6 @@ The stage-4 closeout table compares: sec1zh/sec1zj baselines (idle-top: WR 342 +
 Protocol: signed-in reddit, SERVO_MEMDUMP timed dumps, deep scroll 8-24 x 1000-1500px. Same-bytes correction applies throughout (WR + cache rows count the same physical allocation — real mass is NOT their sum).
 
 | measurement | before machinery | after machinery | delta |
-|---|---|---|---|
 | resident total, deep scroll 12000px | 3812MB (growing 4523 by 24k equiv) | 2775MB | -1037MB (-27%) |
 | resident total, deep scroll 24000px | (baseline run showed continuous growth 3812->4184->4524 across dumps) | 2374MB FLAT | bounded flat |
 | webrender/images row, deep scroll | 872MB and growing | 98-111MB FLAT across depths | -88%, non-growing |
@@ -1982,11 +1972,8 @@ Symptom index: symptom "RSS huge but memreport categories all bounded/small on v
 OPEN MISSION-CLASS questions: (1) how many concurrent gst pipelines does a feed scroll accumulate and when do they die (shreddit virtualization destroys post elements — does teardown actually happen?); (2) multiqueue/decoder pool sizes per pipeline — the multiqueue default buffers are time-based not byte-capped for video; (3) whether preloaded-but-never-played videos can be prevented from prerolling deep frame buffers at all (decode-on-play activation — the natural architectural fix, echoes the image-memory lesson: the only real win is not decoding what isn't visible).
 ## sec1zt3 — THE NEXT MEMORY FRONTIER: gst decode-pipeline mass is RSS-dominant and reporter-invisible (2026-11-26)
 
-Deep-scroll verification with ALL fixes (eviction ON, r/pics video-heavy, scrollY 22500, 15/15 scrolls zero panics): every reporter category bounded flat — image-cache 266→287MB at cap, webrender/images 235→218, SourceBuffer 66→27 (quota working in the wild), text-nodes ~flat. **Yet RSS = 7.2GB.** The memreport/jemalloc accounting is now blind to the dominant mass: gstreamer decode pipelines allocate through system malloc/glib — NOT jemalloc — so video memory is completely invisible in memreport rows. Frame math: one 1080p NV12 frame ≈ 3MB; every preloaded video's pipeline holds multiqueue+decoder-pool frames; video-heavy infinite feeds preload dozens-hundreds of pipelines. Compare closeout-era RSS 2374MB at similar depth BEFORE video enablement — the multi-GB delta is the video pipeline mass.
 
-Symptom index: symptom "RSS huge but memreport categories all bounded/small on video-heavy pages" -> check: gst pipeline frame memory FIRST (system-malloc invisible to jemalloc rows — verification must use RSS not memreport), multiqueue/decoder bufferpool retention in paused/preloaded pipelines. NOT image cache/eviction regression — verify categories before suspecting them.
 
-OPEN MISSION-CLASS questions: (1) how many concurrent gst pipelines does a feed scroll accumulate and when do they die (shreddit virtualization destroys post elements — does teardown actually happen?); (2) multiqueue/decoder pool sizes per pipeline — the multiqueue default buffers are time-based not byte-capped for video; (3) whether preloaded-but-never-played videos can be prevented from prerolling deep frame buffers at all (decode-on-play activation — the natural architectural fix, echoes the image-memory lesson: the only real win is not decoding what isn't visible).
 
 ## sec1zt4 — RSS forensic numbers: the 5GB gap decomposition starting point (2026-11-26 continuation of sec1zt3)
 
@@ -2017,7 +2004,6 @@ The shell's `js_mem_max=192` runaway cap (kept from memory-pressure work, predat
 Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identical protocol across all runs, signed-out feed with video posts:
 
 | config | RSS at depth 22500 |
-|---|---|
 | baseline (pre-program, growing unbounded) | 7.4GB |
 | eviction only (FEATHER_IMGMEM=1) | ~7.2GB |
 | arena cap only (MALLOC_ARENA_MAX=2) | 4.2GB |
@@ -2026,16 +2012,8 @@ Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identic
 **−5.9GB, 80% reduction, zero panics, zero playerleaks.** Settled flat (1458→1462→1463MB across minutes). Non-obvious interaction: combined is far better than either lever alone — eviction frees jemalloc image mass fast enough that less churn crosses into glibc arenas, and capped arenas can't retain what little gst churn remains. IMPORTANT nuance for all lanes: eviction-only measurements were nearly useless against RSS BECAUSE the freed masses were being re-captured by arena retention — the two levers are multiplicative, and any future memory fix must be measured with BOTH active or its effect will be invisible. This is the closeout number for the memory program; residual 1.46GB decomposes as bounded jemalloc live set (DOM/text/XHR/sourcebuffer categories documented in sec1zr-zs) + gst working set — the unaccounted-jemalloc question of sec1zt8 is largely ANSWERED by this measurement: most of the 'unaccounted' mass was arena retention after all.
 ## sec1zt9 — MEMORY PROGRAM CLOSEOUT: combined eviction+arena-cap measurement (2026-11-26)
 
-Final end-to-end number, r/pics deep scroll 15×1500px = scrollY ~22500, identical protocol across all runs, signed-out feed with video posts:
 
-| config | RSS at depth 22500 |
-|---|---|
-| baseline (pre-program, growing unbounded) | 7.4GB |
-| eviction only (FEATHER_IMGMEM=1) | ~7.2GB |
-| arena cap only (MALLOC_ARENA_MAX=2) | 4.2GB |
-| **combined (feather shell default config)** | **1.46GB FLAT** |
 
-**−5.9GB, 80% reduction, zero panics, zero playerleaks.** Settled flat (1458→1462→1463MB across minutes). Non-obvious interaction: combined is far better than either lever alone — eviction frees jemalloc image mass fast enough that less churn crosses into glibc arenas, and capped arenas can't retain what little gst churn remains. IMPORTANT nuance for all lanes: eviction-only measurements were nearly useless against RSS BECAUSE the freed masses were being re-captured by arena retention — the two levers are multiplicative, and any future memory fix must be measured with BOTH active or its effect will be invisible. This is the closeout number for the memory program; residual 1.46GB decomposes as bounded jemalloc live set (DOM/text/XHR/sourcebuffer categories documented in sec1zr-zs) + gst working set — the unaccounted-jemalloc question of sec1zt8 is largely ANSWERED by this measurement: most of the 'unaccounted' mass was arena retention after all.
 
 ## Devtools server wired into shell-new — diagnostic capability unlock (2026-11-26, macOS lane)
 
@@ -2083,18 +2061,9 @@ Verification of the macOS lane's unifying theory (memory-pressure boot corruptio
 **Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
 ## sec1zt10 — YouTube OOM/define_properties theory VERIFIED + fixed (2026-11-26)
 
-Verification of the macOS lane's unifying theory (memory-pressure boot corruption), on Linux:
 
-**Experiment setup**: js_mem_max=32 induced-pressure harness (youtube.com watch boot × 6 per run). NOTE js_mem_max pref is capped at range 1..0x100 (256MB) in script_runtime — values above 256 are IGNORED silently.
 
-**Findings**:
-1. **The ceiling lever is a dead end**: servo already sets JSGC_MAX_BYTES=u32::MAX when js_mem_max unset — there is no ceiling to raise. The OOM is genuine allocation failure, not a configurable cap.
-2. **Memory pressure reproduces the boot-corruption variance exactly as theorized**: under 32MB cap, boots alternate full/partial ('no-ytplayer' — empty title, incomplete boot) — the stuck-boot symptom reproduced on demand. This CONFIRMS pressure→corruption causal chain.
-3. **Panic fixed at BOTH sites** (define_guarded_properties:434 AND define_guarded_methods:418 — same defect class): failure now clears the pending exception + logs `[interface]` warn + leaves interface partially defined. Page degrades, browser survives.
-4. **Post-fix survival verified**: 64 uncaught out-of-memory exceptions across 6 boot attempts — all surfaced as page-level JS exceptions, zero panics, process alive throughout. The OOM-death behavior is now correct-by-construction at the interface-definition sites.
-5. Caveat: the `[interface]` warning never fired in the induced-pressure runs — the interface-definition path apparently wasn't the failure point under this pressure pattern (OOMs hit script execution instead). The fix is verified by construction + general survival, not by direct observation of that path firing. If YouTube instability persists on memory-constrained devices after this, the next suspect is NON-interface OOM corruption of boot state (page-level, not engine-fixable beyond what browsers normally do).
 
-**Bonus discovery this session**: YouTube is NOT currently bot-walled on the Linux VM — watch pages boot with correct titles and playback telemetry fires (api/stats/qoe POSTs). The wall documented earlier was intermittent or lifted. YouTube is testable on Linux again — update prior assumptions.
 
 ## RULED OUT: IntersectionObserver initial-callback hypothesis (2026-11-26, macOS lane)
 
@@ -2128,21 +2097,10 @@ Mechanism hunt for the invisible-results defect (results in DOM but nothing pain
 **Live suspect chain**: youtubei response processing → framework data-sync into elements never happens for feed elements. The visibility flip (display none→flex on two-column container, hidden clearing) is data-binding-driven — since binding never populates, everything downstream stays collapsed. Next probe directions: (a) does the ytd-search element itself hold response data (.data or framework equiv) — isolates response-processing vs per-element binding; (b) what JSAPI/feature does the data-sync path need — candidates in missing-API class (per cfdcbc39 hydration-stall index): dynamic import()/chunk loading for the framework's lazy data module, or observable/atomic update primitives. NOTE the boot instance DOES get unhidden at T+1952 then replaced — meaning the FIRST element's data-binding DID populate — so response-processing works at least once; the failure is specific to post-replacement re-binding. That narrows it: replacement-time re-hydration trigger, not the data pipeline itself.
 ## sec1zt11 — YouTube invisible-results investigation, Linux round: mechanism narrowed to data-binding-never-populates (2026-11-26)
 
-Boot-stability verification first: **8/8 real YouTube search boots succeed post define-panic fix — hidden attr cleared, zero crashes, zero OOMs** (normal memory conditions). The stuck-hidden boot variance documented on macOS does NOT reproduce on Linux at normal memory — consistent with the js_mem_max=192 cap being the macOS corruption source. YouTube is NOT bot-walled on Linux currently — full watch/search pages load, playback telemetry fires.
 
-Mechanism hunt for the invisible-results defect (results in DOM but nothing paints — CONFIRMED still broken on Linux despite hidden being cleared on ytd-search):
 
-**Live measurements** (r/pics-style probe harness on real youtube search): renderer innerHTML fully populated (20KB, real titles) BUT entire chain zero-height; root cause of collapse: `ytd-two-column-search-results-renderer` computed **display:none**; inside it `img src=none` — thumbnails never even got URLs — **the data-binding population never runs on the elements at all**. Text nodes paradoxically measure nonzero range rects inside the display:none subtree (likely a servo range-measurement bug for non-rendered content — minor, noted).
 
-**Ruled out this round (each probe-verified, expensive — do not re-walk)**:
-- scheduler.postTask: `window.scheduler` is UNDEFINED in servo BUT servo's UA is Firefox-flavored (`Firefox/153.0` — components/config/prefs.rs UserAgentPlatform) so YouTube serves the FIREFOX codepath, which cannot require postTask (real Firefox lacks it and works). Implementing postTask would be wasted work — coordinator note: NOT unguarded-required, condition for implementation not met.
-- IntersectionObserver primitive: fires correctly initial+scroll (test harness in /tmp/mserepro/iotest.html).
-- Custom element machinery: constructor+connectedCallback fire correctly for innerHTML insertion, appendChild, AND youtube-style wholesale replaceChildren (cetest.html) — all initialize.
-- CE definitions: all registered on the live page (ytd-video-renderer, ytd-app, ytd-masthead all defined).
-- JS boot errors: ZERO uncaught exceptions/typeerrors in boots — silent failure, not a thrown error.
-- `__data` presence as init discriminator: EVEN THE MASTHEAD (which renders fine) lacks `__data` — it's a Polymer-2-ism modern YouTube doesn't use; macOS lane's init theory partially red-herring. The operative evidence of non-init is img src=none (data never populated), not __data.
 
-**Live suspect chain**: youtubei response processing → framework data-sync into elements never happens for feed elements. The visibility flip (display none→flex on two-column container, hidden clearing) is data-binding-driven — since binding never populates, everything downstream stays collapsed. Next probe directions: (a) does the ytd-search element itself hold response data (.data or framework equiv) — isolates response-processing vs per-element binding; (b) what JSAPI/feature does the data-sync path need — candidates in missing-API class (per cfdcbc39 hydration-stall index): dynamic import()/chunk loading for the framework's lazy data module, or observable/atomic update primitives. NOTE the boot instance DOES get unhidden at T+1952 then replaced — meaning the FIRST element's data-binding DID populate — so response-processing works at least once; the failure is specific to post-replacement re-binding. That narrows it: replacement-time re-hydration trigger, not the data pipeline itself.
 
 ## sec1zt12 — YouTube invisible-results DEFINITIVE isolation: single-attribute defect (2026-11-26)
 
@@ -2187,7 +2145,6 @@ YOUTUBE PROGRESS: stamping now completes reliably — vrs=19 with 150 thumbnail 
 Aging experiment: youtube search boot sampled at T+5/20/50/80s — hidden stays stamped on ytd-two-column-search-results-renderer the ENTIRE time, renderer height 0 throughout. **Not a late-timing issue — the unhide never fires at all in servo, deterministically.** Also: instance-identity polling (T+5.7→22s) shows a SINGLE persistent element instance — no replacement observed in that window, meaning either replacement completes before T+5.7s or doesn't happen; the two-phase race story from macOS couldn't be confirmed in servo timing. Simpler theory consistent with evidence: the unhide mechanism never runs in servo at all (rather than fires-then-gets-discarded). Chrome-UA spoof test: user_agent=Chrome/131 changes NOTHING (still hidden, still zero-height) — defect is UA-independent, shared framework path, and NOT a UA-gating issue. Open crux unchanged but sharpened: WHAT fires the hidden removal in real browsers — candidates narrowed: rIC-scheduled hydration commit (servo's rIC v1 fires callbacks but with non-spec ordering — IdleCallbackTick pumps at rAF rate continuously, so ordering vs rAF/microtasks is wrong; if youtube's commit is ordered relative to rAF/paint in a way servo violates, the commit could run BEFORE the dependent state exists and no-op silently), or custom-elements reaction timing (though CE primitives probe-verified). Cheapest next experiment: rIC-ordering bisect — locally revert/disable rIC (elements then can't schedule the commit at all — if behavior IDENTICAL with and without rIC, the commit either doesn't use rIC or the v1 ordering is irrelevant; if youtube's commit is rIC-dependent and servo ordering breaks it, disabling rIC should change SOMETHING observable).
 ## sec1zt13 — unhide timing evidence: permanent deterministic failure, UA-independent (2026-11-26)
 
-Aging experiment: youtube search boot sampled at T+5/20/50/80s — hidden stays stamped on ytd-two-column-search-results-renderer the ENTIRE time, renderer height 0 throughout. **Not a late-timing issue — the unhide never fires at all in servo, deterministically.** Also: instance-identity polling (T+5.7→22s) shows a SINGLE persistent element instance — no replacement observed in that window, meaning either replacement completes before T+5.7s or doesn't happen; the two-phase race story from macOS couldn't be confirmed in servo timing. Simpler theory consistent with evidence: the unhide mechanism never runs in servo at all (rather than fires-then-gets-discarded). Chrome-UA spoof test: user_agent=Chrome/131 changes NOTHING (still hidden, still zero-height) — defect is UA-independent, shared framework path, and NOT a UA-gating issue. Open crux unchanged but sharpened: WHAT fires the hidden removal in real browsers — candidates narrowed: rIC-scheduled hydration commit (servo's rIC v1 fires callbacks but with non-spec ordering — IdleCallbackTick pumps at rAF rate continuously, so ordering vs rAF/microtasks is wrong; if youtube's commit is ordered relative to rAF/paint in a way servo violates, the commit could run BEFORE the dependent state exists and no-op silently), or custom-elements reaction timing (though CE primitives probe-verified). Cheapest next experiment: rIC-ordering bisect — locally revert/disable rIC (elements then can't schedule the commit at all — if behavior IDENTICAL with and without rIC, the commit either doesn't use rIC or the v1 ordering is irrelevant; if youtube's commit is rIC-dependent and servo ordering breaks it, disabling rIC should change SOMETHING observable).
 
 ## sec1zt14 — vp9 abort hunt FINAL state + real-YouTube dependency documented (2026-11-26)
 
@@ -2216,7 +2173,6 @@ Property-write instrumentation on ytd-search.data.hideContents across 40s of set
 Live probe on stuck search page: `ytd-search` element `.data` is FULLY POPULATED with the real response (responseContext, estimatedResults, contents, trackingParams, header, topbar, onResponseReceivedCommands, targetId) — response processing works end-to-end, binding system alive (ytd-search carries __dataReady/__dataEnabled/__dataPending family — so the Polymer-ish data system IS in use on search elements, partially retracting the modern-framework correction: masthead lacks it but search has it). rIC regression check: CPU cost of the starvation fix negligible (3 ticks/5s on settled page — loop drains correctly, no spin). YET hidden persists. **The complete evidence chain: response arrives (200) → data binds to element (verified populated) → scheduler queues drain (all empty) → but the hidden-flip write never executes.** Remaining suspect space is now tiny: the element-internal logic that translates data-arrival into clearing hidden — either (a) a priority-8 commit job that gets CANCELED by a subsequent navigation/page-change (resetNavigationState cancels onPageChangeJobId — servo-specific double-navigation timing could hit this; queues empty is consistent with cancellation), or (b) the computeHideContents-equivalent binding for search never re-evaluates because the property-effects cascade breaks silently. Probe next: whether a second yt-navigate-start fires AFTER the data-bearing one in servo (double-navigate cancel race — the precise servo-ordering theory). Instrument via webdriver-injected listener post-load then trigger in-page search refinement navigation.
 ## sec1zt17 — final narrowing: data FULLY BOUND, disconnect is data-arrival → attribute-flip (2026-11-26)
 
-Live probe on stuck search page: `ytd-search` element `.data` is FULLY POPULATED with the real response (responseContext, estimatedResults, contents, trackingParams, header, topbar, onResponseReceivedCommands, targetId) — response processing works end-to-end, binding system alive (ytd-search carries __dataReady/__dataEnabled/__dataPending family — so the Polymer-ish data system IS in use on search elements, partially retracting the modern-framework correction: masthead lacks it but search has it). rIC regression check: CPU cost of the starvation fix negligible (3 ticks/5s on settled page — loop drains correctly, no spin). YET hidden persists. **The complete evidence chain: response arrives (200) → data binds to element (verified populated) → scheduler queues drain (all empty) → but the hidden-flip write never executes.** Remaining suspect space is now tiny: the element-internal logic that translates data-arrival into clearing hidden — either (a) a priority-8 commit job that gets CANCELED by a subsequent navigation/page-change (resetNavigationState cancels onPageChangeJobId — servo-specific double-navigation timing could hit this; queues empty is consistent with cancellation), or (b) the computeHideContents-equivalent binding for search never re-evaluates because the property-effects cascade breaks silently. Probe next: whether a second yt-navigate-start fires AFTER the data-bearing one in servo (double-navigate cancel race — the precise servo-ordering theory). Instrument via webdriver-injected listener post-load then trigger in-page search refinement navigation.
 
 ## sec1zt18 — investigation halt state + tooling unlock needed (2026-11-26)
 
@@ -2243,19 +2199,9 @@ FULL CONTRACT: ytd-search actionMap registers "yt-show-search-contents-command"�
 **Correction to earlier narrowing**: the question is no longer "why doesn't the flip write execute" in the abstract — it is specifically "why doesn't YouTube's visibility-observer-based lazy init complete on the replacement tree". Data binding works (ytd-search.data fully populated), upgrade works, CE reactions work, IO primitive works, scheduler drains. The defect is in the interaction between IO-driven lazy init and servo's IO implementation details OR in whatever event/step YouTube uses to begin that init.
 ## sec1zt19 — devtools unlock + near-complete root cause: IO-lazy-init suspect, upgrade myth busted (2026-11-26)
 
-**TOOLING UNLOCKED**: servoshell --devtools=9222 works out of the box (no shell-new build needed — shell-new build skipped deliberately, saving hours). Firefox devtools protocol over RAW TCP (not websocket — connection resets if ws attempted). Client quirks: length-prefixed packets "len:json"; read root hello first; use listTabs → getTarget on tab actor (NOT attach — both tab.attach and BrowsingContext.attach return unrecognizedPacketType); getTarget response frame object contains consoleActor; evaluateJS replies arrive wrapped in {"Ok": {...}} — match by input text; evaluateJS does NOT await promises (write results to window.__x and poll); innerHTML assignments in eval throw TrustedTypes errors on youtube (page enforces TT). Servo actor support: console evaluateJS/evaluateJSAsync yes, listFrames/listWorkers stubs.
 
-**INVESTIGATION RESULTS (all live-probed on stuck youtube search page)**:
-1. IntersectionObserver primitive WORKS — test observer on fresh fixed-position element fired immediately (isIntersecting:true). Simple case fine.
-2. **Upgrade myth BUSTED**: stuck ytd-two-column-search-results-renderer IS properly upgraded — Object.getPrototypeOf(tc) === customElements.get(...).prototype TRUE. The constructor-identity test (tc.constructor !== def) is a RED HERRING: even freshly createElement'd tc elements show the same pattern (proto correct, constructor resolves to anonymous empty-name class). Definitive upgrade test is PROTO identity, not constructor identity — constructor resolution is weird for these minified classes even in correct operation. Custom element machinery is NOT the defect.
-3. connectedCallback pattern: ytd-video-renderer (works) has NO cc; ytd-two-column (stuck) HAS cc; containers ytd-search/ytd-app have cc+ac+rich lifecycle. cc-absence is normal for leaf renderers — YouTube initialization is NOT purely CE-reaction-driven.
-4. **KEY FIND: ytd-search prototype has initVisibilityObserver_, registerRenderer, unregisterRenderer_, isRenderer_** — YouTube lazy-initializes renderers via a VisibilityObserver (IntersectionObserver-based). This is the lazy-init path the replacement-chain doc hypothesized. Prime suspect: IO behavior in the specific configuration YouTube uses (elements inside display:none subtrees / zero-size / specific rootMargin) differs servo vs Chrome, OR IO callbacks don't fire correctly for elements that START hidden. NOTE spec subtlety: display:none elements have no boxes → never intersect — if init depends on IO firing while hidden then unhide depends on init, chicken-egg — but Chrome resolves it somehow (perhaps IO fires when visibility flips, or init uses different trigger).
-5. Fresh-inserted tc element acquired children:2 spontaneously — some framework machinery (likely MutationObserver-driven stamping) DOES act on inserted elements, but data-init (__data) still never populates.
-6. Negative: monkeypatching prototype.connectedCallback post-registration does nothing (spec — reactions use registry-captured callbacks) — don't bother with that instrumentation technique.
 
-**NEXT DECISIVE EXPERIMENT (documented for continuation)**: install IO spy wrapper (pattern in session — wraps window.IntersectionObserver, logs created/callbacks/observes counts) then trigger a TRUE SPA navigation — NOT form.submit (causes full navigation, wipes spy — negative result recorded) — use YouTube internal router: click a visible anchor/link or use the masthead logo SPA behavior. Compare IO fire behavior servo vs expectation during the replacement render. Alternative cheaper static route: fetch youtube's kevlar/kevlarlib bundle and read initVisibilityObserver_ implementation — determine exactly what trigger completes renderer init and what attribute-write clears hidden (the write site question from sec1zt15 is still technically open — the write may BE inside the lazy-init completion).
 
-**Correction to earlier narrowing**: the question is no longer "why doesn't the flip write execute" in the abstract — it is specifically "why doesn't YouTube's visibility-observer-based lazy init complete on the replacement tree". Data binding works (ytd-search.data fully populated), upgrade works, CE reactions work, IO primitive works, scheduler drains. The defect is in the interaction between IO-driven lazy init and servo's IO implementation details OR in whatever event/step YouTube uses to begin that init.
 
 ## sec1zt20 — IO spec-compliance verified; investigation consolidated for continuation (2026-11-26)
 
@@ -2284,11 +2230,8 @@ Direct call ys.onYtShowSearchContentsCommand() → hidden=false, hc=false, layou
 **Instrument survival negative**: attribute-write spy on Element.prototype does NOT survive full navigation (obviously) and the SPA-nav spy capture was pre-empted by the wipe — but the spy install methodology is sound for future SPA-only captures: wrap removeAttribute/setAttribute/hidden-property-setter BEFORE clicking in-page links.
 ## sec1zt22 — CRITICAL discriminator: unhide mechanism WORKS on home page, fails only on search; plus eval-wedge defect (2026-11-26)
 
-**MAJOR narrowing**: SPA-navigated-to-home page renders PERFECTLY in servo — ytd-rich-grid-renderer hidden:false, height 6965px, data bound, 30 rich-item renderers. The hideContents/unhide mechanism is NOT broken in general — it fires correctly for home. The defect is specific to the SEARCH results path (or the initial-load path — discriminator incomplete, see below). Also note: the home page in question was reached via SPA navigation from the wedged search page — SPA nav itself works (logo click), so in-page navigation machinery is functional.
 
-**New defect surfaced — eval-wedge on fresh loads**: after location.href full navigation to youtube home, devtools evaluateJS persistently throws 'Location relevant Document is not same origin-domain with entry settings object' for 30+s across fresh devtools connections — servo document/script state wedges after full navigation in a way it does not after SPA nav. Transient version of this error is normal during navigation, but persistent-for-30s+ suggests either navigation never completing or a script-thread wedge. UNVERIFIED whether page renders visually during the wedge (no screenshot taken). This wedge also blocked the fresh-load-vs-SPA discriminator experiment. **This is itself a serious servo defect candidate affecting all full navigations — possibly the SAME mechanism that breaks initial-load search unhide**: if the initial-load document state is wedged in some subtle way (not fully wedged — most JS runs — but some spec check failing), framework codepaths touching affected state would throw silently. Direction for continuation: reproduce eval-wedge minimally (any full navigation to a simple page?) and find the spec check in servo script/dom — grep for 'same origin-domain' or the spec step in location/document access.
 
-**Instrument survival negative**: attribute-write spy on Element.prototype does NOT survive full navigation (obviously) and the SPA-nav spy capture was pre-empted by the wipe — but the spy install methodology is sound for future SPA-only captures: wrap removeAttribute/setAttribute/hidden-property-setter BEFORE clicking in-page links.
 
 ## Console visibility live — boot nearly clean, one real error (2026-11-26 final)
 
@@ -2303,7 +2246,6 @@ ResizeObserver EXONERATED (rotest.html: n=122 callbacks, loop error fires but de
 CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a document-wide wedge — pure JS evals fine, document.title/documentElement/body all accessible post-error. It is specifically **the Location object access that throws**. AND: after `location.href='https://example.com/'` the page NEVER NAVIGATED — title still 'YouTube', body still youtube's 47 children, minutes later. **Servo defect: location.href assignment during a complex page state can silently fail to navigate AND leaves the Location object itself throwing spec errors on subsequent access.** Mechanism hypothesis: navigation starts (transitions the document's incumbent/settings state) but never completes or aborts, leaving Location's relevant-document check permanently failing. IMPACT ON YOUTUBE THEORY: YouTube's SPA framework constantly reads/writes location/history during response processing — if servo location state wedges during the boot sequence's navigation transitions, framework code touching location throws silently (K() swallows), aborting response completion before the unhide write. **This is now the prime mechanism suspect.** Next steps: (1) minimal repro — does location.href wedge reproduce on simple pages or only youtube-complex ones; (2) grep servo script/dom/location.rs for the relevant-document check and audit navigation-transition state handling; (3) test whether history.pushState (what YouTube SPA actually uses) also wedges. NOTE prior data point consistent: clicking filter chips didn't navigate either (sec1zt18) — possibly the same defect, not 'page already wedged'.
 ## sec1zt23 — REFRAMED: location-object wedge + failed navigation — a servo navigation-state defect (2026-11-26)
 
-CRITICAL CORRECTION + finding: the 'same origin-domain' eval error is NOT a document-wide wedge — pure JS evals fine, document.title/documentElement/body all accessible post-error. It is specifically **the Location object access that throws**. AND: after `location.href='https://example.com/'` the page NEVER NAVIGATED — title still 'YouTube', body still youtube's 47 children, minutes later. **Servo defect: location.href assignment during a complex page state can silently fail to navigate AND leaves the Location object itself throwing spec errors on subsequent access.** Mechanism hypothesis: navigation starts (transitions the document's incumbent/settings state) but never completes or aborts, leaving Location's relevant-document check permanently failing. IMPACT ON YOUTUBE THEORY: YouTube's SPA framework constantly reads/writes location/history during response processing — if servo location state wedges during the boot sequence's navigation transitions, framework code touching location throws silently (K() swallows), aborting response completion before the unhide write. **This is now the prime mechanism suspect.** Next steps: (1) minimal repro — does location.href wedge reproduce on simple pages or only youtube-complex ones; (2) grep servo script/dom/location.rs for the relevant-document check and audit navigation-transition state handling; (3) test whether history.pushState (what YouTube SPA actually uses) also wedges. NOTE prior data point consistent: clicking filter chips didn't navigate either (sec1zt18) — possibly the same defect, not 'page already wedged'.
 
 ## CORRECTION: unhandledrejection IS fully implemented in servo upstream (2026-11-26)
 
@@ -2318,7 +2260,6 @@ VERIFIED LIVE: yt-page-data-updated + yt-navigate-finish both fire correctly (T2
 Definitive discrimination test: page with inline script accessing location.hostname + history.pushState + location.pathname — title shows LOC-OK:127.0.0.1|PS-OK:/spa-path — **real page JavaScript location access works perfectly, incl. pushState SPA pattern**. The persistent 'same origin-domain' throw is specific to devtools evaluateJS: entry settings object for devtools eval is not the page global, so the spec check correctly throws FOR THE EVAL ONLY. sec1zt23's 'prime mechanism suspect' is RETRACTED — it was instrumentation artifact. (Side findings that stand: location.href full navigation DOES work on simple pages — iana.org nav succeeded; and devtools eval of location.* will always throw — workaround: read location indirectly via document.URL or a page-side mirror.) ALSO: the servo FIXME in location.rs document_if_same_origin is real but only affects not-fully-active edge cases, NOT the youtube defect. BACK TO EVIDENCE: home unhide works (SPA-navigated), search unhide fails (initial loads). The open discriminator is initial-load vs SPA-nav for the SEARCH page specifically.
 ## sec1zt24 — CORRECTION: location wedge is devtools-eval artifact, page JS unaffected — location theory DEAD (2026-11-26)
 
-Definitive discrimination test: page with inline script accessing location.hostname + history.pushState + location.pathname — title shows LOC-OK:127.0.0.1|PS-OK:/spa-path — **real page JavaScript location access works perfectly, incl. pushState SPA pattern**. The persistent 'same origin-domain' throw is specific to devtools evaluateJS: entry settings object for devtools eval is not the page global, so the spec check correctly throws FOR THE EVAL ONLY. sec1zt23's 'prime mechanism suspect' is RETRACTED — it was instrumentation artifact. (Side findings that stand: location.href full navigation DOES work on simple pages — iana.org nav succeeded; and devtools eval of location.* will always throw — workaround: read location indirectly via document.URL or a page-side mirror.) ALSO: the servo FIXME in location.rs document_if_same_origin is real but only affects not-fully-active edge cases, NOT the youtube defect. BACK TO EVIDENCE: home unhide works (SPA-navigated), search unhide fails (initial loads). The open discriminator is initial-load vs SPA-nav for the SEARCH page specifically.
 
 ## hideContents origin refined (2026-11-26 endgame-2)
 
@@ -2343,7 +2284,6 @@ Deep scan of fully-processed ys.data: only showDialogCommand + adsControlFlowOpp
 STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds `hidden="[[data.hideContents]]"` on ytd-two-column-search-results-renderer. The ONLY write that clears it: `onYtShowSearchContentsCommand(){this.set("data.hideContents",!1)}` registered via `actionMap={"yt-show-search-contents-command":"onYtShowSearchContentsCommand"}` in the YtActionHandlerBehavior — actions flow as `yt-action` DOM events carrying detail.actionName, routed by the _.jL singleton router. LIVE VERIFIED on stuck servo page: handler IS registered (typeof function), manual `ys.set('data.hideContents', false)` unhides + full render 7960px — binding chain perfect. Response data (1.66MB) contains NO showSearchContents anywhere (568 other Command refs) and NO hideContents key — the action trigger is purely client-side, fired when response processing completes. BOOT CAPTURE (dispatchEvent spy installed T+7.2s mid-boot): yt-action events DO fire (yt-open-video-preview-action, yt-forward-redux-action-to-live-chat-iframe x8) but yt-show-search-contents-command NEVER fires. The action-routing infrastructure works; the specific trigger never executes. The 'yt-show-search-contents-command' string appears exactly ONCE in ytbase.js (the registration) — so the firing site is either in another jsbin (search controller bundle — bins loaded incl. webcomponents-sd, scheduler, spf, network — full bin list not yet grepped) or constructed dynamically. NEXT: grep all loaded bins for the firing logic, OR compare against Chrome capture of the same event stream to see exact expected firing time/context. Hypothesis space narrowed to: some completion condition in the search response-processing controller never becomes true in servo (e.g. all-renderers-stamped signal, an idle callback, a specific promise chain, or visibility-of-something gate).
 ## sec1zt25 — full mechanism chain decoded: the yt-show-search-contents-command action never fires (2026-11-26)
 
-STATIC + LIVE decode of the complete unhide mechanism: ytd-search template binds `hidden="[[data.hideContents]]"` on ytd-two-column-search-results-renderer. The ONLY write that clears it: `onYtShowSearchContentsCommand(){this.set("data.hideContents",!1)}` registered via `actionMap={"yt-show-search-contents-command":"onYtShowSearchContentsCommand"}` in the YtActionHandlerBehavior — actions flow as `yt-action` DOM events carrying detail.actionName, routed by the _.jL singleton router. LIVE VERIFIED on stuck servo page: handler IS registered (typeof function), manual `ys.set('data.hideContents', false)` unhides + full render 7960px — binding chain perfect. Response data (1.66MB) contains NO showSearchContents anywhere (568 other Command refs) and NO hideContents key — the action trigger is purely client-side, fired when response processing completes. BOOT CAPTURE (dispatchEvent spy installed T+7.2s mid-boot): yt-action events DO fire (yt-open-video-preview-action, yt-forward-redux-action-to-live-chat-iframe x8) but yt-show-search-contents-command NEVER fires. The action-routing infrastructure works; the specific trigger never executes. The 'yt-show-search-contents-command' string appears exactly ONCE in ytbase.js (the registration) — so the firing site is either in another jsbin (search controller bundle — bins loaded incl. webcomponents-sd, scheduler, spf, network — full bin list not yet grepped) or constructed dynamically. NEXT: grep all loaded bins for the firing logic, OR compare against Chrome capture of the same event stream to see exact expected firing time/context. Hypothesis space narrowed to: some completion condition in the search response-processing controller never becomes true in servo (e.g. all-renderers-stamped signal, an idle callback, a specific promise chain, or visibility-of-something gate).
 
 ## Chrome comparison — DECISIVE END STATE (endgame-7 FINAL)
 
@@ -2362,7 +2302,6 @@ Prototyped auto-shim (500ms interval, fires ys.onYtShowSearchContentsCommand whe
 CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDocument — TRUE pre-boot injection, the capability devtools-eval lacks): on a WORKING chrome render of the same youtube search (hidden:false, h:7143): **yt-show-search-contents-command NEVER FIRES IN CHROME EITHER** — the action-based unhide theory is DEAD; that's a legacy/unused path. The events that DO fire in chrome: yt-page-data-fetched:1, yt-page-data-updated:1, yt-navigate-finish:1, yt-update-title:1, yt-renderidom-finished:9, yt-rendererstamper-finished:22. **SERVO CAPTURE COMPARISON: yt-navigate-finish, yt-page-data-fetched, yt-page-data-updated, yt-update-title ALL ABSENT in servo** — the navigation/response-processing completion events never fire. yt-rendererstamper-finished and yt-renderidom-finished DO fire in servo — so rendering machinery runs, but the navigation-completion layer never completes. REVISED MECHANISM UNDERSTANDING: hidden is not cleared by an explicit command — in chrome the post-response re-render naturally stamps the replacement without hidden because data.hideContents is falsy in the response (binding `hidden=\"[[data.hideContents]]\"` evaluates false). The servo replacement being stamped WITH hidden means either the binding evaluated against navigation-in-progress state (hideContentsForNavigation-equivalent stuck true because nav completion never happens) or the servo replacement is not the proper client re-render at all. THE QUESTION IS NOW FULLY PRECISE: why doesn't YouTube's navigation-completion machinery (yt-navigate-finish emission) run in servo? yt-navigate-start comparison pending (was in the chrome stream? not captured — check). Servo navigation machinery suspects: popstate/history events, the navigatefinish trigger waiting on some resource/signal, or the response-processing promise chain breaking. NOTE for future captures: chrome CDP addScriptToEvaluateOnNewDocument is the gold-standard pre-boot injection; use it as ground truth for ANY event-stream question.
 ## sec1zt26 — BREAKTHROUGH: chrome ground truth — yt-navigate-finish/yt-page-data-updated never fire in servo (2026-11-26)
 
-CHROME COMPARISON CAPTURE (headless chrome + CDP Page.addScriptToEvaluateOnNewDocument — TRUE pre-boot injection, the capability devtools-eval lacks): on a WORKING chrome render of the same youtube search (hidden:false, h:7143): **yt-show-search-contents-command NEVER FIRES IN CHROME EITHER** — the action-based unhide theory is DEAD; that's a legacy/unused path. The events that DO fire in chrome: yt-page-data-fetched:1, yt-page-data-updated:1, yt-navigate-finish:1, yt-update-title:1, yt-renderidom-finished:9, yt-rendererstamper-finished:22. **SERVO CAPTURE COMPARISON: yt-navigate-finish, yt-page-data-fetched, yt-page-data-updated, yt-update-title ALL ABSENT in servo** — the navigation/response-processing completion events never fire. yt-rendererstamper-finished and yt-renderidom-finished DO fire in servo — so rendering machinery runs, but the navigation-completion layer never completes. REVISED MECHANISM UNDERSTANDING: hidden is not cleared by an explicit command — in chrome the post-response re-render naturally stamps the replacement without hidden because data.hideContents is falsy in the response (binding `hidden=\"[[data.hideContents]]\"` evaluates false). The servo replacement being stamped WITH hidden means either the binding evaluated against navigation-in-progress state (hideContentsForNavigation-equivalent stuck true because nav completion never happens) or the servo replacement is not the proper client re-render at all. THE QUESTION IS NOW FULLY PRECISE: why doesn't YouTube's navigation-completion machinery (yt-navigate-finish emission) run in servo? yt-navigate-start comparison pending (was in the chrome stream? not captured — check). Servo navigation machinery suspects: popstate/history events, the navigatefinish trigger waiting on some resource/signal, or the response-processing promise chain breaking. NOTE for future captures: chrome CDP addScriptToEvaluateOnNewDocument is the gold-standard pre-boot injection; use it as ground truth for ANY event-stream question.
 
 ## Shim iteration results — ONE iteration from working mitigation (endgame-10 FINAL)
 
@@ -2383,9 +2322,7 @@ Comprehensive identity-tracked capture (setter patch + MO + polls, one boot): ex
 **FULL BOOT CAPTURE with userscript injection — reverses the sec1zt26 narrowing**: yt-page-data-fetched FIRES @1928, yt-page-data-updated @2198, yt-navigate-finish @2199, yt-update-title @2162 — the navigation-completion pipeline COMPLETES in servo! AND critically: **HIDDEN-REMOVE on ytd-two-column-search-results-renderer FIRES @1933** — the unhide write DOES execute! Yet final state is hidden:true. Confirmed synthesis with the replacement docs: removal fires on the boot/SSR element, the response-data replacement then arrives stamped WITH hidden, and no second removal fires for the replacement instance. The events all firing means the completion pipeline is NOT the defect. NEW PRECISE QUESTION: in chrome does the replacement element exist at all / does a second removal fire? ANOMALY OBSERVED: every event in servo fires exactly 3x with identical timestamps — either triple-dispatch in youtube logic (servo-specific) or triple-nested spy wrappers (userscript injected 3x?) — discriminate before trusting multiplicities. ALSO NOTE: sec1zt26's 'events absent in servo' was an artifact of post-boot injection (events fire before T+7s when spies could attach) — corrected.
 ## sec1zt27 — USERSCRIPT UNLOCK + reversal: hidden-removal FIRES in servo, events all fire — defect is replacement re-stamp (2026-11-26)
 
-**TOOLING: servo has --userscripts <dir> BUILT IN** (components/script/dom/userscripts.rs — scripts evaluated when head element parses, TRUE pre-boot injection, no engine work needed). This replaces all the injection hacks — use for all future framework debugging.
 
-**FULL BOOT CAPTURE with userscript injection — reverses the sec1zt26 narrowing**: yt-page-data-fetched FIRES @1928, yt-page-data-updated @2198, yt-navigate-finish @2199, yt-update-title @2162 — the navigation-completion pipeline COMPLETES in servo! AND critically: **HIDDEN-REMOVE on ytd-two-column-search-results-renderer FIRES @1933** — the unhide write DOES execute! Yet final state is hidden:true. Confirmed synthesis with the replacement docs: removal fires on the boot/SSR element, the response-data replacement then arrives stamped WITH hidden, and no second removal fires for the replacement instance. The events all firing means the completion pipeline is NOT the defect. NEW PRECISE QUESTION: in chrome does the replacement element exist at all / does a second removal fire? ANOMALY OBSERVED: every event in servo fires exactly 3x with identical timestamps — either triple-dispatch in youtube logic (servo-specific) or triple-nested spy wrappers (userscript injected 3x?) — discriminate before trusting multiplicities. ALSO NOTE: sec1zt26's 'events absent in servo' was an artifact of post-boot injection (events fire before T+7s when spies could attach) — corrected.
 
 ## YouTube hidden-stall ROOT CAUSE — SOLVED to the single wrong bit (endgame-13, FINAL)
 
@@ -2405,14 +2342,12 @@ Prior layer results all still valid: rIC starvation fix landed (`933f453ad`, ver
 Definitive write-capture with state snapshots (userscript injection): servo sequence: template-parse strips SSR hidden @1973 (state: no data yet), then **propSET hidden=true @1996 while parent ytd-search data EXISTS but hideContents is UNDEFINED**. Chrome comparison for identical capture: remove@1492 then propCLEAR@1498 (false written). **The binding `hidden="[[data.hideContents]]"` evaluates undefined→TRUE in servo vs undefined→FALSE/absent in chrome.** Since the binding framework is identical JS in both browsers, the divergence is in a PRIMITIVE the framework relies on. Leading theory: template binding annotation REGISTRATION fails in servo — the write path was `_setUnmanagedPropertyToNode` (the stamper for UNMANAGED template properties) — i.e. in servo the hidden attribute is treated as unmanaged/static template content and stamped with truthy-string semantics, while in chrome it registers as a managed binding and is excluded from stamping. Suspect primitive areas: servo template parsing producing different attribute representation, or annotation-parse regex/string handling difference, OR custom-element/template lifecycle ordering making the registration miss. NEXT STEP: read the stamper code path in bundle (_parseTemplateNodeAttribute/_setUnmanagedPropertyToNode region, kevlar chunk line ~7473/3644) to determine exactly what makes an attribute managed-vs-unmanaged and probe that primitive in servo. ALSO CONFIRMED ARTIFACT: userscript injects 3x per page (nested wrappers — capture.js:22→capture.js:23 self-chain visible in stacks) — all x3 event duplicates are this artifact, not servo behavior; servo userscript multiplicity itself worth a look (load_script possibly invoked per head mutation).
 ## sec1zt28 — ROOT CAUSE CORNERED: binding writes hidden=true for undefined data.hideContents (2026-11-26)
 
-Definitive write-capture with state snapshots (userscript injection): servo sequence: template-parse strips SSR hidden @1973 (state: no data yet), then **propSET hidden=true @1996 while parent ytd-search data EXISTS but hideContents is UNDEFINED**. Chrome comparison for identical capture: remove@1492 then propCLEAR@1498 (false written). **The binding `hidden="[[data.hideContents]]"` evaluates undefined→TRUE in servo vs undefined→FALSE/absent in chrome.** Since the binding framework is identical JS in both browsers, the divergence is in a PRIMITIVE the framework relies on. Leading theory: template binding annotation REGISTRATION fails in servo — the write path was `_setUnmanagedPropertyToNode` (the stamper for UNMANAGED template properties) — i.e. in servo the hidden attribute is treated as unmanaged/static template content and stamped with truthy-string semantics, while in chrome it registers as a managed binding and is excluded from stamping. Suspect primitive areas: servo template parsing producing different attribute representation, or annotation-parse regex/string handling difference, OR custom-element/template lifecycle ordering making the registration miss. NEXT STEP: read the stamper code path in bundle (_parseTemplateNodeAttribute/_setUnmanagedPropertyToNode region, kevlar chunk line ~7473/3644) to determine exactly what makes an attribute managed-vs-unmanaged and probe that primitive in servo. ALSO CONFIRMED ARTIFACT: userscript injects 3x per page (nested wrappers — capture.js:22→capture.js:23 self-chain visible in stacks) — all x3 event duplicates are this artifact, not servo behavior; servo userscript multiplicity itself worth a look (load_script possibly invoked per head mutation).
 
 ## sec1zt29 — BREAKTHROUGH: the truthy write value is a Trusted-Types policy object (typeof object, stringifies "zClosurez")
 
 Value-level capture on live servo boot (upgraded spy records typeof+String(v)):
 ```
 propSET|object|zClosurez  (t=1931, once effective — x3 artifact)
-```
 The binding evaluates `data.hideContents` (undefined) but the VALUE assigned to `tc.hidden` is an
 OBJECT stringifying to "zClosurez" — truthy — hence hidden=true.
 
@@ -2420,7 +2355,6 @@ IDENTIFIED in bundle @2458373: the **polymer_resin Trusted Types policy**:
 ```js
 var D={createHTML:()=>"zClosurez", createScript:()=>"/*zClosurez*/", createScriptURL:()=>"about:invalid#zClosurez"};
 return typeof trustedTypes!=="undefined" ? trustedTypes.createPolicy("polymer_resin", D) : D
-```
 When trustedTypes exists, createPolicy returns a real TT policy whose createHTML produces TrustedHTML
 objects (typeof object, truthy). The framework's binding write path passes values through a transform
 (C7 in the write chain: `C7&&(W=C7(W,q.target,q.kind,k))`) — the resin sanitizer hook.
@@ -2451,12 +2385,10 @@ policy path in kevlar bundle.
 ## sec1zt30 — ROOT CAUSE PINNED TO EXACT PRIMITIVE: resin sanitizeDOMValue(undefined) diverges
 
 Direct A/B probe on live pages, identical probe code, same Polymer.sanitizeDOMValue function:
-```
 input undefined → SERVO: object "zClosurez" TRUTHY   | CHROME: undefined FALSY
 input false     → both boolean false
 input 'abc'     → both string 'abc'
 input null      → both null
-```
 THE YOUTUBE INVISIBLE-RESULTS DEFECT = this one divergence. Chain: binding `hidden="[[data.hideContents]]"`
 evaluates undefined (identical in both — verified ytInitialData/live data have NO hideContents anywhere in
 EITHER browser; endgame-13's false-in-chrome claim was WRONG) → sanitizeDOMValue transform → servo returns
@@ -2481,13 +2413,11 @@ object identity/unwrap detection (isUnwrappable) and TT type-tag primitives in s
 ## sec1zt31 — ROOT CAUSE FINAL: servo's document.all strict-equals undefined — breaks resin's branch
 
 DEFINITIVE A/B primitive probe:
-```
                     SERVO      CHROME     spec-correct
 typeof document.all   undefined  undefined  undefined   ✓ both
 !document.all         true       true       true        ✓ both
 document.all == undefined  true  true       true        ✓ both (loose)
 document.all === undefined TRUE  FALSE      FALSE       ✗ SERVO WRONG
-```
 Servo's document.all behaves as if it literally IS undefined (passes typeof/falsy/loose by coincidence)
 instead of a real object with the [[IsHTMLDDA]] internal slot. Strict equality object-vs-undefined must
 ALWAYS be false per spec — servo returns true, proving document.all is not a proper object.
@@ -2585,22 +2515,15 @@ then document.all primitive probes + YouTube end-to-end render check.
 
 ## HTMLAllCollection round 2 — the proxy class path (endgame-16)
 
-CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
 
 ## HTMLAllCollection VERIFIED — YouTube alpha gate DOWN (endgame-17, THE fix)
 
-Primitive verification (docall.html): typeof document.all="undefined" ✓, !document.all=true ✓, document.all==undefined=true ✓, **document.all===undefined=FALSE** ✓ (the critical bit), instanceof Object=true ✓ — full spec IsHTMLDDA semantics correct.
-END-TO-END VERIFICATION: youtube.com/results?search_query=techno+mix renders full search results UNASSISTED — no shim, no manual unhide. Video entries, thumbnails, sponsored slots all visible. The multi-session hunt (hydration stall → rIC starvation → hidden attribute → resin sanitizer → document.all) is CLOSED.
-KNOWN RESIDUALS: (1) devtools evaluateJS accessing document.all properties crashes/brands-fail — grip serialization or brand-check interaction with the custom proxy class, devtools-only path, in-page semantics correct; (2) LegacyFactoryFunction omitted (document.all callable form unimplemented — essentially unused on real web); (3) namedItem multiple-match sub-collection path untested. Follow-ups non-blocking.
-Implementation notes for upstream port: JSCLASS_EMULATES_UNDEFINED exists in vendored SM 153 (=64); proxies accept custom classes via NewProxyObject class arg; servo previously passed ptr::null() for all DOM proxies — the plumbing added in wrap.rs is generic (any proxy interface can now carry a custom class).
 
 ## HTMLAllCollection FINAL — stable + fully verified (endgame-18)
 
-Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — proxy objects NEED SpiderMonkey's proxy class ops (proxy_Finalize/ProxyObject::trace/objectMoved + ProxyObjectOps for all property access). Fix: clone the exported `js::ProxyClass` (JS_PUBLIC_DATA, available in bindgen as js::jsapi::ProxyClass) and OR JSCLASS_EMULATES_UNDEFINED into flags — `html_all_collection_proxy_class()` in script_bindings/utils.rs (lazy OnceLock, SyncClass wrapper for Send/Sync). Final verification all green: typeof=undefined, falsy, loose-eq true, strict-eq false, instanceof Object true; in-page len/indexed/namedItem/keys all work (len=5, i0=HTML, nm=object, keys=7); devtools-path eval access works; NO crashes; YouTube results render fully unassisted (channel cards, shelves, sponsored). The multi-session YouTube invisible-results defect chain is CLOSED at the engine level.
 
 ## Post-fix breadth verification (endgame-19)
 
-Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
 
 ## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
 
@@ -2618,22 +2541,15 @@ one cargo at a time on this VM; the servo release target dir is expendable once 
 the engine — verify engine changes through shell-new dev builds (check-target), not servoshell.
 ## HTMLAllCollection round 2 — the proxy class path (endgame-16)
 
-CRITICAL STRUCTURAL FACT: servo implements interfaces with indexed/named getters as **JS Proxies** (CreateProxyHandler + NewProxyObject in wrap.rs), not plain objects — so the init_domjs_class flags path never applies to them. typeof was still "object" after round 1 because the proxy object got the default proxy class (`ptr::null()` class arg in wrap.rs NewProxyObject). SM mechanism confirmed in vendored source: EmulatesUndefined() unwraps WrapperObjects then reads getClass()->emulatesUndefined() — proxies CAN carry custom classes (ProxyOptions.setClass). Fix plumbed: `HTML_ALL_COLLECTION_PROXY_CLASS` static in script_bindings/utils.rs (flags=JSCLASS_EMULATES_UNDEFINED, verified=64 in bindgen jsapi.rs), codegen emits it for HTMLAllCollection's proxy WrapConfig, wrap.rs passes config.class into NewProxyObject. Verification gate unchanged: typeof document.all === "undefined" etc.
 
 ## HTMLAllCollection VERIFIED — YouTube alpha gate DOWN (endgame-17, THE fix)
 
-Primitive verification (docall.html): typeof document.all="undefined" ✓, !document.all=true ✓, document.all==undefined=true ✓, **document.all===undefined=FALSE** ✓ (the critical bit), instanceof Object=true ✓ — full spec IsHTMLDDA semantics correct.
-END-TO-END VERIFICATION: youtube.com/results?search_query=techno+mix renders full search results UNASSISTED — no shim, no manual unhide. Video entries, thumbnails, sponsored slots all visible. The multi-session hunt (hydration stall → rIC starvation → hidden attribute → resin sanitizer → document.all) is CLOSED.
-KNOWN RESIDUALS: (1) devtools evaluateJS accessing document.all properties crashes/brands-fail — grip serialization or brand-check interaction with the custom proxy class, devtools-only path, in-page semantics correct; (2) LegacyFactoryFunction omitted (document.all callable form unimplemented — essentially unused on real web); (3) namedItem multiple-match sub-collection path untested. Follow-ups non-blocking.
-Implementation notes for upstream port: JSCLASS_EMULATES_UNDEFINED exists in vendored SM 153 (=64); proxies accept custom classes via NewProxyObject class arg; servo previously passed ptr::null() for all DOM proxies — the plumbing added in wrap.rs is generic (any proxy interface can now carry a custom class).
 
 ## HTMLAllCollection FINAL — stable + fully verified (endgame-18)
 
-Crash root cause found+fixed: the v1 static class had null cOps/ext/oOps — proxy objects NEED SpiderMonkey's proxy class ops (proxy_Finalize/ProxyObject::trace/objectMoved + ProxyObjectOps for all property access). Fix: clone the exported `js::ProxyClass` (JS_PUBLIC_DATA, available in bindgen as js::jsapi::ProxyClass) and OR JSCLASS_EMULATES_UNDEFINED into flags — `html_all_collection_proxy_class()` in script_bindings/utils.rs (lazy OnceLock, SyncClass wrapper for Send/Sync). Final verification all green: typeof=undefined, falsy, loose-eq true, strict-eq false, instanceof Object true; in-page len/indexed/namedItem/keys all work (len=5, i0=HTML, nm=object, keys=7); devtools-path eval access works; NO crashes; YouTube results render fully unassisted (channel cards, shelves, sponsored). The multi-session YouTube invisible-results defect chain is CLOSED at the engine level.
 
 ## Post-fix breadth verification (endgame-19)
 
-Sites re-tested after the document.all fix on the stable build: YouTube results+SPA+watch-chrome ✓, X.com login page ✓, reddit (botwall renders — attestation class) ✓, **old.reddit.com login renders fully (previously BLANK in the pre-alpha ledger — legacy document.all gating confirmed as a real-site impact class)** ✓, wikipedia ✓ no regression, github ✓ no regression. Legacy IE-detection branching (`if (document.all)` / `===` comparisons) is a broad real-web pattern — this fix likely unblocks a long tail of legacy-gated rendering defects beyond YouTube.
 
 ## Playback regression check (endgame-20): Rick Astley watch page — full chrome + ad pre-roll playing, sidebar recommendations, no regression from document.all fix. YouTube is now end-to-end functional in feather except attestation-botwall videos.
 
@@ -2641,7 +2557,6 @@ Sites re-tested after the document.all fix on the stable build: YouTube results+
 
 ## target=_blank defect CONFIRMED (post-alpha matrix): minimal repro /tmp/vtest/blank1.html — normal link navigates ✓ but target=_blank click is a dead end: no new tab, no navigation, no visible feedback. Shell-new doesn't handle auxiliary browsing-context creation (embedder create-webview message). This explains gmail Sign-in non-navigation (target=_blank to accounts.google.com). Impact class: HIGH — oauth flows, external links, sign-in redirects across the real web. Fix site: shell-new embedder message handler for auxiliary context requests — should open a new tab.
 
-Symptom-index entry: symptom = "click on link does nothing at all, no error" → suspect target attribute on anchor / auxiliary browsing context handling in shell embedder layer.
 
 ## window.open panic root cause + fix (post-alpha): `windowproxy.open` did `maybe_entry_global().map(|g| g.as_window().Document())` — as_window() PANICS when the entry global isn't a Window (devtools evaluateJS frames, possibly WASM instantiation). Reproduced 2/2 via devtools eval of window.open on trivial page (example.com) — Script thread panic "expected a Window scope" then webrender cascade kills the app. Fixed on feather-engine: only use entry global when it downcasts to Window, else fall back to the browsing context's active document. NOTE: real-link target=_blank clicks don't hit this (entry global IS the window during event dispatch) — devtools-eval-driven testing did. Upstreamable bugfix, small.
 youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
@@ -2695,32 +2610,8 @@ devin-d3790f631f184a44862d36d5fb5f39e4.
 sec1zt35 — document.all extended verification: YouTube WATCH page fully functional
 
 ## Aux-webview verification detail (post-PR156): target=_blank real-link clicks DO open a new tab with correct navigation (verified: injected anchor on example.com → new active tab, omnibox example.org). But the new tab's CONTENT stays stale (shows opener's pixels) — force-repaint at adoption (feather branch aux-paint-fix) is correct but insufficient. Root mechanism: shell never hides inactive webviews and only repaints on servo frame signals — static pages stop producing frames, so ANY tab switch to a static page is potentially stale (same class as the documented F1 paint-invalidation defect, shared-FBO limitation noted in app.rs composite()). The proper fix is in the compositing invalidation layer, not aux-specific. window.open() JS path still blocked by the upstream RefCell-borrow panic in the aux document load; real-link clicks avoid that path entirely.
-youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
-with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
-working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
-readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
-planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
-search, watch, playback. This closes the alpha-critical YouTube cluster.
 
-sec1zt36 — post-document.all regression sweep (negative results + one environmental)
-- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
-- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
-- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
-  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
-  chase engine causes.
-youtube.com/watch?v=dQw4w9WgXcQ in feather shell-new: full page render — sidebar recommendations
-with thumbnails (same resin-sanitizer class as search), like/dislike/save buttons, title, autoplay
-working. VIDEO PLAYBACK VERIFIED LIVE via eval probe: currentTime advancing (21.5s at probe time),
-readyState 4, paused=false, videoWidth 1280, blob: MSE source. The document.all fix + the earlier
-planar-YCbCr video pipeline + MSE work compound: YouTube is end-to-end functional in feather —
-search, watch, playback. This closes the alpha-critical YouTube cluster.
 
-sec1zt36 — post-document.all regression sweep (negative results + one environmental)
-- github.com/servo/servo renders fully in feather: correct title, 407 links, 31 images. No regression.
-- IndexedDB structuredclone with nested objects/arrays: WORKS (prior error observations stale — negative result).
-- google.com/search: environmentally blocked — "unusual traffic" CAPTCHA wall (datacenter IP reputation),
-  NOT an engine defect. Symptom: google search shows captcha/sorry page → check IP reputation first, do not
-  chase engine causes.
 
 sec1zt37 — document.all named-getter verified: document.all['id'] returns exact element (identity
 match confirmed on github.com, live length 2782). Spec surface complete except legacy call-form.
@@ -2759,20 +2650,6 @@ sec1zt39 — gmail sign-in navigation: WORKS post-popup-fix (verification with c
 ## COMPOSITING STALENESS CLASS SOLVED: root cause was visibility contention — all webviews permanently "shown", servo composites every shown webview into the shared rendering context on its own refresh schedule, so the active tab's pixels get overwritten by background tabs continuously. Explains: aux tabs never painting (always lost contention), static-page switch staleness (the repaint-force helped only because it repainted AFTER servo's last background composite — race-dependent), and likely a big slice of the historical F1 paint-invalidation defects. Fix in shell-new composite(): hide all non-active webviews, show only active. hide() semantics: throttles script threads + discards decoded image surfaces — standard browser backgrounding. VERIFIED end-to-end: target=_blank correct content immediately, bidirectional tab switching correct. Symptom-index: "correct tab chrome/navigation but pixels belong to a different page" → visibility contention in shared rendering context, check show/hide discipline.
 
 ## ALPHA GATE FINAL VALIDATION (endgame-22): with document.all + rIC + visibility-discipline + paint fixes all in one build, YouTube search renders FULLY UNASSISTED end-to-end — complete chrome, filter chips, sponsored cards, channel cards, video results with thumbnails/avatars/durations/LIVE badges, working scroll. Screenshots: lofi beats results indistinguishable from Chrome. The multi-session hunt chain is closed: rIC starvation → hidden-attribute → resin sanitizer → document.all → compositing visibility. Residual classes: attestation/botwall, background-media-aware visibility throttling, window.open JS-path RefCell panic (upstream).
-gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
-and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
-originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
-by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
-showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
-re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
-The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
-gmail.com in feather shell-new navigates the full chain to accounts.google.com/v3/signin/identifier
-and the sign-in page RENDERS COMPLETELY — form, input, buttons, logo, styling all correct. The
-originally-filed defect (marketing-page Sign in click non-navigation, target=_blank class) is closed
-by the aux-webview work as theorized. Caveat: this run redirected gmail.com→accounts directly without
-showing the marketing page (no-cookie flow variance), so the literal marketing-page click was not
-re-tested — but the navigation chain it was blocking reaches and renders the destination correctly.
-The Google sign-in form being fully interactive-capable in servo is itself a notable alpha data point.
 
 sec1zt40 — stale-composite tab-switch defect: ROOT CAUSE + FIX verified (feather#160)
 Defect: tab switch composites the previously-active tab's pixels indefinitely (F1 class).
@@ -3924,7 +3801,6 @@ ROOT CAUSE confirmed by instrumentation round: nothing ever closes anything — 
 
 ## shell-nav-1: back/forward wiring chain + servo session-history gap (2026-11-27)
 
-**Symptom → suspect index**:
 - "back/forward clicks do nothing visible" → THREE layered causes, all fixed in
   feather devin/fwd-button-anim: (1) mock history cursor never moved for engine
   tabs (routing skipped browser.apply) so renav immediately undid traversals;
@@ -5774,26 +5650,6 @@ MEASUREMENT HARNESS all reusable: /tmp/memab.py (RSS A/B), SERVO_MEMDUMP_AFTER=8
 SIGTERM — do not retry that path). RSS file-backed caveat: ~220MB of resident is servoshell
 binary + libLLVM + fonts demand-loaded file pages — inflate absolute RSS but constant baseline.
 ## sec1zt286 — retention mass PINPOINTED: jemalloc-internal retention, NOT live objects (2026-11-27)
-DECISIVE measurement via SERVO_MEMDUMP_AFTER=8 (built-in per-category reporter, servo.rs:1185,
-dumps to stderr every 60s — the right tool, heaptrack is unnecessary). Post-close state (4x
-example.com tabs opened+closed): resident 385MB but jemalloc-heap-allocated only 17.7MB,
-system-heap-allocated 108MB, url() js rows collapse 46→4.8MB (JS heaps ARE released cleanly —
-confirms GC-on-close hygiene working). KEY ROW: jemalloc-heap-mapped 103MB vs active 24MB vs
-allocated 17.7MB — **~80MB of jemalloc mappings are neither live allocations nor active pages**
-= fragmentation + tcache/thread-cache retention + free runs. Dirty decay is default (10s, no
-override in allocator/) so dirty pages DO self-purge — the residual is NOT purgeable: it is
-(a) small live objects pinning otherwise-free pages (fragmentation) and (b) per-thread tcache
-free-object caches (NOT covered by arena purge!). NEXT LEVERS in order of cost:
-(1) MALLOC_CONF=tcache_max small / lg_tcache_max lower or mallctl tcache.flush on pipeline exit —
-    tcaches are per-thread and threads are SHARED (68→77→69 measurement) so freed tab objects
-    sit in the surviving threads' tcaches forever — STRONGEST HYPOTHESIS, cheap to test: set
-    opt.tcache false or small in allocator and re-run /tmp/memab.py A/B;
-(2) background_thread:true in malloc_conf for async decay;
-(3) arena reset on close (mallctl arena.<i>.reset — dangerous, only for quiescent arenas).
-MEASUREMENT HARNESS all reusable: /tmp/memab.py (RSS A/B), SERVO_MEMDUMP_AFTER=8 + parse of
-/tmp/memdump.log rows (categories). Heaptrack capture failed (0-byte output through fifo on
-SIGTERM — do not retry that path). RSS file-backed caveat: ~220MB of resident is servoshell
-binary + libLLVM + fonts demand-loaded file pages — inflate absolute RSS but constant baseline.
 
 ## memsec: orthogonal writing-mode transposition (windows lane, PR#7)
 symptom: vertical writing-mode flex/block children size on transposed axes (flex-grow no-op or wrong-direction growth; cross-stretch resolves against wrong physical dimension) -> FIXED in PR#7. mechanism: flow/mod.rs orthogonal-flow CB construction swapped sizes but kept PARENT style; content_box_sizes_and_padding_border_margin (style_ext.rs) maps width/height to logical via containing_block.style.writing_mode — parent mode transposes for orthogonal children. fix = pass element's own style in the orthogonal CB. KEY LANDMARKS: cross_axis_is_item_block_axis (flexbox/layout.rs) logic was correct all along; ContainingBlockSize::swapped_axes is the orthogonal mechanism; width/height are physical CSS properties whose logical mapping depends on element's own writing mode. PROBES: wtest/wmflex.html, wmflex2.html, wmflexctl.html — rowflex w200/h100, colflex h100/w200 exact. BUILD GOTCHA (permanent): PATH must include /c/Program Files/LLVM/bin or glslopt/swgl fail clang-cl ToolNotFound.
@@ -6097,3 +5953,5 @@ is engine-wide hot-path infrastructure — WPT baseline re-run warranted when co
 smoke tests passed (navs, 2605-node xpath results, alloc churn). HARNESS: /tmp/aolhunt.py
 auto-captures spinning script threads with gdb; /tmp/smoke.py.
 
+- FLEXBOX 191-FILE CLUSTER AUDIT COMPLETE (windows lane, 2026-11-27): every sub-leaf probe-verified working or fixed. gap/column-gap pixel-exact incl percentages+wrapping; align-content multi-line exact; aspect-ratio FIXED (PR#2); writing-mode interaction FIXED (PR#7 orthogonal transposition); intrinsic-size/min-max exact shrink ratios; inline-flex SAME-LINE correct (baseline alignment per spec — early crude probe false-alarmed on baseline offset, refined probe confirms afterLeft==containerRight exactly). VERDICT: the 191 count is overwhelmingly reftest pixel-noise + upstream-expected failures. NOT actionable as engineering work. Symptom-index negative entries: if flex layout regressions appear, suspects are flexbox/layout.rs stretch resolution and flow/mod.rs orthogonal CB construction (both recently touched).
+- VISUAL VERIFICATION of fieldset solid-top border gap (PR#5) COMPLETE 2026-11-27: desktop screenshot of red-6px-solid fieldset shows legend straddling the top border with a clean gap behind the legend text — border segments correct left/right, no line through text, exactly matching Firefox/Chrome rendering. The flagged honest gap is closed; coordinate math confirmed visually correct.
