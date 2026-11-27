@@ -83,6 +83,8 @@ use crate::dom::node::{
     from_untrusted_node_address,
 };
 use crate::dom::shadowroot::shadowroot::ShadowRoot;
+use unicode_bidi::{BidiClass, bidi_class};
+
 use crate::dom::text::Text;
 use crate::dom::toggleevent::ToggleEvent;
 use crate::dom::window::scrolling_box::{ScrollAxisState, ScrollRequirement};
@@ -2119,6 +2121,42 @@ impl HTMLElement {
             .count() as u32
     }
 
+    /// Whether the first strong-directional character in this element's
+    /// descendant text (tree order) is RTL, per the bidi algorithm's
+    /// first-strong detection. Subtrees that establish their own
+    /// directionality context (elements with a dir attribute, bdi, script,
+    /// style) are skipped per
+    /// <https://html.spec.whatwg.org/multipage/#the-directionality>.
+    fn first_strong_descendant_is_rtl(&self) -> bool {
+        fn scan(node: &crate::dom::node::Node) -> Option<bool> {
+            for child in node.children() {
+                if let Some(text) = child.downcast::<Text>() {
+                    let data = text.upcast::<CharacterData>().data();
+                    for ch in data.chars() {
+                        match bidi_class(ch) {
+                            BidiClass::L => return Some(false),
+                            BidiClass::R | BidiClass::AL => return Some(true),
+                            _ => continue,
+                        }
+                    }
+                } else if let Some(elem) = child.downcast::<Element>() {
+                    let establishes_own_context = elem.has_attribute(&local_name!("dir")) ||
+                        elem.local_name() == &local_name!("bdi") ||
+                        elem.local_name() == &local_name!("script") ||
+                        elem.local_name() == &local_name!("style");
+                    if !establishes_own_context {
+                        if let Some(rtl) = scan(&child) {
+                            return Some(rtl);
+                        }
+                    }
+                }
+            }
+            None
+        }
+
+        scan(self.upcast::<crate::dom::node::Node>()).unwrap_or(false)
+    }
+
     // https://html.spec.whatwg.org/multipage/#the-directionality.
     // returns Some if can infer direction by itself or from child nodes
     // returns None if requires to go up to parent
@@ -2150,6 +2188,18 @@ impl HTMLElement {
             if let Some(area) = self.downcast::<HTMLTextAreaElement>() {
                 return Some(area.auto_directionality());
             }
+
+            // <https://html.spec.whatwg.org/multipage/#the-directionality>
+            // For other elements in the auto state, the directionality is
+            // determined by the first strong-directional character in the
+            // element's descendant text, falling back to ltr.
+            return Some(
+                if self.first_strong_descendant_is_rtl() {
+                    "rtl".to_owned()
+                } else {
+                    "ltr".to_owned()
+                },
+            );
         }
 
         // TODO(NeverHappened): Implement condition

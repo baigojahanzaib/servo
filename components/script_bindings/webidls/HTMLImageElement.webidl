@@ -30,6 +30,10 @@ interface HTMLImageElement : HTMLElement {
   readonly attribute USVString currentSrc;
   [CEReactions]
            attribute DOMString referrerPolicy;
+  [CEReactions]
+           attribute DOMString loading;
+  [CEReactions]
+           attribute DOMString decoding;
 
   Promise<undefined> decode();
 

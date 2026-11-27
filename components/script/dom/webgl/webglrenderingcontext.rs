@@ -2425,7 +2425,13 @@ impl WebGLRenderingContextMethods<crate::DomTypeHolder> for WebGLRenderingContex
                 return;
             },
             constants::RENDERER | constants::VENDOR => {
-                "Mozilla/Servo".to_jsval(cx, retval);
+                // Flavor-consistency: "Mozilla/Servo" self-identifies the engine
+                // to any fingerprinter — neither Chrome ("WebKit"/"WebKit WebGL")
+                // nor Firefox ("Mozilla"/"Mozilla") ever sends it. Firefox values
+                // win: the firefox flavor is what strict bot surfaces (google)
+                // are claimed as, and the Chrome claim already fails at the TLS
+                // layer regardless.
+                "Mozilla".to_jsval(cx, retval);
                 return;
             },
             WEBGLDebugRendererInfoConstants::UNMASKED_VENDOR_WEBGL |

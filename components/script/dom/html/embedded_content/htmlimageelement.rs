@@ -1886,6 +1886,30 @@ impl HTMLImageElementMethods<crate::DomTypeHolder> for HTMLImageElement {
     // <https://html.spec.whatwg.org/multipage/#dom-img-referrerpolicy>
     make_setter!(SetReferrerPolicy, "referrerpolicy");
 
+    // https://html.spec.whatwg.org/multipage/#dom-img-loading
+    make_enumerated_getter!(
+        Loading,
+        "loading",
+        "lazy" | "eager",
+        missing => "eager",
+        invalid => "eager"
+    );
+
+    // https://html.spec.whatwg.org/multipage/#attr-img-loading
+    make_setter!(SetLoading, "loading");
+
+    // https://html.spec.whatwg.org/multipage/#dom-img-decoding
+    make_enumerated_getter!(
+        Decoding,
+        "decoding",
+        "sync" | "async" | "auto",
+        missing => "auto",
+        invalid => "auto"
+    );
+
+    // https://html.spec.whatwg.org/multipage/#attr-img-decoding
+    make_setter!(SetDecoding, "decoding");
+
     /// <https://html.spec.whatwg.org/multipage/#dom-img-decode>
     fn Decode(&self, cx: &mut JSContext) -> RootedPromise {
         // Step 1. Let promise be a new promise.

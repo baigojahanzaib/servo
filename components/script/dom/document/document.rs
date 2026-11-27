@@ -1217,6 +1217,21 @@ impl Document {
                 document.page_showing.set(true);
                 // Step 4.6.3 Update the visibility state of document to "visible".
                 document.update_visibility_state(cx, DocumentVisibilityState::Visible);
+                // Fire pagereveal ahead of pageshow: the incoming document's
+                // reveal event precedes pageshow in the navigation lifecycle.
+                // Typed as a plain PageTransitionEvent until the PageRevealEvent
+                // interface is implemented.
+                let reveal = PageTransitionEvent::new(
+                    cx,
+                    window,
+                    atom!("pagereveal"),
+                    false, // bubbles
+                    false, // cancelable
+                    false, // persisted
+                );
+                let reveal = reveal.upcast::<Event>();
+                reveal.set_trusted(true);
+                window.dispatch_event_with_target_override(cx, reveal);
                 // Step 4.6.4 Fire a page transition event named pageshow at document's relevant
                 // global object with true.
                 let event = PageTransitionEvent::new(
@@ -2565,6 +2580,24 @@ impl Document {
         // TODO: Step 1, increase the event loop's termination nesting level by 1.
         // Step 2
         self.incr_ignore_opens_during_unload_counter();
+        // Fire pageswap ahead of pagehide: per the navigation lifecycle the
+        // outgoing document receives pageswap when the navigation is committed,
+        // before its unload sequence proceeds. Typed as a plain
+        // PageTransitionEvent until the PageSwapEvent interface (with its
+        // activation and viewTransition attributes) is implemented.
+        if self.page_showing.get() {
+            let event = PageTransitionEvent::new(
+                cx,
+                &self.window,
+                atom!("pageswap"),
+                false, // bubbles
+                false, // cancelable
+                false, // persisted
+            );
+            let event = event.upcast::<Event>();
+            event.set_trusted(true);
+            self.window.dispatch_event_with_target_override(cx, event);
+        }
         // Step 3-6 If oldDocument's page showing is true:
         if self.page_showing.get() {
             // Set oldDocument's page showing to false.
@@ -2752,6 +2785,20 @@ impl Document {
 
                 // Step 9.10. Set the Document's page showing to true.
                 document.page_showing.set(true);
+
+                // Fire pagereveal ahead of pageshow in the initial-load path,
+                // mirroring the reactivation path above.
+                let reveal_event = PageTransitionEvent::new(
+                    cx,
+                    window,
+                    atom!("pagereveal"),
+                    false, // bubbles
+                    false, // cancelable
+                    false, // persisted
+                );
+                let reveal_event = reveal_event.upcast::<Event>();
+                reveal_event.set_trusted(true);
+                window.dispatch_event_with_target_override(cx, reveal_event);
 
                 // Step 9.11. Fire a page transition event named pageshow at window with false.
                 let page_show_event = PageTransitionEvent::new(

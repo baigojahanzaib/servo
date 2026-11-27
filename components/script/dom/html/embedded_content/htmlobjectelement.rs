@@ -35,6 +35,10 @@ pub(crate) struct HTMLObjectElement {
     image: DomRefCell<Option<Arc<RasterImage>>>,
     form_owner: MutNullableDom<HTMLFormElement>,
     validity_state: MutNullableDom<ValidityState>,
+    /// The `data` attribute resolved against the document base URL, when the
+    /// object is an image candidate (no `type` attribute or an image mime type).
+    /// Stored here because layout has no access to URL resolution machinery.
+    resolved_data_url: DomRefCell<Option<DOMString>>,
 }
 
 impl HTMLObjectElement {
@@ -48,6 +52,7 @@ impl HTMLObjectElement {
             image: DomRefCell::new(None),
             form_owner: Default::default(),
             validity_state: Default::default(),
+            resolved_data_url: DomRefCell::new(None),
         }
     }
 
@@ -74,17 +79,44 @@ trait ProcessDataURL {
 }
 
 impl ProcessDataURL for &HTMLObjectElement {
-    // Makes the local `data` member match the status of the `data` attribute and starts
-    /// prefetching the image. This method must be called after `data` is changed.
+    // Resolves the `data` attribute against the document base URL and stores the
+    /// result for layout consumption. This method must be called after `data` or
+    /// `type` is changed.
     fn process_data_url(&self) {
         let element = self.upcast::<Element>();
 
-        // TODO: support other values
-        if let (None, Some(_uri)) = (
-            element.get_attribute_string_value(&local_name!("type")),
-            element.get_attribute_string_value(&local_name!("data")),
-        ) {
-            // TODO(gw): Prefetch the image here.
+        let type_is_image = match element.get_attribute_string_value(&local_name!("type")) {
+            None => true,
+            Some(mime) => mime.trim().to_ascii_lowercase().starts_with("image/"),
+        };
+        let resolved = if type_is_image {
+            element
+                .get_attribute_string_value(&local_name!("data"))
+                .and_then(|uri| {
+                    let document = self.upcast::<Node>().owner_doc();
+                    document
+                        .base_url()
+                        .join(uri.trim())
+                        .ok()
+                        .map(|url| DOMString::from(url.as_str()))
+                })
+        } else {
+            None
+        };
+        *self.resolved_data_url.borrow_mut() = resolved;
+    }
+}
+
+impl<'dom> LayoutDom<'dom, HTMLObjectElement> {
+    /// The resolved `data` URL for image-type objects, for layout consumption.
+    #[expect(unsafe_code)]
+    pub(crate) fn resolved_data_url(self) -> Option<String> {
+        unsafe {
+            self.unsafe_get()
+                .resolved_data_url
+                .borrow()
+                .as_ref()
+                .map(|url| url.to_string())
         }
     }
 }
@@ -196,7 +228,7 @@ impl VirtualMethods for HTMLObjectElement {
             .unwrap()
             .attribute_mutated(cx, attr, mutation);
         match *attr.local_name() {
-            local_name!("data") => {
+            local_name!("data") | local_name!("type") => {
                 if let AttributeMutation::Set(_) = mutation {
                     self.process_data_url();
                 }

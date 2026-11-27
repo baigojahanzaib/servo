@@ -1607,7 +1607,7 @@ async fn http_network_or_cache_fetch(
             // accounts never did, and the honest UA costs unsupported-browser
             // banners on UA-sniffing subapps, so the narrowest effective list wins.
             let hosts = std::env::var("FEATHER_HONEST_UA_HOSTS")
-                .unwrap_or_else(|_| "www.google.com".to_string());
+                .unwrap_or_else(|_| "www.google.com,accounts.google.com".to_string());
             let host = http_request.current_url().host_str().unwrap_or_default().to_string();
             let honest = hosts
                 .split(',')
@@ -1621,8 +1621,18 @@ async fn http_network_or_cache_fetch(
                 // (sec1zt120/121). firefox-flavor is unwalled AND modern-served;
                 // the honest string remains available via env override.
                 std::env::var("FEATHER_HONEST_UA").unwrap_or_else(|_| {
-                    "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
-                        .to_string()
+                    // Platform-consistent firefox flavor: a Linux UA claim from a
+                    // Windows machine contradicts every OS-revealing signal
+                    // (font metrics, ANGLE/D3D strings, windowing behavior) and
+                    // is itself a prime bot-classification input.
+                    if cfg!(windows) {
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    } else if cfg!(target_os = "macos") {
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    } else {
+                        "Mozilla/5.0 (X11; Linux x86_64; rv:133.0) Gecko/20100101 Firefox/133.0"
+                    }
+                    .to_string()
                 })
             } else {
                 context.user_agent.clone()
@@ -3087,8 +3097,11 @@ fn set_the_sec_fetch_site_header(r: &mut Request) {
     // Step 3. Set header’s value to same-origin.
     let mut header = SecFetchSite::SameOrigin;
 
-    // TODO: Step 3. If r is a navigation request that was explicitly caused by a
+    // Step 4. If r is a navigation request that was explicitly caused by a
     // user’s interaction with the user agent, then set header’s value to none.
+    if r.is_navigation_request() && r.browser_initiated {
+        header = SecFetchSite::None;
+    }
 
     // Step 5. If header’s value is not none, then for each url in r’s url list:
     if header != SecFetchSite::None {

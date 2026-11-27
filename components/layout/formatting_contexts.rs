@@ -31,7 +31,7 @@ use crate::sizing::{
     self, ComputeInlineContentSizes, ContentSizes, InlineContentSizesResult, LazySize,
     SizeConstraint,
 };
-use crate::style_ext::{AspectRatio, Display, DisplayInside, LayoutStyle};
+use crate::style_ext::{AspectRatio, ComputedValuesExt, Display, DisplayInside, LayoutStyle};
 use crate::table::Table;
 use crate::taffy::TaffyContainer;
 use crate::{ArcRefCell, PropagatedBoxTreeData};
@@ -368,7 +368,20 @@ impl IndependentFormattingContext {
                     };
                 Some((block_size.into(), depends_on_inline_stretch_size))
             },
-            _ => None,
+            _ => {
+                // Non-replaced transfer (conservative): only when the inline
+                // stretch size is definite can the block size be derived from
+                // the ratio without creating a cyclic dependency on content.
+                // Otherwise fall back to normal sizing.
+                let ratio = preferred_aspect_ratio?;
+                let inline_size = inline_stretch_size?;
+                Some((
+                    ratio
+                        .compute_dependent_size(LogicalAxis::Block, inline_size)
+                        .into(),
+                    false,
+                ))
+            },
         }
     }
 
@@ -651,8 +664,11 @@ impl IndependentFormattingContext {
             IndependentFormattingContextContents::Replaced(replaced, _) => {
                 replaced.preferred_aspect_ratio(self.style(), padding_border_sums)
             },
-            // TODO: support preferred aspect ratios on non-replaced boxes.
-            _ => None,
+            // Non-replaced boxes: the preferred aspect ratio comes purely from
+            // the `aspect-ratio` property (there is no natural ratio).
+            _ => self
+                .style()
+                .preferred_aspect_ratio(None, padding_border_sums),
         }
     }
 

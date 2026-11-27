@@ -178,10 +178,17 @@ impl ReplacedContentKind {
 
 impl ReplacedContents {
     pub fn for_element(node: ServoLayoutNode<'_>, context: &LayoutContext) -> Option<Self> {
-        if let Some(ref data_attribute_string) = node.as_typeless_object_with_data_attribute() &&
-            let Some(url) = try_to_parse_image_data_url(data_attribute_string)
-        {
-            return Self::from_image_url(node, context, &ComputedUrl::Valid(ServoArc::new(url)));
+        if let Some(ref data_attribute_string) = node.as_typeless_object_with_data_attribute() {
+            // `data:` URLs carry their mime type inline and must be image/*;
+            // regular URLs are resolved absolute and fetched like any image.
+            let url = if data_attribute_string.starts_with("data:") {
+                try_to_parse_image_data_url(data_attribute_string)
+            } else {
+                Url::parse(data_attribute_string).ok()
+            };
+            if let Some(url) = url {
+                return Self::from_image_url(node, context, &ComputedUrl::Valid(ServoArc::new(url)));
+            }
         }
 
         let (kind, natural_size) = {

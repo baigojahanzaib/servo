@@ -266,6 +266,30 @@ impl ResourceChannelManager {
             embedder_proxy,
         );
 
+        // Periodic persistence of the cookie jar / auth cache / hsts list.
+        // These were written ONLY on the resource thread's clean-shutdown
+        // Exit message — but embedders routinely terminate the process hard
+        // (window close, crash, update-apply), so in practice they never
+        // persisted at all: every restart looked like a fresh cookieless
+        // visitor (a prime bot-wall signal for e.g. google). Cost of an
+        // unconditional serialize+write is negligible at this scale.
+        if let Some(config_dir) = self.config_dir.clone() {
+            let http_state = Arc::clone(&public_http_state);
+            let _ = thread::Builder::new()
+                .name("net-state-persist".to_owned())
+                .spawn(move || loop {
+                    thread::sleep(std::time::Duration::from_secs(30));
+                    let jar = http_state.cookie_jar.read();
+                    servo_base::write_json_to_file(&*jar, &config_dir, "cookie_jar.json");
+                    drop(jar);
+                    let auth_cache = http_state.auth_cache.read();
+                    servo_base::write_json_to_file(&*auth_cache, &config_dir, "auth_cache.json");
+                    drop(auth_cache);
+                    let hsts = http_state.hsts_list.read();
+                    servo_base::write_json_to_file(&*hsts, &config_dir, "hsts_list.json");
+                });
+        }
+
         let mut rx_set = GenericReceiverSet::new();
         let private_id = rx_set.add(private_receiver);
         let public_id = rx_set.add(public_receiver);
@@ -749,8 +773,14 @@ impl CoreResourceManager {
         // Step 11.2. Otherwise, set response to a network error.
         let response = response
             .get_network_error()
-            .map(|_| {
-                Response::network_error(NetworkError::ResourceLoadError("Failed to preload".into()))
+            .map(|e| {
+                // Preserve the underlying error in the message: the discord.com
+                // cold-start investigation hit dozens of these with the detail
+                // discarded, leaving the fetch failure mode invisible.
+                Response::network_error(NetworkError::ResourceLoadError(format!(
+                    "Failed to preload: {:?}",
+                    e
+                )))
             })
             .unwrap_or(response);
         let mut preloaded_resources = preloaded_resources.lock().unwrap();

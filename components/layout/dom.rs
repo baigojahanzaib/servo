@@ -694,16 +694,10 @@ impl<'dom> NodeExt<'dom> for ServoLayoutNode<'dom> {
             return None;
         }
 
-        // TODO: This is the what the legacy layout system did, but really if Servo
-        // supports any `<object>` that's an image, it should support those with URLs
-        // and `type` attributes with image mime types.
-        let element = self.as_element()?;
-        if element.attribute(&ns!(), &local_name!("type")).is_some() {
-            return None;
-        }
-        element
-            .attribute_as_str(&ns!(), &local_name!("data"))
-            .map(|string| string.to_owned())
+        // The data URL comes pre-resolved from the object element (script side),
+        // where base-URL resolution machinery exists, and is only stored when the
+        // object is an image candidate (no `type` or an image mime type).
+        self.object_data_url()
     }
 
     fn ensure_inner_layout_data(&self) -> AtomicRefMut<'dom, InnerDOMLayoutData> {

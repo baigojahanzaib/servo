@@ -504,6 +504,11 @@ pub struct RequestBuilder {
     /// <https://fetch.spec.whatwg.org/#request-user-activation>
     pub user_activation: bool,
 
+    /// Servo internal: whether this navigation was initiated by the user agent
+    /// itself (browser chrome, webdriver) rather than by page content.
+    /// <https://w3c.github.io/webappsec-fetch-metadata/#sec-fetch-site-header>
+    pub browser_initiated: bool,
+
     /// <https://fetch.spec.whatwg.org/#concept-request-referrer>
     pub referrer: Referrer,
 
@@ -562,6 +567,7 @@ impl RequestBuilder {
             credentials_mode: CredentialsMode::CredentialsSameOrigin,
             use_url_credentials: false,
             user_activation: false,
+            browser_initiated: false,
             origin: Origin::Client,
             client: None,
             policy_container: RequestPolicyContainer::default(),
@@ -647,6 +653,12 @@ impl RequestBuilder {
     /// <https://fetch.spec.whatwg.org/#request-user-activation>
     pub fn user_activation(mut self, user_activation: bool) -> RequestBuilder {
         self.user_activation = user_activation;
+        self
+    }
+
+    /// Servo internal: mark this navigation as initiated by the user agent itself.
+    pub fn browser_initiated(mut self, browser_initiated: bool) -> RequestBuilder {
+        self.browser_initiated = browser_initiated;
         self
     }
 
@@ -791,6 +803,7 @@ impl RequestBuilder {
         request.crash = self.crash;
         request.client = self.client;
         request.user_activation = self.user_activation;
+        request.browser_initiated = self.browser_initiated;
         request.policy_container = self.policy_container;
         request.is_internal_request = self.is_internal_request;
         request
@@ -879,6 +892,9 @@ pub struct Request {
     pub policy_container: RequestPolicyContainer,
     /// <https://fetch.spec.whatwg.org/#request-user-activation>
     pub user_activation: bool,
+    /// Servo internal: whether this navigation was initiated by the user agent
+    /// itself rather than by page content.
+    pub browser_initiated: bool,
     /// Servo internal: if crash details are present, trigger a crash error page with these details.
     pub crash: Option<String>,
     /// Servo internal: whether this request originates from Servo internal implementation
@@ -921,6 +937,7 @@ impl Request {
             credentials_mode: CredentialsMode::CredentialsSameOrigin,
             use_url_credentials: false,
             user_activation: false,
+            browser_initiated: false,
             cache_mode: CacheMode::Default,
             redirect_mode: RedirectMode::Follow,
             integrity_metadata: String::new(),
