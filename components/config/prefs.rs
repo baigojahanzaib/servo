@@ -69,6 +69,10 @@ pub fn set(preferences: Preferences) {
         preferences.layout_css_has_selector_enabled
     );
     stylo_static_prefs::set_pref!(
+        "layout.css.word-break.break-word.enabled",
+        preferences.layout_css_word_break_break_word_enabled
+    );
+    stylo_static_prefs::set_pref!(
         "layout.css.scroll-behavior.enabled",
         preferences.layout_css_scroll_behavior_enabled
     );
@@ -365,6 +369,7 @@ pub struct Preferences {
     pub layout_css_columns_enabled: bool,
     pub layout_css_hyphens_enabled: bool,
     pub layout_css_has_selector_enabled: bool,
+    pub layout_css_word_break_break_word_enabled: bool,
     pub layout_css_masking_enabled: bool,
     pub layout_css_scroll_behavior_enabled: bool,
     pub layout_css_container_queries_enabled: bool,
@@ -636,6 +641,7 @@ impl Preferences {
             layout_css_columns_enabled: false,
             layout_css_hyphens_enabled: false,
             layout_css_has_selector_enabled: false,
+            layout_css_word_break_break_word_enabled: false,
             layout_css_masking_enabled: false,
             layout_css_scroll_behavior_enabled: false,
             layout_css_container_queries_enabled: false,
