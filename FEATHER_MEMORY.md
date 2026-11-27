@@ -4406,3 +4406,18 @@ The initial-pass/restyle theory in writing-modes-6 was built on confounded probe
 5. Fix applied: the `:not(...)` selector removed from the UA rule (pseudo-elements keep inherit). Combined with the axis-swap groundwork (e969671ef), vertical writing modes should now cascade and lay out orthogonally; the glyph-orientation layer (text-orientation, latin rotation) remains the known-imperfect layer.
 Probe-design lesson for ALL lanes: when testing inherited CSS properties, never use root mutation as a restyle trigger — it confounds inheritance with cascade application. Use a non-inherited property toggle (e.g. outline-color) or forced-descendant selectors instead. And getAttribute('style') readbacks prove nothing about parsing — use cssRules[].style or getComputedStyle only.
 [source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
+
+## sec1zt167 — build-environment: 124G disk FILLED by target/debug/incremental (53G)
+The webgpu-feature build failed with "No space left on device" — not a code problem.
+target/debug/incremental had grown to 53G across the session's many rebuilds; deps 34G.
+Fix: rm -rf the incremental dir (safe — only costs recompile time, deps stay). Freed 53G.
+STANDING HYGIENE: if feather builds start failing with os error 28, delete incremental first.
+Also screencasts ~1G accumulates; prune old rounds.
+
+## sec1zt168 — webgpu enablement attempt in progress (branch devin/*-webgpu)
+One-line feature add ("webgpu" in shell-new servo features) + pref. Compile cost: heavy —
+naga/wgpu-hal crate tree. Verification plan unchanged: navigator.gpu presence →
+requestAdapter() → requestDevice() chain on localhost. If adapter-null on this VM
+(likely — llvmpipe GL only, vulkan/lavapipe may not be installed), verdict is
+enable-anyway-if-no-crash vs keep-off — decide by whether requestAdapter RESOLVES-null
+(spec-correct degradation, safe to ship) vs panics/hangs (keep off).
