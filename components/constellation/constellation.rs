@@ -4425,6 +4425,29 @@ where
             load_data.url,
         );
 
+        // Feather: drop document navigations into schemes the fetch layer
+        // cannot navigate to (whatsapp:, intent:, spotify:, …) before any
+        // pipeline or pending session-history change is created. Other
+        // engines treat these as external-protocol handoffs that leave the
+        // current document untouched. The navigate-and-cancel alternative
+        // (deab4229838) does not survive contact with a still-loading
+        // document: the deep-link navigation interrupts the in-flight load,
+        // and by the time the unhandled-scheme fetch is cancelled the
+        // original document's load completion is already destroyed — the
+        // navigation never finishes and the pipeline's script execution
+        // wedges (minimal repro: schemenav2.html, sec1zt296). Dropping the
+        // navigation here is the semantic external-protocol handoffs need:
+        // the current document is left fully intact.
+        if !matches!(
+            load_data.url.scheme(),
+            "http" | "https" | "about" | "data" | "blob" | "file" | "filesystem"
+        ) {
+            debug!(
+                "{}: Dropping navigation into unhandled scheme: {}",
+                source_id, load_data.url,
+            );
+            return None;
+        }
 
         // If this load targets an iframe, its framing element may exist
         // in a separate script thread than the framed document that initiated

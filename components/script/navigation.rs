@@ -535,6 +535,20 @@ pub(crate) fn navigate(
     // fetch quota for navigable's container given url's origin.
     // TODO: Implement this.
 
+    // Feather: a navigation into a scheme the engine cannot navigate
+    // (whatsapp:, intent:, mailto:, …) is an external-protocol handoff in
+    // practice, and other engines treat it as a no-op that leaves the
+    // current document untouched. Aborting the document here (step 24.4)
+    // destroys the in-flight initial load before the constellation ever
+    // gets a chance to drop the navigation, leaving the pipeline wedged
+    // with a load that can never complete (sec1zt296, schemenav2.html).
+    if !matches!(
+        load_data.url.scheme(),
+        "http" | "https" | "about" | "data" | "blob" | "file" | "filesystem"
+    ) {
+        return;
+    }
+
     // Step 24. In parallel, run these steps:
     //
     // TODO: in parallel
