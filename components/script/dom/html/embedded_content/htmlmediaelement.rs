@@ -187,6 +187,11 @@ pub(crate) struct HTMLMediaElement {
     network_state: Cell<NetworkState>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-readystate>
     ready_state: Cell<ReadyState>,
+    /// Set when a Paused/Playing playback state arrives while the ready state is
+    /// still HaveNothing: the backend reached its resting state before the
+    /// metadata signal, so the HaveEnoughData advancement that the state change
+    /// would have triggered must be replayed once metadata arrives.
+    advance_after_metadata: Cell<bool>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-srcobject>
     src_object: DomRefCell<Option<SrcObject>>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-currentsrc>
@@ -421,6 +426,7 @@ impl HTMLMediaElement {
             htmlelement: HTMLElement::new_inherited(tag_name, prefix, document),
             network_state: Cell::new(NetworkState::Empty),
             ready_state: Cell::new(ReadyState::HaveNothing),
+            advance_after_metadata: Cell::new(false),
             src_object: Default::default(),
             current_src: Default::default(),
             generation_id: Cell::new(0),
@@ -2918,6 +2924,14 @@ impl HTMLMediaElement {
         // Step 6. Set the readyState attribute to HAVE_METADATA.
         self.change_ready_state(cx, ReadyState::HaveMetadata);
 
+        // The backend's paused/playing state change may have been signalled
+        // before this metadata update; the HaveEnoughData advancement it would
+        // have caused is replayed now so the element does not stall at
+        // HAVE_METADATA forever.
+        if self.advance_after_metadata.replace(false) {
+            self.change_ready_state(cx, ReadyState::HaveEnoughData);
+        }
+
         // Step 7. Let jumped be false.
         let mut jumped = false;
 
@@ -3137,12 +3151,16 @@ impl HTMLMediaElement {
                 media_session_playback_state = MediaSessionPlaybackState::Paused;
                 if self.ready_state.get() == ReadyState::HaveMetadata {
                     self.change_ready_state(cx, ReadyState::HaveEnoughData);
+                } else if self.ready_state.get() == ReadyState::HaveNothing {
+                    self.advance_after_metadata.set(true);
                 }
             },
             PlaybackState::Playing => {
                 media_session_playback_state = MediaSessionPlaybackState::Playing;
                 if self.ready_state.get() == ReadyState::HaveMetadata {
                     self.change_ready_state(cx, ReadyState::HaveEnoughData);
+                } else if self.ready_state.get() == ReadyState::HaveNothing {
+                    self.advance_after_metadata.set(true);
                 }
             },
             PlaybackState::Buffering => {
