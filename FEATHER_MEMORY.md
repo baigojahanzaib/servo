@@ -6117,3 +6117,13 @@ their legend-shift code in same_formatting_context_block.rs assumes flat childre
 may need adaptation once the wrapper exists (legend stays direct child so probably fine).
 
 sec1zt309-addendum: construction site located — components/layout/flow/construct.rs is the box construction path (has anonymous wrapping machinery); IS_FIELDSET flag set in fragment_tree/base_fragment.rs:227. Start implementation in construct.rs where block children are processed.
+
+## sec1zt310 — rendered-legend conditions fix shipped, partial (2026-11-28)
+commit pending-push: straddle-shift now filters float/position per spec. VERIFIED:
+no regression (border-gap-position-relative still PASS-ahead-of-upstream,
+containing-block still FAIL as before). legend-float.html still FAILS — expected:
+the real fix needs the anonymous content box; floated legends must float inside it.
+ROTATION: implement per sec1zt309 plan. BoxFragment style access pattern (cost me
+3 compile cycles, save them): children are Fragment enum; match Fragment::Box(bf)
+then bf.style.borrow().get_box() — bf is Arc<BoxFragment> no borrow() on it, and
+style is ArcRefCell so .borrow() needed. Fragment enum must be imported.
