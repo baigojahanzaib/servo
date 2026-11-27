@@ -5704,3 +5704,19 @@ JS heap is usually the dominant per-tab weight. FIX SHAPE: trigger a shrinking G
 frees: use /tmp/reclaim-test.py pattern + read /proc/pid/smaps_rollup RSS before/after,
 and if measurable, instrument SM heap size (js::PeekSizeOfExiting?) — implement (a) first
 as cheapest-high-value, re-measure.
+
+## persistence batch lessons (banked 2026-11-27, macOS lane)
+- macOS Cmd+Q never delivers winit WindowEvent::CloseRequested — any
+  cleanup wired only there silently skips the primary mac quit gesture.
+  ApplicationHandler::exiting is the single funnel all quit paths reach;
+  clear-on-exit and window-geometry writes both live there now.
+- Session persistence was navigation-triggered only; structural state
+  (tab create/close/reorder/group) was crash-losable. Fixed with a 2s
+  debounced save after each drained action batch (#358). Verified with
+  SIGKILL round-trips: exact state restores.
+- Window geometry: window.json {w,h,x,y} written at exiting, restored in
+  resumed() with size clamps; physical-position units for x/y, logical
+  for w/h (divide by scale_factor).
+- Settings persistence pattern: Prefs struct + prefs.txt key=value lines,
+  startup copy into browser.settings, sync_prefs() writes back on change.
+  Any new setting must touch all four places or it silently resets.
