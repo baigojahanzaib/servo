@@ -4157,3 +4157,30 @@ observe() call was unknown to servo — youtube performance-telemetry only, NON-
 works). Implementing event-timing/layout-shift/longtask entry production is real spec-feature
 work (entry generation machinery, not just enum strings). Priority: LOW-MED — telemetry-only
 for most sites, but RUM-dependent frameworks may gate features on it.
+
+## writing-modes-3: pref enable insufficient — cascade-level gap (2026-11-27)
+
+- layout_css_writing_mode_enabled exists in vendored servo (default false,
+  prefs.rs), stylo pin 0ab78ce HAS the wiring (longhands.toml: writing-mode
+  servo_pref = "layout.css.writing-mode.enabled"). Feather shell now enables
+  it (feather branch devin/writing-mode-pref).
+- MATRIX-VERIFIED NEGATIVE: even with the pref on and fresh boots, probes
+  unchanged: writing-mode-computed='', CSS.supports=false, BUT
+  inline-parse-sticks PASSES (readback=vertical-rl). Parse recognizes the
+  property, cascade/computed drops it. Precisely bounded: the gap is between
+  parse and cascade, not the pref plumbing.
+- KEY SUSPECT: stylo's servo_pref property registration is process-static —
+  if the property registry is built before prefs::set applies shell values
+  (or lazily cached on first use with default-off), author styles parse but
+  never cascade. Inspect stylo's property registration: how servo_pref-gated
+  longhands register in data.py / cascade, and WHEN servo first triggers it.
+  Compare: how does servoshell's own --pref flag ordering differ?
+- NOTE: text-orientation is gated by a SEPARATE pref
+  layout.css.writing-mode.text-orientation.enabled — enable both when fixed.
+- ALSO BANKED: bare-host omnibox input (no scheme) TLS-upgrades loopback —
+  servo then fails with InvalidContentType against plaintext HTTP. Always use
+  explicit http:// in probes. Shell UX gap: localhost/127.0.0.1 should default
+  to http not https (real browsers do this).
+- MATRIX HARNESS IS HEALTHY: boot-per-page runs collect probes reliably
+  end-to-end (full pass ~210s). The single-instance handoff poisoned earlier
+  runs — ALWAYS pkill feather-ui before matrix runs.
