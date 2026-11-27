@@ -168,6 +168,7 @@ impl SourceBuffer {
         // whose value doesn't fit its element size is left as-is (rare —
         // youtube uses 4+ byte timecodes).
         if has_timecodes {
+            let mut rewritten = 0u32;
             let base_tc = full[start_idx].1;
             let target_ms = (seek_target * 1000.0).round() as u64;
             let first_ms = (base_tc * 1000.0).round() as u64;
@@ -187,8 +188,12 @@ impl SourceBuffer {
                     let bytes = new_val.to_be_bytes();
                     stream[*coff..*coff + *csize]
                         .copy_from_slice(&bytes[8 - *csize..]);
+                    rewritten += 1;
                 }
             }
+        }
+        if has_timecodes {
+            eprintln!("[mse-refeed] timecode rewrites applied (see prep line for counts)");
         }
         // Cut chunk boundaries: each boundary offset at-or-after start, plus
         // end-of-stream. Group clusters into pushes of at most ~1.5MB so the
@@ -218,15 +223,44 @@ impl SourceBuffer {
             chunks.push_back(cur);
         }
         // Init segment rides ahead of the first media chunk so the fresh
-        // demuxer sees stream headers (post-reset demuxer state is blank).
+        // demuxer sees stream headers (post-reset demuxer state is blank) —
+        // but ONLY if it isn't already there: retained fragment 0 holds the
+        // original first append, which itself begins with the init bytes, and
+        // prepending a second copy produces init+init+media — the exact
+        // garbage the demuxer chokes on (sec1zt128: "large block of size
+        // 1794238142" — a duplicated-ebml-header length misread).
         let init = self.init_cache.borrow().clone();
         if !init.is_empty() {
-            if let Some(first) = chunks.front_mut() {
-                let mut joined = init;
-                joined.extend_from_slice(first);
-                *first = joined;
+            let already = chunks
+                .front()
+                .map(|first| first.len() >= init.len() && first[..init.len()] == init[..])
+                .unwrap_or(false);
+            if !already {
+                if let Some(first) = chunks.front_mut() {
+                    let mut joined = init.clone();
+                    joined.extend_from_slice(first);
+                    *first = joined;
+                }
             }
         }
+        // Instrumentation (sec1zt129): the offline byte-level refeed validates
+        // clean (ffprobe/ffprobe-decode on a simulated stream) yet the live
+        // demuxer reports corruption — the divergence is in WHAT actually gets
+        // delivered, so log exactly that.
+        let first_hex: String = chunks
+            .front()
+            .map(|c| c[..c.len().min(48)].iter().map(|b| format!("{:02x}", b)).collect::<Vec<_>>().join(""))
+            .unwrap_or_default();
+        eprintln!(
+            "[mse-refeed] prep target={} frags={} streamlen={} boundaries={} start_idx={} chunks={} first48={}",
+            seek_target,
+            frags.len(),
+            stream.len(),
+            boundaries.len(),
+            start_idx,
+            chunks.len(),
+            first_hex
+        );
         *self.refeed_queue.borrow_mut() = chunks;
     }
 
