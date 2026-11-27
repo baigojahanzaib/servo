@@ -446,7 +446,16 @@ pub(crate) fn follow_hyperlink(
         let href = subject
             .get_attribute_string_value(&local_name!("href"))
             .unwrap_or_default();
-        if let Ok(url) = document.encoding_parse_a_url(&href) {
+        // <https://html.spec.whatwg.org/multipage/#downloading-hyperlinks>:
+        // the download attribute is only honoured for same-origin (or
+        // blob:/data:) URLs — cross-origin links must navigate normally,
+        // otherwise any site could force-download cross-origin content under
+        // an attacker-chosen filename.
+        if let Ok(url) = document.encoding_parse_a_url(&href) &&
+            (url.origin().same_origin(&document.origin()) ||
+                url.scheme() == "blob" ||
+                url.scheme() == "data")
+        {
             let global = window.as_global_scope();
             let filename_hint = subject
                 .get_attribute_string_value(&local_name!("download"))
