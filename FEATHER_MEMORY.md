@@ -5873,3 +5873,25 @@ far faster than gdb for panic-class bugs since the panic hook catches before gdb
 - Session format: {"version":1,"active_space":0,"spaces":[{"name","tabs":
   [{"url","group"}],"active","groups":[{"id","name","color","collapsed"}]}],
   "pinned":[]} — blank NewTab pages are NOT persisted (no URL).
+
+## sec1zt289 — crash surface BOTTOMED: one mechanism left, timed-Atomics.waitAsync (2026-11-27)
+Solo re-tests of all 8 surviving "crash" lines from the evening baseline: 6 of 8 PASS solo
+(clearinterval-from-callback 1/1, createImageBitmap-resolves-in-task 13/13, sandbox-top-nav
+pair, protocol-handler) — they were flaky/contamination artifacts (memory pressure or
+cascade), not real crashes. TRUE crash surface in all of html WPT: exactly ONE mechanism —
+Atomics.waitAsync WITH a timeout argument segfaults (null embedding-callback call,
+verified gdb: frame#0 0x0 called from AtomicsWaitAsync<int>). Root cause fully traced:
+servo wires SetUpEventLoopDispatch (script_runtime.rs:682) but the mozjs glue passes
+nullptr for the DELAYED dispatch callback (jsglue.cpp SetUpEventLoopDispatch hardcodes
+nullptr 3rd arg to JS::InitAsyncTaskCallbacks); timed waits use the delayed path → null
+call. waitAsync WITHOUT timeout works fine (verified). UPSTREAM-SHARED: upstream servo main
+(mozjs 0.28) has the identical gap — feather can fix first. FIX DESIGN (deferred, cost):
+vendor+patch mozjs crate adding a DelayedDispatchToEventLoop C++ wrapper mirroring the
+DispatchablePointer pattern, then implement the delayed arm in script_runtime using the
+script-thread timer infra; cost dominated by full mozjs_sys rebuild (~30-60min compile).
+Justified only when crash-free polish outranks feature work — the API is rare in the wild
+but the crash is a hard process-wide SEGV. REPRO: /tmp/crashtest/atomics.html (timed —
+segfaults) vs atomics2.html (untimed — fine). SERVER: /tmp/crashtest/srv.py port 8455.
+TIMEOUT-cluster analysis: 14+ of 30 timeouts are COOP/COEP-reporting — zero reporting
+infrastructure exists in servo net stack (no Report-To, no reporting endpoints, no COOP
+parsing) — upstream-shared multi-day net-stack feature, documented not started.
