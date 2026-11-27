@@ -4045,3 +4045,23 @@ behavior, NOT a new bug; check whether the originating panic class is script
 (recovered, fine) vs singleton-thread (WR/compositor — never-bugs, fix upstream).
 Remaining per design doc: Stage 1 media-thread granularity (1-2d), Stage 2
 singleton respawn (weeks, defer), Stage 3 multiprocess (beta conversation).
+
+## sec1zt149 — youtube thumbnails ROOT-CAUSE CORNERED: late-populated images never paint
+Complete discriminator chain (2026-11-27 linux, live youtube.com search):
+1. Lazy-load triggering EXONERATED: probe IntersectionObserver on empty imgs FIRES on scroll
+   (5/10 fired); src population partially runs (7/85 → 20/85 imgs gained src after scrolling).
+2. Fetch+decode EXONERATED: in-viewport lazy imgs all complete+naturalWidth>0, zero broken.
+3. Layout EXONERATED: black-painting thumbs are light-DOM imgs 218x326 visible opacity 1.
+4. OBSERVED: imgs whose src populates AFTER first paint render as black rectangles forever
+   (shorts shelf, video thumbs) while SSR/early imgs paint fine (cat ad, avatars, initial
+   thumbs) IN THE SAME FRAME. Scrolling does not heal them — so not a mere missing repaint;
+   the painted fragment itself carries no image. Suspect class: servo image-cache → layout
+   association never established for images inserted post-layout (needs re-reflow/re-image,
+   not repaint). Same family as the favicon texture-upgrade bug (feather#213) — late-arriving
+   image data fails to reach the render path.
+Symptom: "images black despite complete+decoded in DOM" → check: image-cache/fragment
+association timing, NOT IntersectionObserver, NOT fetch, NOT lazy-load JS.
+Methodology note: xdotool input coordinates must hit the feather window geometry — an early
+"youtube doesn't scroll" reading was measurement error (clicks landing above the window).
+YouTube uses CLOSED shadow roots for yt-image (shadowRoot null is spec-correct), but the
+defective thumbs are plain light-DOM imgs — shadow DOM is irrelevant to this defect.
