@@ -3867,3 +3867,10 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 
 ## definitive-grid-239-of-254 (2026-11-27) — matrix comprehensive
 - 37 classes, 254 probes, 239 passing, EVERY red categorized zero-unknowns. Union PR #251 supersedes conflicting per-round PRs (closed 245/247/248/249/250 — per-round branches conflict on shared matrix.py registration line; union carries identical content + definitive grid). LESSON: matrix rounds that all edit the same registration line should batch 2-3 classes per branch, or accept the union-merge pattern.
+
+## BATCH-4 VERIFIED + checkVisibility gap (2026-11-27)
+Published assets 00:03 UTC: feather 0387c5164d6 + servo cd3535513865 (build-engine incl. feather-engine merge, 0 dirty files), binary sha 5b9fc597502948455e979d300c10cbb1ae63b360dc8496dd667f2a7295e12ea8 — verified byte-identical to published zip.
+VERDICTS on exact published binary: launch YES; discord login YES (Welcome-back form, inputs render — one boot hit the known intermittent preload race, second boot clean); video playback YES (3 simultaneous mp4s playing); google SERP MODERN YES — firefox-UA fix works: 1.8MB DOM, AI Overview, modern tabs, first real confirmation the legacy-variant era is over; gmail banner NO banner at entry (marketing/signin pages render clean).
+NEW API GAP: Element.checkVisibility missing — console errors on google workspace js (e.checkVisibility is not a function). Shim-candidate/presence-level stub may suffice for many sites; add to compat-shim list.
+NOTE: modern SERP featherapp-domain count 45 in 1.8MB DOM is plausibly normal (sitelinks/breadcrumbs) — legacy-variant duplication conclusion unchanged (engine bug in THAT variant's path).
+PROGRESS-STRIP hysteresis: merged but not behaviorally verified on VM (needs visual timing observation — unverified, not failed).
