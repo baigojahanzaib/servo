@@ -114,6 +114,15 @@ impl Location {
         let navigable_document = navigable.Document();
         // Step 2. Let sourceDocument be the incumbent global object's associated Document.
         let incumbent_global = GlobalScope::incumbent().expect("no incumbent global object");
+        // https://html.spec.whatwg.org/multipage/#the-navigate-algorithm
+        // Navigations within an about:srcdoc document to any URL other than
+        // exactly "about:srcdoc" (no query or fragment) must be blocked.
+        if navigable_document.url().as_str() == "about:srcdoc" &&
+            url.as_str().starts_with("about:srcdoc") &&
+            url.as_str() != "about:srcdoc"
+        {
+            return;
+        }
         let mut load_data = incumbent_global
             .as_window()
             .load_data_for_document(url, incumbent_global.pipeline_id());
