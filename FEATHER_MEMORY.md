@@ -4501,3 +4501,16 @@ secure-contexts spec, matching Chrome. Remote insecure hosts keep full protectio
 Symptom-index: API resolves successfully but effect silently absent → suspect multi-layer
 spec-deviation gates; grep the WHOLE path (construction/insertion/retrieval) for the same
 wrong check — servo's cookie code had it in three places and fixing one/two still fails.
+
+## sec1zt174 — layout-pref audit (second gate family) — method + verdicts
+Beyond dom_* webidl gates, stylo gates CSS PROPERTIES behind `servo_pref` layout.* entries in
+vendor/stylo/style/properties/longhands.toml (41 total). Audit method: extract all servo_pref
+names, normalize dots/dashes to underscores, cross-ref components/config/prefs.rs defaults +
+feather's enabled set. Key nuance: many servo_pref names don't exist in servo config at all
+('pref-not-in-servo-config') — those are effectively ungated in servo builds. text-overflow
+defaults TRUE (why ellipsis worked despite feather never setting it).
+SHIPPED (feather#287): font-variations (real impl: font.rs:307 variation axes), webkit-text-fill-color
+(real impl: display_list painting). EXCLUDED hollow: columns — parse/compute real but ZERO multicol
+layout implementation (grep components/layout for multicol = nothing); test: 300 words same height
+in 1-col vs 3-col. ENABLING-HOLLOW-IS-WORSE-THAN-ABSENCE: sites lose graceful single-column fallback.
+text-orientation red in matrix was flake/stale — computes 'upright' correctly live.
