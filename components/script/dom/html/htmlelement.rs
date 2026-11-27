@@ -2215,11 +2215,18 @@ impl HTMLElement {
             );
         }
 
-        // TODO(NeverHappened): Implement condition
-        // If the element's dir attribute is in the auto state OR
-        // If the element is a bdi element and the dir attribute is not in a defined state
-        // (i.e. it is not present or has an invalid value)
-        // Requires bdi element implementation (https://html.spec.whatwg.org/multipage/#the-bdi-element)
+        // <https://html.spec.whatwg.org/multipage/#the-bdi-element>
+        // A bdi element whose dir attribute is absent or invalid behaves as if
+        // in the auto state: directionality comes from descendant text content.
+        if self.as_element().local_name() == &local_name!("bdi") {
+            return Some(
+                if self.first_strong_descendant_is_rtl() {
+                    "rtl".to_owned()
+                } else {
+                    "ltr".to_owned()
+                },
+            );
+        }
 
         None
     }
