@@ -4231,10 +4231,8 @@ contribution, capped by available space per spec section 7.3). Ladybird's
 implementation in BlockFormattingContext is the cross-reference. This is the
 multi-day engine mission; plan doc WRITING-MODES-PLAN.md phases stand but
 phase 1 should be retitled "orthogonal flow implementation".
-## sec1zt156 — permissions.query() plumbing IMPLEMENTED, compile-verification pending
-Full chain written, NOT yet compile-verified (session context exhausted mid-check;
-verify first thing on resume — cargo check -p feather-ui in ~/feather/shell-new, log at
-/tmp/permcheck.log may be stale-pre-edit):
+## sec1zt156 — permissions.query() plumbing IMPLEMENTED, compile-verified GREEN + pushed (d968c8381f8); e2e browser verify pending
+Full chain written, compile-VERIFIED green (cargo check -p feather-ui exit 0); pushed as d968c8381f8:
 1. embedder/lib.rs: new EmbedderPermissionState tri-state enum (Granted/Denied/Prompt) +
    EmbedderMsg::QueryPermissionState(WebViewId, PermissionFeature, GenericSender<...>)
 2. servo/webview_delegate.rs: query_permission_state default method returning Prompt
