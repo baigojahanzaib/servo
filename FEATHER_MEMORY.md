@@ -5895,3 +5895,22 @@ segfaults) vs atomics2.html (untimed — fine). SERVER: /tmp/crashtest/srv.py po
 TIMEOUT-cluster analysis: 14+ of 30 timeouts are COOP/COEP-reporting — zero reporting
 infrastructure exists in servo net stack (no Report-To, no reporting endpoints, no COOP
 parsing) — upstream-shared multi-day net-stack feature, documented not started.
+
+## sec1zt290 — YouTube dark-nav REPRODUCED: theme custom properties never apply (2026-11-27)
+UNBLOCKED dark-mode repro: servoshell now has SERVO_FORCE_THEME=dark|light override
+(pushed this session — headed_window.rs:1030 + window.rs default theme()). Reproduced the
+batch-7 defect end-to-end: YouTube boots into dark theme (html[dark]=true, verified via
+webdriver) yet the left side-nav is INVISIBLE in the screenshot (/tmp/yt-dark.png) while
+the rest of the page renders correct dark theme. KEY EVIDENCE (webdriver probe):
+getComputedStyle(document.documentElement).getPropertyValue('--yt-spec-text-primary') is
+EMPTY — YouTube's theme custom properties never apply to the cascade, so components fall
+back (many to transparent/black-on-black). Also guide display:none (may be orthonormal
+watch-page behavior or fallout). Body bg computes transparent. NEXT investigation step:
+determine HOW YouTube injects the vars — candidates: (a) html[dark] selector rules in a
+stylesheet servo fails to parse/apply (test: minimal html[dark] { --x: v } repro — if that
+works, the failure is in YouTube's specific constructs); (b) @property-registered
+inherits:true vars losing initial values in shadow trees; (c) vars defined inside
+CSS layers or scope. YouTube nav items queried DO compute color rgb(232,232,232) — so
+simple vars partially work — the invisibility may be narrower than full var failure:
+possibly specific to the guide's background surface tokens. Harness: /tmp/ytnav.py,
+/tmp/yt-dark.png, SERVO_FORCE_THEME=dark + webdriver execute/sync probing.
