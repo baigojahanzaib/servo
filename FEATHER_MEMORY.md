@@ -6013,3 +6013,13 @@ server), /tmp/wedge-verify*.py chain. NEXT: read the navigate-and-cancel/AbortLo
 path for how a parse-time scheme nav interacts with the in-flight initial load — suspect
 the abort tears down the pending change of the WRONG (main) navigation or leaves the
 pipeline in a state where load-event completion can never be signalled.
+
+## Interaction-class verification COMPLETE (macOS lane, 2026-11-28)
+All core input classes verified on real sites/fixtures: text input (google),
+SPA link navigation (youtube), scroll (fixture), media playback realtime 1:1
++ pause + seek (fixture), drag-dwell grouping, storage prompts (whatsapp).
+YouTube video playback works end-to-end — ads play through, real video with
+full player chrome. prefers-color-scheme verified end-to-end through feather's
+own appearance toggle (embedder pipeline works — youtube dark-nav issue is
+NOT signaling, it's in servo themed-style computation). SERVO_FORCE_THEME is
+servoshell-only, inert in feather. Media remaining gap: DRM/EME only.
