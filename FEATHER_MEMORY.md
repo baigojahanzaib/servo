@@ -4308,3 +4308,10 @@ worklet(+blockingsleep), bluetooth, canvas_capture, sanitizer. SKIP permanently 
 testbinding x3, testperf, testing_element_activation, testing_html_input_select_files,
 microdata_testing, bluetooth_testing, webxr_test. GENERALIZED RULE: every future API audit
 starts with this pref-gate cross-ref, not with site behavior.
+
+## sec1zt161 — batch-1 regression check PASSED on live google SERP
+With all batch-1 prefs + storage-manager + permissions enabled, google search renders the
+full modern SERP (AI Overview, knowledge panel, result cards) — no regression from the new
+API surfaces. youtube/webrtc/webgpu/canvas-capture/sanitizer verification still pending as
+batch-2 candidates; sanitizer implementation is substantial (3189 lines) but low adoption;
+webrtc needs media-path verification before enabling (half-enabled webrtc = worse signal).
