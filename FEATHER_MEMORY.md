@@ -4627,3 +4627,51 @@ Coordinator P0, outranks everything: (1) GMAIL BOOT FREEZE — gmail boot perman
 ## sec1zt203 — yt watch-page repro: devtools evals TIMEOUT even on document.title while ALL threads idle (no spin, no llvmpipe) — BLOCKED-IDLE wedge signature, same family shape as the gmail report. UNRESOLVED whether this is the seek regression manifestation at boot, a devtools-actor death artifact, or network stall. NEXT: (1) screenshot the live window to see what rendered; (2) if video visually playing despite dead devtools → devtools artifact not engine wedge; (3) gdb backtrace Script#1 if truly stuck; (4) only then seek-bisect. repro instance live pid was 1610196-era relaunched once — check pgrep feather-ui.
 
 ## sec1zt204 — YT WATCH-PAGE BLANK-WEDGE REPRODUCED ON LINUX: dQw4w9WgXcQ watch page — tab title set ("Rick Astley - Never Gon...") but body NEVER PAINTED (blank white window), all threads idle, devtools evals timeout. CONTRAST: minutes earlier the lofi watch page rendered fully in the same binary — so the wedge is either racy or content-dependent. THIS IS A LIVE LINUX REPRO of the blocked-idle wedge family — the exact repro the P0 needs. instance still running (pgrep feather-ui). NEXT: gdb -p PID thread backtraces (esp Script#1 + main) to find the block point — this is the money artifact. Do NOT kill the instance.
+
+## batch6-youtube-seek-wedge evidence (2026-11-27, macOS lane, sec986486)
+
+SYMPTOM: youtube seek kills playback (user-reported batch-6 regression).
+REPRODUCED on macOS feather-ui (engine cf9acff14): youtube.com/watch autoplay
+advanced frames normally; one click on the seek bar (~70%) → video frame froze
+permanently, buffering spinner appeared and never cleared, player time readout
+stuck at 0:05/3:33 across all later screenshots. UI thread stayed healthy
+(main parked in ReceiveNextEventCommon, window interactive).
+
+THREAD-STATE EVIDENCE (sample of wedged process, 2069 samples / ~2s):
+- Script#1 (the youtube script thread) was in `semaphore_timedwait_trap`
+  via `libdispatch: _dispatch_sema4_timedwait <- _dispatch_semaphore_wait_slow`
+  in ALL 2069 samples — a GCD-semaphore timed-wait busy loop. Process CPU
+  ~80-100% with one core saturated: the wait timeout is short/zero, so the
+  thread spins without ever making progress — classic wedge signature.
+  Stack (release, unsymbolicated): script-thread main loop →
+  +0x1ee3fa8 → +0x9c9a0 → +0x9c410 → +0x298cdfc → dispatch wait.
+  Offsets are stable within a build: feather-ui load addr 0x102f0c000,
+  compute file offsets for atos if a debug build is ever produced.
+- All other threads (Script#2/#8/#9, FetchThread, StyleThreads, caulk audio,
+  WR*, Constellation) blocked in normal wait primitives — healthy.
+  caulk.messenger (CoreAudio) idle in timed_wait — audio pipeline starved,
+  consistent with playback death.
+
+MECHANISM READ: the script thread is NOT deadlocked (it would be in
+semaphore_wait, untimed) — it is LIVELOCKED in a poll loop waiting for a
+condition that never becomes true. Prime suspect mechanism class: media
+sync/clock — after a seek the gstreamer pipeline re-prerolls; if the
+preroll/flush completion or the media-time update never reaches the script
+thread's waiter (or the wait condition is checked against stale state),
+the loop spins forever. Media event delivery suspects:
+`components/media/player/video.rs` (frame push / seek handling),
+`components/media/backends/gstreamer/player.rs` (seek + preroll/flush
+completion signaling), and the script-side HTMLMediaElement seek/ready-state
+machinery (`components/script/dom/html/media/`) — whichever condition the
+script thread polls is never satisfied post-seek.
+NOTE the pre-seek anomaly: player time readout was ALREADY stuck at 0:05
+while frames advanced — the timeupdate/currentTime path may be broken
+independently of seeking; seeking then kills frame flow entirely.
+
+GMAIL ANGLE (not yet reproduced — signed-in boot unreachable without
+credentials): if the same livelock fires in the gmail boot path, the script
+thread spinning at 100% would starve the load — consistent with the user's
+"permanent boot freeze". Signed-out gmail signin flow incl. botguard POST
+roundtrip verified HEALTHY on the same build — freeze is post-auth only.
+Repro evidence files on macOS lane VM: /tmp/yt-wedged-sample.txt (full
+sample), /tmp/gmail-baseline-sample.txt.
