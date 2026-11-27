@@ -1347,16 +1347,12 @@ impl ScriptThread {
             .unwrap_or(Duration::MAX)
             .min(animation_delay);
         let delay = animation_delay - time_since_last_rendering_opportunity;
-        if delay.is_zero() {
-            // The rendering update is already due — scheduling a zero-duration
-            // timer makes the event loop wake-spin: the deadline is never in
-            // the future, so the timed wait never blocks and the thread burns
-            // a core re-entering the wait primitive. Set the flag directly
-            // instead of round-tripping through the scheduler.
-            self.needs_rendering_update.store(true, Ordering::Relaxed);
-        } else {
-            self.schedule_update_the_rendering_timer_if_necessary(delay);
-        }
+        // NOTE: even a zero delay must round-trip through the timer scheduler:
+        // the timer channel integrated into the event loop's `select` is what
+        // wakes the parked script thread. Setting the flag directly here loses
+        // the wake-up — the thread parks waiting for messages that never come
+        // and pending input events are never processed (the dnd/input wedge).
+        self.schedule_update_the_rendering_timer_if_necessary(delay);
     }
 
     /// Fulfill the possibly-pending pending `document.fonts.ready` promise if
