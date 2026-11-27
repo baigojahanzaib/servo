@@ -3832,3 +3832,9 @@ Retention implementation (engine 60a01938a43) compile-clean and pushed, but live
 - The round-2 backward-seek silent death is the exemplar reproducible native crash: once artifacts capture, that death class becomes classifiable instead of silent.
 - Async-signal-safety note: backtrace capture allocates — technically unsound in a handler, universally done in crash reporters; the one-shot CAPTURED guard prevents recursive capture.
 - Four crash classes taxonomy (per coordinator): engine-rust-panic (covered stage-0), shell-rust-panic (panic hook writes artifact), native-signal (NOW covered), hang/watchdog (watchdog already logs stalls; no artifact — future).
+
+### Verification COMPLETE (same day, live trusted-input test)
+Full sequence verified with real mouse drags on the harness page: `dragstart | setdata-ok | drag | dragenter | dragover | drop:feather-drag-payload | dragend` — payload round-trips through the session DataTransfer. ALL events trusted, correct ordering.
+- **BONUS UPSTREAM BUG FOUND + FIXED**: `DataTransfer::SetEffectAllowed` wrote into `drop_effect` instead of `effect_allowed` (copy-paste error in servo's datatransfer.rs) — effectAllowed could never change, making drop negotiation impossible. This is upstreamable candidate SIX, small and surgical.
+- Verification method (reusable): matrix scenario server + big colored drop targets at fixed positions + computer-tool real mouse drags + page-embedded event log rendered into DOM, read via screenshot. isTrusted gating essential — the probe pages' own synthetic dispatchEvent probes contaminate naive logs.
+- Harness lesson: silent python str.replace no-match cost a verification cycle — always assert substitution anchors matched.
