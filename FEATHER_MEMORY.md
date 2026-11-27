@@ -5268,3 +5268,21 @@ element; if focus lands after mousedown the control dies synchronously), shadow-
 hit-test, trustedness. Engine-lane investigation; discriminator instrumentation
 noted in feather docs/defect-queue.md. Selects are everywhere on the real web —
 every form with a dropdown currently dead-ends silently for the user.
+||||||| parent of 6f1407181c8 (mem: dnd crashes are the wedge + repro harness)
+
+## sec1zt268 — dnd "crashes" are actually the WEDGE, repro harness ready (2026-11-27)
+KEY EVIDENCE: single-test run of /html/editing/dnd/canvas/001.html shows harness line
+"Browser not responding, setting status to CRASH" — the 100 dnd "crashes" are NOT process
+crashes, they are the browser WEDGING (same 0%-CPU wedge reproduced manually mid-PerformActions).
+One mechanism explains the whole biggest-actionable WPT cluster. Log sequence: webdriver
+"Dispatch actions completed successfully" → Get(test page) loads fine → then wedge.
+HARNESS NOW WORKING for single tests: must first kill leftover wptserve pythons holding ports
+8001-8003/8444-8446/8888-8889/9000 (ps aux|grep python.*wpt, fuser -k -n tcp <port>).
+Command: .venv/bin/python mach test-wpt /html/editing/dnd/canvas/001.html — reproduces in ~25s.
+NEXT: gdb attach the wedged servoshell mid-test (test takes 25s to wedge, window to attach)
+— but debug=0 means no symbols; either (a) rebuild script crate with debug symbols, or
+(b) RUST_LOG=script=debug instrument the drag path. Prime suspect from earlier analysis:
+hit_test_from_point_in_viewport → elements_from_point_query is a SYNCHRONOUS LAYOUT QUERY —
+drag gesture processing in the script event loop hitting this while layout waits on script
+= circular wait. Check whether drag handling runs on script thread and calls hit-test
+synchronously (drag_gesture.rs / html_drag.rs event flow).
