@@ -4206,3 +4206,28 @@ pref layout.css.writing-mode.text-orientation.enabled — not yet set in shell.
 NEXT STEP: add eprintln debug in config/prefs.rs set() confirming the write,
 and a probe reading the pref state indirectly. OR test servoshell with the
 pref to isolate shell vs engine.
+
+## writing-modes-5: RESOLVED — orthogonal flows deliberately unimplemented upstream (2026-11-27)
+
+The parse-vs-cascade mystery is EXPLAINED by upstream servo/servo#50188's own
+commit message: "we use writing-mode in UA styles to prevent orthogonal flows
+FOR NOW". Orthogonal flows (vertical writing mode inside horizontal context —
+THE common case for all real vertical text) are deliberately unimplemented in
+upstream servo. Evidence in tree: positioned.rs has TODO comments referencing
+drafts.csswg.org/css-writing-modes/#orthogonal-flows; flexbox handles
+orthogonality only partially.
+
+So: the pref chain probably works fine (same chain proven by backdrop-filter);
+even with the property cascading correctly, layout forces orthogonal content
+horizontal — matching the live visual evidence exactly. CSS.supports=false
+remains slightly inconsistent with this theory — possibly servo's
+CSS.supports implementation has its own gate in the script crate; low-value
+to chase since the real work is orthogonal flow implementation either way.
+
+REAL SCOPE for writing-modes: implement orthogonal block-flow sizing in
+components/layout/flow (block axis resolution when child writing mode is
+orthogonal to parent — the child's inline size becomes its block size
+contribution, capped by available space per spec section 7.3). Ladybird's
+implementation in BlockFormattingContext is the cross-reference. This is the
+multi-day engine mission; plan doc WRITING-MODES-PLAN.md phases stand but
+phase 1 should be retitled "orthogonal flow implementation".
