@@ -5846,3 +5846,19 @@ into ordinary feature gaps post-fix. SWEEP RESULT: HTMLImageElement uses AtomicR
 (thread-safe, correct); no other embedded-content LayoutDom uses raw DomRefCell.borrow().
 REPRO LESSON: RUST_BACKTRACE=1 + direct servoshell repro gives full symbolized backtraces —
 far faster than gdb for panic-class bugs since the panic hook catches before gdb stops.
+
+## macOS lane state 2026-11-27 late (post-compaction handoff)
+- Sweep tally: PASS google(end-to-end incl SERP+AI overview), stackoverflow,
+  bbc, netflix, x.com, chatgpt; PASS-minus-DRM twitch; botwall-blocked
+  nytimes+claude.ai (datacenter IP, not compat); DEFECT amazon layout
+  (content compressed at page bottom, engine-side flex/grid).
+- Omnibox input defect CLOSED shell-side: root is main-thread starvation by
+  heavy servo pages — NOT input routing. Enter-hoist fix merged (#366).
+  The fix is engine-lane present-off-UI-thread. Do not re-investigate.
+- Memory-reclaim fix verified working: 2257MB→1182MB on tab close.
+- ~450MB/tab heavy sites; per-tab infra dominates memory budget.
+- Binary: shell-new/target/release/feather-ui built from main+instrumentation
+  (eprintln focus logging in toolbar.rs — harmless, can strip).
+- Open: amazon isolation, sweep remainder (reddit/github/gmail/wiki/notion/
+  instagram/facebook/linkedin/whatsapp/stackoverflow-deep), Windows lane
+  file-picker verification.
