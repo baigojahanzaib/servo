@@ -4009,3 +4009,24 @@ Fix requires NEW engine plumbing: a synchronous script→embedder permission-sto
 (script-thread blocking — deadlock-sensitive) OR pushing shell-store decisions into the
 engine at webview creation (no such API exists). Design decision needed before implementing;
 the invocation cache covers within-session consistency already.
+
+## writing-modes-2: defect precisely localized (2026-11-27, mac lane)
+
+- LIVE EVIDENCE: vertical-rl fragments/box sizes already correct (202x202 on
+  declared 200px box). Matrix "zero fragments" reading obsolete. TRUE defect:
+  inline content flows horizontally inside vertical containers — the inline
+  progression axis never switches. Text renders as ordinary horizontal lines.
+- Stylo is external (servo/stylo git, Firefox's engine) — parse/cascade/computed
+  almost certainly correct. Fault is in components/layout inline line
+  construction / glyph physical placement: suspect flow/inline/line.rs +
+  text_run.rs — where inline advances map to physical offsets.
+- Devtools transport fact: raw TCP, Firefox length-prefixed JSON (`<len>:<json>`),
+  FIRST packet must be `26:{"auth_token":"<token>"}` (token from
+  /tmp/feather-devtools-token, second field). NOT websocket. Auth worked,
+  root greeting received — but listTabs returns ZERO tabs even with pages open:
+  browsing contexts apparently don't register as devtools tabs in feather's
+  engine integration. THIS is the matrix harness's deepest blocker — separate
+  engine mission: why no tabs in listTabs.
+- Input-testing trap: shell renav + session-restore interference makes
+  omnibox-driven verification flaky on restored tabs — open a FRESH tab for
+  live probes, or use drag-drop harness pages which are single-purpose.
