@@ -124,8 +124,10 @@ impl SourceBuffer {
     /// eviction aside — the boundary scan degrades gracefully there because
     /// the first boundary after the seek target still demuxes).
     fn prepare_cluster_aligned_refeed(&self, seek_target: f64) {
-        let mut frags: Vec<(f64, f64, Vec<u8>)> = self.retained.borrow().clone();
-        frags.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        // NO time-sort: insertion order is append order is byte order.
+        // Sorting by scanned timekeys scrambled contiguous fragments whenever
+        // keys were missing or duplicated — the round-8 byte-stream scramble.
+        let frags: Vec<(f64, f64, Vec<u8>)> = self.retained.borrow().clone();
         let mut stream = Vec::new();
         for (_, _, bytes) in &frags {
             stream.extend_from_slice(bytes);
@@ -537,13 +539,25 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         // bytes keyed by their time range so seeks can re-feed without the
         // page re-appending. Bytes are the post-timestampOffset-rewrite
         // canonical stream. Eviction is oldest-end-first once over the cap.
-        if let Some((fs, fe)) = retained_range {
+        // CONTIGUITY INVARIANT: retain EVERY append in insertion order —
+        // MSE appends for a track are a contiguous byte stream (the demuxer
+        // originally consumed exactly this concatenation), so insertion order
+        // IS the correct byte order. The old time-keyed capture silently
+        // dropped every append whose slice contained no cluster head (most
+        // of them — slices are smaller than clusters), and the time-sort
+        // scrambled the rest: holes + duplicated regions glued mid-cluster,
+        // the deterministic demux corruption (sec1zt135). Keys still serve
+        // eviction; keyless fragments inherit the previous fragment's end.
+        {
+            let prev_end = self.retained.borrow().last().map(|(_, fe, _)| *fe).unwrap_or(0.0);
+            let (fs, fe) = retained_range.unwrap_or((prev_end, prev_end));
             let mut retained = self.retained.borrow_mut();
             retained.push((fs, fe, bytes.clone()));
             let total: usize = retained.iter().map(|(_, _, b)| b.len()).sum();
             if total > MAX_RETAINED_BYTES {
                 let mut excess = total - MAX_RETAINED_BYTES;
-                retained.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+                // Eviction must NOT re-sort: front IS oldest in a contiguous
+                // append-order stream. Re-sorting scrambles byte order.
                 while excess > 0 && retained.len() > 1 {
                     let (_, _, b) = retained.first().unwrap();
                     let len = b.len();
