@@ -493,11 +493,13 @@ impl Document {
         // An HTML5 drag session takes precedence over selection dragging when
         // the press lands on a draggable element.
         // <https://html.spec.whatwg.org/multipage/dnd.html#dndevents>
+        eprintln!("DNDDBG mousedown editing handler entered");
         if let Some(draggable) =
             crate::drag::html_drag::HtmlDragHandler::first_draggable_inclusive_ancestor(
                 &hit_test_result.node,
             )
         {
+            eprintln!("DNDDBG draggable ancestor found, installing html drag");
             use crate::dom::bindings::inheritance::Castable;
             let point = euclid::Point2D::new(
                 hit_test_result.point_in_frame.x,

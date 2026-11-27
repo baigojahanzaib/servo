@@ -235,6 +235,7 @@ impl HtmlDragHandler {
         hit_test: &HitTestResult,
         input_event: &ConstellationInputEvent,
     ) -> bool {
+        eprintln!("DNDDBG moved started={} finished={}", self.started, self.finished);
         if self.finished || !self.still_connected() {
             return false;
         }
@@ -248,6 +249,7 @@ impl HtmlDragHandler {
             if delta.x.abs() < DRAG_THRESHOLD_PX && delta.y.abs() < DRAG_THRESHOLD_PX {
                 return true;
             }
+            eprintln!("DNDDBG threshold passed, beginning session");
             if !self.begin(cx, hit_test, input_event) {
                 return false;
             }
