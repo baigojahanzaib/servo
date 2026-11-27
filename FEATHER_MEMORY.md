@@ -4516,3 +4516,6 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 
 ## UPDATE: boot-wedge repro matrix — gmail 3/3 deterministic at boot; docs mild; maps clean
 - Controlled boot matrix (batch-6 payload binary, 50s observation each): maps 0 stalls, docs 14 stalls (transient/mild), gmail 42 stalls in ALL 3 attempts (wedge onset ~8s after boot then continuous ~1/sec — highly deterministic at first-load). Earlier clean observations were navigation-path or lucky timing. Severity ordering gmail >> docs > maps(0) tracks google-app JS heaviness at first paint. Repro confidence for engine lane: near-100% over 3 boot attempts.
+
+## UPDATE: boot-wedge is google-property-specific, not generic heavy-JS
+- Non-google heavy boots (50s windows): x.com 0 stalls, amazon 0, youtube-home 0, facebook 11 (mild transient). Compare gmail 42x3, docs 14. The severe first-load wedge is essentially specific to google application properties (gmail/docs; mild echo on facebook). Scoping implication: look at what google app boot JS does that others don't — aggressive synchronous XHR/fetch preloads, service-worker registration storms, IndexedDB initialization at first paint, or google-specific API surface (google uses unusual web APIs heavily). Not generic script heaviness: amazon/x.com are equally heavy and clean.
