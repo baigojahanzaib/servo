@@ -8071,3 +8071,9 @@ Post-fix msestress run: playback froze at exactly t=15.00 (last seek target) wit
 ## BATCH7 VERIFICATION (published binary sha 54d43178, feather 6200510 + servo 14c672a1594): seek fixed in production, gmail partially improved but NOT fixed
 - youtube +60s large seek: t=27.8 -> t=91.5 rs=4 PLAYING on the exact published binary — MSE fix confirmed in production.
 - gmail boot x3: attempt1 ZERO stalls (first clean unblocked boot ever observed — FontFaceSet tracking e1087b1e399 partially effective), attempt2 wedged 47 stalls, attempt3 wedged 32 stalls AND PROCESS DIED. Freeze NOT fixed but occurrence probability possibly reduced; a death mode also appeared. discord/serp/5-point all clean.
+
+## UPSTREAM-CHERRY-PICK SCAN (2026-11-27, 58 upstream commits not yet in feather-engine) — prioritized picks
+- CORRECTNESS high: 9ddfe28a9ec getComputedStyle-empty-for-non-flat-tree (frameworks hit this); 086c4ad7746 Navigation-Timing-live (feather telemetry accuracy); b07e50d5933 negative viewport scroll range; 6665562a412 aspect-ratio margin collapse; bb9e153f1cc flow-root list-item.
+- PERF font-path (google-property relevant): d18a53c80cb ShapePlan cache HarfRust; 15087769726 shared LRU system font+skrifa cache.
+- STABILITY: 58067970868 repeated lazy callback sends after disconnect — IPC completion-signaling family, possible wedge-relevant robustness; 9236540138a mozjs 153.8 (big, risky, schedule carefully).
+- Scan method: title-matched upstream main (4d window) vs feather-engine/build-engine, ci/chore/servoshell noise filtered.
