@@ -4260,3 +4260,15 @@ script thread blocked in recv while the constellation/servo loop that would proc
 message is somehow dependent); (b) webview.url() empty at query time in the shell delegate.
 NEXT DEBUG STEP: add eprintln instrumentation at all three points (script send, servo arm,
 shell impl) — one build cycle localizes it exactly.
+
+## sec1zt158 — query failure narrowed to MESSAGE DELIVERY, store/keys exonerated
+Discriminator: geolocation getCurrentPosition on the same seeded localhost origin returns
+pos-ok with NO prompt — the store key format/lookup is PROVEN end-to-end for the identical
+derivation the query path uses. Therefore query()'s prompt result means the
+QueryPermissionState embedder message never gets answered (sender dropped → recv Err →
+fallback Prompt). TOP SUSPECT: the message routing path — check how send_to_embedder routes
+script→embedder; if it transits the constellation, the constellation likely has its own
+forwarding match on EmbedderMsg variants and the new QueryPermissionState variant needs
+registering there (grep for PromptPermission/RequestPermission in components/constellation —
+whichever file matches on those variants is where QueryPermissionState must be added).
+sec1zt157's event-loop-reentrancy theory deprioritized.
