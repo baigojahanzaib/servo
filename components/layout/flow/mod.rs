@@ -1860,7 +1860,11 @@ fn solve_containing_block_padding_and_border_for_in_flow_box<'a>(
     let containing_block = if is_orthogonal {
         orthogonal_containing_block = ContainingBlock {
             size: containing_block.size.swapped_axes(),
-            style: containing_block.style,
+            // The element's own writing mode must be used here, not the containing
+            // block's: after the axis swap the box is laid out in its own writing
+            // mode frame, and mapping its physical sizing properties (width/height)
+            // to logical axes with the parent's writing mode transposes them.
+            style,
         };
         &orthogonal_containing_block
     } else {
