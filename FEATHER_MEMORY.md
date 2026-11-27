@@ -5374,3 +5374,16 @@ navigated/removed while media plays — same territory as the batch-6 deferred-d
 commits. NEXT ACTIONABLE CLUSTER after the run completes: repro one in isolation, capture
 panic message, likely teardown-ordering bug. Others: window-open-popup-behavior,
 radio-focus-navigation, shadowBlur_gaussian (canvas), origin-keyed-agent-cluster — singletons.
+
+## embedder-control family complete shell-side (banked 2026-11-27, macOS lane)
+All four implementable controls shipped+merged in feather: context menus (#340),
+simple dialogs (#341), file picker (#344, native via rfd — cross-platform, Windows
+lane verify-only checklist in docs/defect-queue.md), color picker (#345). Select
+wired (#343) but engine never fires the control — activation-gap suspects filed.
+INPUT-ROUTING LESSON (all lanes): clicks on egui overlay chrome passed through to
+the page beneath until #345 — fixed by layer discrimination (suppress forwarding
+when top layer at pointer is Foreground/Tooltip). The blanket egui
+wants_pointer_input CANNOT be used — the whole window is an egui surface, it
+swallows every page click. Same class of bug will bite the Windows/Linux shells
+if they forward input independently of overlay state. Known engine gaps filed:
+color input/change events don't fire on commit; select activation never fires.
