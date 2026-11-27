@@ -4297,3 +4297,14 @@ SYMPTOM INDEX (major): site API behaves as static/stubbed despite correct engine
 (a) the pref gate on the webidl interface FIRST (grep Pref= in webidls, check defaults in
 config/prefs.rs), (b) feather's compat shim guards — the shim only fills undefined surfaces,
 so a missing pref silently becomes a permanent stub. Instrumentation eprintlns removed post-verify.
+
+## sec1zt160 — pref-gate audit: 26 gated-off prefs triaged, batch-1 enabled+verified
+Full audit method: grep Pref="dom_*" across webidls (49 total gates), cross-ref defaults in
+config/prefs.rs vs feather-enabled in shell engine.rs. Batch-1 enabled + all surfaces verified
+live: visual_viewport, cookiestore, adoptedstylesheet, composition_event, entries_api,
+wakelock, navigator_protocol_handlers. DEFERRED pending per-area verification (enabling a
+half-implemented API is worse than absence — inconsistent surface): webgpu, webrtc(+transceiver),
+worklet(+blockingsleep), bluetooth, canvas_capture, sanitizer. SKIP permanently (test-only):
+testbinding x3, testperf, testing_element_activation, testing_html_input_select_files,
+microdata_testing, bluetooth_testing, webxr_test. GENERALIZED RULE: every future API audit
+starts with this pref-gate cross-ref, not with site behavior.
