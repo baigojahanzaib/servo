@@ -6221,3 +6221,10 @@ interaction), border-gap painting for non-solid borders (groove default shows bo
 through legend — commit 92854ce43f8 covered solid only). Leaf ROI exhausted — remaining
 items are sub-pixel/niche; recommend moving to next leaf.
 
+
+## sec1zt313 — legend border gap generalized to groove/all styles (2026-11-28)
+Default fieldset forms now render the border gap behind legends correctly —
+before: border painted through behind legend text on EVERY real form (groove is
+the UA default; solid-only fix didn't cover it). Implementation: segment-as-thin-
+border-strip per non-solid segment, clip-free. Verified pixel-level (75/75 -> 27/75
+darkish behind legend) + visually matches chrome + reftests pass.
