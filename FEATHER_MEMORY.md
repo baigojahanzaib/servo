@@ -4681,3 +4681,28 @@ player.rs:955 = media-info-updated gst signal callback does inner_clone.lock().u
 
 ## sec1zt207 — DEADLOCK ARCHITECTURE fully identified + fix design
 ROOT: the inner_player_proxy! macro (player.rs ~1267) locks PlayerInner for the ENTIRE duration of every Player trait method — play/pause/seek/stop/push_data all hold the mutex across BLOCKING gstreamer calls (set_state, pad activation). Meanwhile gst signal callbacks (media-info-updated player.rs:955, state-changed :901, position :928) lock the same PlayerInner from gst-emission contexts. ABBA DEADLOCK: script thread holds PlayerInner + waits for gst-internal pad lock (held by gst streaming thread) while gst callback thread holds gst-internal locks + waits for PlayerInner. Matches the gdb evidence exactly (Script#1 in gst_pad_set_active futex; gst callback thread in PlayerInner::lock). WHY NOW (batch-6 regression window): pre-seek-reset the blocking gst calls rarely ran on the script thread during normal playback; the seek-reset/pipeline-recreation work (5e6df4c001b etc.) massively increased pad-activation churn and callback-vs-control concurrency — the latent inversion became live. Also explains the boot-time wedge: media-info-updated fires during initial pipeline setup while script thread holds the lock across setup-time gst calls. FIX DESIGN (upstream-grade): never hold PlayerInner across blocking gst calls — restructure inner methods: take lock, extract needed state + clone the gst player/pipeline handle (gst objects are refcounted threadsafe), DROP guard, then perform the gst call. Applies to play/pause/stop/seek/set_rate/set_volume/setup paths. INTERIM cheap mitigation if full restructure is too big for one round: make the gst callbacks never block on PlayerInner — use try_lock + defer (queue the event, skip if contended) — state updates are idempotent-ish so dropped duplicate emissions are tolerable, BUT care: seek-ack channel lives behind the lock. Compile-verify each round via workspace cargo check ~2min. REPRO for verification: repeated fresh youtube watch boots + seek churn; wedge is racy so verification needs N clean boots/seeks in a row (5+).
+
+## batch6-youtube-seek-wedge REFINEMENT: two-state race at media-pipeline setup (2026-11-27, macOS lane)
+
+Second repro round, same binary: video played 50s+ clean, time readout
+advancing normally, seek to 1:15 WORKED and playback continued healthy
+(1:15→1:28 verified). Compare round 1 where the readout was stuck at 0:05
+from page load BEFORE any interaction, and the first seek wedged everything.
+Conclusion: the race is NOT at seek time — it is at media pipeline setup.
+The player lands non-deterministically in one of two states:
+- HEALTHY: clock runs, readout advances, seeks work.
+- DEGRADED: media clock never starts (readout frozen at boot timestamp
+  while frames still render for a while); any seek in this state livelocks
+  the script thread (semaphore_timedwait spin, one core saturated).
+Mechanism implication: a setup-time race in the media clock/sync
+initialization — suspect the gst pipeline clock distribution /
+`components/media/backends/gstreamer/player.rs` preroll completion vs the
+script-side media element timeline attachment. The wedge at seek time is
+downstream: seeking a clockless pipeline waits on a sync condition that
+can never fire. This also explains gmail: the same setup race in a
+boot-critical wait would freeze page boot permanently when the degraded
+state is hit — no media element needed if the shared sync primitive
+(semaphore timed-wait loop in the script thread's event plumbing) is what
+races. Investigation direction for engine lane: instrument the two states
+by logging pipeline clock state at first frame; the repro is 1-in-2-ish so
+a handful of boots brackets both.
