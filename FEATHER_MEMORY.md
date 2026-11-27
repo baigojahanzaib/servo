@@ -4809,3 +4809,15 @@ Correction to sec1zt220: re-counted — youtube fired only ONE seek in the froze
 
 ## sec1zt223 — CORRECTION/REFINEMENT: bootseek harness repro is INVALID — harness never re-appends init segment post-seek; youtube-faithful harness must model init+media re-append from the seek point
 Post-fix verification round: bootseek test still frozen BUT the harness itself is the artifact: after a seek, real MSE players re-append the INIT SEGMENT plus media from the seek target; my harness append loop keeps feeding the webm file linearly regardless of seek position, so post-reset the demuxer receives mid-stream bytes it cannot parse without the EBML init header. The stable-playback seek passes only because matroska can resync on cluster boundaries in one continuous stream; the boot case feeds too little data to resync. REDESIGN REQUIRED: harness v2 must (a) split file into init segment + media segments (webm: EBML head + cluster chunks), (b) on 'seeking' restart feeding from init+the target position — mimicking youtube exactly. Only then does pass/fail mean anything. MEANWHILE the overlap fix (1883f8d3435+019224829fc) remains correct and necessary for the confirmed stress-wedge class regardless. ALSO: video-only bootseek froze at ct1.0 (seek never even landed) — DIFFERENT signature, unexplained, possibly the seek landing while pipeline barely constructed. NEXT SESSION PLAN: (1) build webm init+cluster splitter (ffmpeg or manual EBML parse — check how the ORIGINAL round-10 mseh harness fed data — it may already do this correctly, since round-10 backward seeks verified passing — RE-READ that harness first!); (2) verify fixed binary against faithful harness; (3) then live youtube. The stress-wedge repro (msestress) is still valid evidence because spaced-seeks-pass/rapid-seeks-fail held harness-constant.
+
+## github-segfault macOS negative result (2026-11-27, mac lane)
+
+5x18s + 3x40s bare boots of github.com on macOS arm64: zero deaths, zero
+macOS DiagnosticReports. The GL-point-sprites warning (1280) reproduces on
+every boot — it is benign noise, not a crash precursor on this platform.
+The segfault evidence chain is Linux-only (2/4 bare runs there); either the
+fault is in Linux-specific surfman/GL path or requires interaction beyond
+bare boot+idle. Do not burn macOS cycles on bare-boot repro. If it recurs
+in dogfooding: macOS writes full crash reports with thread backtraces to
+~/Library/Logs/DiagnosticReports automatically — THAT is the capture
+path, no gdb/rr needed on this platform.
