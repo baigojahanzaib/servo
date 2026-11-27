@@ -4396,3 +4396,13 @@ BATCH-2 FINAL STATE: sanitizer shipped (#275), canvas-capture excluded (hollow s
 sec1zt163), webrtc excluded (gstreamer panic, evidence sec1zt164), webgpu deferred
 (cargo-feature, this entry). The pref-gate audit is fully closed: every one of the 26
 gated-off prefs has a verdict.
+
+## writing-modes-8: CONFOUND RESOLVED — the true cascade defect is the UA forcing rule (corrects writing-modes-6)
+The initial-pass/restyle theory in writing-modes-6 was built on confounded probes: setting documentElement.style.writingMode makes ROOT vertical — since writing-mode is inherited, ALL descendants then compute vertical regardless of their own declarations. The tall-box visual evidence was confounded the same way (and boxes had explicit physical heights). Corrected unconfounded evidence chain:
+1. `writing-mode` declarations on regular elements NEVER apply — initial pass, after waits, after attribute mutations — always horizontal-tb.
+2. The SAME declaration on the ROOT element DOES apply (rootSet genuinely computed vertical-rl — root cannot inherit).
+3. Reason: servo.css UA rule — `:not(:root, html:root > body:first-of-type) { writing-mode: inherit !important }` — forces every non-root element to inherit its parent's writing-mode, and UA !important beats author declarations. Exactly the orthogonal-flow prevention upstream servo/servo#50188 described. NOTE: an earlier memory entry misread this rule as form-control propagation — corrected here.
+4. No initial-pass defect exists as far as current evidence shows; that suspect is RETIRED.
+5. Fix applied: the `:not(...)` selector removed from the UA rule (pseudo-elements keep inherit). Combined with the axis-swap groundwork (e969671ef), vertical writing modes should now cascade and lay out orthogonally; the glyph-orientation layer (text-orientation, latin rotation) remains the known-imperfect layer.
+Probe-design lesson for ALL lanes: when testing inherited CSS properties, never use root mutation as a restyle trigger — it confounds inheritance with cascade application. Use a non-inherited property toggle (e.g. outline-color) or forced-descendant selectors instead. And getAttribute('style') readbacks prove nothing about parsing — use cssRules[].style or getComputedStyle only.
+[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
