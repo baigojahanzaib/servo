@@ -3972,3 +3972,14 @@ after two shell-driven wv.load() navigations. Recon findings:
   vs pending at traverse time.
 - Also verify: does servoshell itself (not feather) traverse correctly? If yes,
   diff its webview setup against feather's engine.rs.
+
+## sec1zt145 — permission prompts: shell delegate was the entire gap (feather#265)
+Symptom: "navigator.geolocation always errors / never prompts" → check: embedder
+delegate request_permission IMPLEMENTATION, not the engine. Servo's mediation is
+complete engine-side (script/dom/permission + geolocation call request_permission_to_use_async
+→ EmbedderMsg::RequestPermission → delegate). Feather never implemented the delegate method —
+every request hit AllowOrDenyRequest's drop-default DENY. Shell fix: per-origin store +
+parked prompt UI. Engine needed ZERO changes. Geolocation also gated on
+dom_geolocation_enabled + test-position prefs (both off by default).
+NOTE for other lanes: the permission flow uses EmbedderMsg::RequestPermission (callback variant)
+not just PromptPermission — both route to the same delegate method.
