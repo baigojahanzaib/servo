@@ -398,6 +398,14 @@ where
 /// [cstack]: https://developer.mozilla.org/en-US/docs/Mozilla/Projects/SpiderMonkey/Internals/GC/Exact_Stack_Rooting
 pub struct RootCollection {
     roots: UnsafeCell<Vec<*const dyn JSTraceable>>,
+    /// Side index mapping a rooted object's data pointer to the position of
+    /// its LAST occurrence in `roots` (mirroring `rposition` semantics; the
+    /// same object can be rooted multiple times). This makes the common
+    /// unroot lookup O(1): without it, dropping thousands of simultaneously
+    /// rooted objects in non-LIFO order is quadratic in the number of roots —
+    /// xpath evaluation over large node sets wedged script threads for
+    /// minutes this way (aol.com never completing load, sec1zt298).
+    indices: UnsafeCell<rustc_hash::FxHashMap<usize, (usize, usize)>>,
 }
 
 impl RootCollection {
@@ -406,34 +414,96 @@ impl RootCollection {
     pub fn new() -> RootCollection {
         RootCollection {
             roots: UnsafeCell::new(Vec::with_capacity(256)),
+            indices: UnsafeCell::new(rustc_hash::FxHashMap::default()),
         }
     }
 
     /// Starts tracking a trace object.
     unsafe fn root(&self, object: *const dyn JSTraceable) {
         assert_in_script();
-        unsafe { (*self.roots.get()).push(object) };
+        unsafe {
+            let roots = &mut *self.roots.get();
+            let idx = roots.len();
+            roots.push(object);
+            let entry = (*self.indices.get()).entry(object as *const () as usize).or_insert((0, 0));
+            entry.0 += 1;
+            entry.1 = idx;
+        }
     }
 
     /// Stops tracking a trace object, asserting if it isn't found.
     unsafe fn unroot(&self, object: *const dyn JSTraceable) {
         assert_in_script();
         let roots = unsafe { &mut *self.roots.get() };
-        match roots
-            .iter()
-            .rposition(|r| std::ptr::addr_eq(*r as *const (), object as *const ()))
-        {
+        let indices = unsafe { &mut *self.indices.get() };
+        let key = object as *const () as usize;
+        // Fast path: the side index records SOME live occurrence position for
+        // singly-rooted objects (the overwhelmingly common case), making
+        // unroot O(1). Without it, dropping thousands of simultaneously
+        // rooted objects in non-LIFO order is quadratic in the number of
+        // roots — xpath evaluation over large node sets wedged script
+        // threads for minutes this way (aol.com, sec1zt298). For multiply-
+        // rooted objects the position is unknown (usize::MAX sentinel) and
+        // we fall back to the linear scan.
+        let fast_idx = match indices.get(&key) {
+            Some(&(_, pos))
+                if pos != usize::MAX &&
+                    pos < roots.len() &&
+                    std::ptr::addr_eq(roots[pos] as *const (), object as *const ()) =>
+            {
+                Some(pos)
+            },
+            _ => None,
+        };
+        let idx = match fast_idx {
+            Some(pos) => Some(pos),
+            None => roots
+                .iter()
+                .rposition(|r| std::ptr::addr_eq(*r as *const (), object as *const ())),
+        };
+        match idx {
             Some(idx) => {
                 // Partial inlining of `Vec::swap_remove` to avoid having to read and return the value since
                 // we don't care about it, doing less work in our case.
                 // SAFETY: the copy source and destination are derived from valid positions in the vector.
+                let len = roots.len() - 1;
                 unsafe {
-                    let len = roots.len() - 1;
                     if len != idx {
                         let base_ptr = roots.as_mut_ptr();
                         ptr::copy_nonoverlapping(base_ptr.add(len), base_ptr.add(idx), 1);
+                        // The element moved from the end into `idx`; if the
+                        // side index tracks the occurrence that was at the
+                        // end, update its position.
+                        let moved_key = roots[idx] as *const () as usize;
+                        if let Some(moved_entry) = indices.get_mut(&moved_key) {
+                            if moved_entry.1 == len {
+                                moved_entry.1 = idx;
+                            }
+                        }
                     }
                     roots.set_len(len);
+                }
+                // Bookkeep the removed occurrence: decrement the count; when
+                // the object is still rooted elsewhere we no longer know a
+                // live position for it (the tracked one may be the one just
+                // removed), so invalidate to the scan sentinel.
+                if let Some(entry) = indices.get_mut(&key) {
+                    entry.0 -= 1;
+                    if entry.0 == 0 {
+                        indices.remove(&key);
+                    } else {
+                        // The object is still rooted elsewhere. Keep the
+                        // tracked position if it verifiably still holds this
+                        // object (it may have been updated by the swap fixup
+                        // above); otherwise invalidate to the scan sentinel.
+                        let pos = entry.1;
+                        let valid = pos != usize::MAX &&
+                            pos < roots.len() &&
+                            std::ptr::addr_eq(roots[pos] as *const (), object as *const ());
+                        if !valid {
+                            entry.1 = usize::MAX;
+                        }
+                    }
                 }
             },
             None => panic!("Can't remove a root that was never rooted!"),
