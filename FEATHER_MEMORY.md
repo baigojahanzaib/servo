@@ -3857,20 +3857,18 @@ Two independent defects fixed in one round: (1) base=0/clock-continuity (sec1zt1
 ## sec1zt134 — round-6 regression + retry-cap interaction: re-poll chains must never count toward attempt caps (2026-11-27)
 Round-6 harness verdict: WORSE — zero refeed bytes delivered. Prep+rewrite+reset all ran, then permanent engine silence after `restore Ok(Async)`. Cause: the settle re-poll incremented retries on every turn; back-to-back re-polls hit the 400-cap in milliseconds (long before the 1500ms wall-clock window) and the chain silently returned forever. Fix b81a6ac92d7: re-poll passes retries=0 — the wall-clock condition itself bounds the settle. RULE: in a self-requeueing task chain, distinguish ATTEMPTS (real work tried and failed — count toward caps) from POLLS (condition re-checks — must never count). Symptom: async chain armed but never fires, total silence after correct setup logs → check: cap/counter interactions in the re-poll path. Also notable from round-6 log: running_time_ns=99.7s on second seek confirms running time does NOT reset across Ready cycles — validates the base-continuity premise.
 
+## sec1zt135 — backward-seek TRUE ROOT CAUSE: retention captured only cluster-head slices + time-sort scrambled the byte stream (2026-11-27)
+Round-8 dump analysis, decisive. Byte-mapping the live refeed dump against the original file: contiguous matches of only 3.7%, mapping NON-MONOTONIC with the same file regions REPEATED at multiple dump positions. Two compounding retention defects: (1) retention keyed fragments on in-slice scanned timecodes — 64KB append slices mostly contain NO cluster head (clusters ~220KB) so MOST APPENDS WERE NEVER RETAINED — holes; (2) surviving fragments sorted by scanned timekeys scrambled insertion order — duplication/misorder. Concatenation glued non-contiguous file regions mid-cluster → deterministic demux corruption (large block 1794238142 — same input, same glue points). The offline sim never reproduced it because sim concatenated contiguous slices correctly — the bug was in LIVE RETENTION, not the refeed algorithm. FIX: contiguous append-order retention (insertion order IS byte order — the demuxer originally consumed exactly this concatenation), no time-sort anywhere, eviction by position. RULE: MSE byte streams are contiguous per track; any design that reorders/partially captures appends corrupts by construction. Symptom: deterministic-position demux corruption in refed MSE streams → check: byte-map the refed stream against source media, look for non-monotonic mapping/duplication; NEVER trust scan-derived keys for byte-order reconstruction. Secondary finding same round: scan_cluster_full false-positives — scan of even a contiguous stream found impossible timecodes (54s content in a 17s stream) because payload bytes match cluster magic when the size-chain desyncs; the scan detail output should be sanity-checked against stream duration.
 ## ui-shell-1: egui mesh vertex alpha — the premultiplied trap (verified live)
-
 **Symptom**: custom egui Mesh shapes (gaussian/organic blob gradients) render as
 strong solid color even at very low alpha; reducing alpha barely changes the look.
-
 **Root cause**: egui composites mesh vertex colors as PREMULTIPLIED alpha.
 `Color32::from_rgba_unmultiplied` stores channels without scaling, so the rgb
 contribution hits the framebuffer at full strength regardless of alpha. Fix:
 construct vertices with `Color32::from_rgba_premultiplied(r*a/255, g*a/255, b*a/255, a)`
 or scale channels manually. Fixed in shell-new ui/icons.rs organic_blob. Applies
 to ALL custom mesh work in the shell.
-
 ## ui-shell-2: round-4 demo data + stroke-bar root causes (verified live 2026-11-27)
-
 **Symptom → suspect index**:
 - "demo favicons/icons in the tab strip after restart" → MockBackend quick tiles
   (backend/mock.rs Default), the host-hash saturated letter-tile color in
@@ -3885,7 +3883,6 @@ to ALL custom mesh work in the shell.
 - "demo/placeholder content anywhere" → grep for `web_page::show` — the mock
   article renderer (fake headline/paragraphs/figures) painted for ANY web tab
   the engine hadn't attached to (restored background tabs, startup transient).
-
 **Architecture lesson**: the shell's BrowserBackend abstraction is ALWAYS
 MockBackend — it fabricates WebDocument models (titles, colors, blocks) while
 servo independently renders real content. Anything the mock fabricates can
