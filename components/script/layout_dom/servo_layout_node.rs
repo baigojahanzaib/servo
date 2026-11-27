@@ -287,6 +287,10 @@ impl<'dom> LayoutNode<'dom> for ServoLayoutNode<'dom> {
         self.node.image_data()
     }
 
+    fn object_data_url(&self) -> Option<String> {
+        self.node.object_data_url()
+    }
+
     fn load_time(&self) -> Option<CrossProcessInstant> {
         self.node.load_time()
     }

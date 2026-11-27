@@ -29,6 +29,7 @@ use crate::dom::html::form_controls::htmlinputelement::HTMLInputElement;
 use crate::dom::html::htmlcanvaselement::HTMLCanvasElement;
 use crate::dom::html::htmliframeelement::HTMLIFrameElement;
 use crate::dom::html::htmlimageelement::HTMLImageElement;
+use crate::dom::html::htmlobjectelement::HTMLObjectElement;
 use crate::dom::html::htmlslotelement::HTMLSlotElement;
 use crate::dom::html::htmltextareaelement::HTMLTextAreaElement;
 use crate::dom::html::htmlvideoelement::HTMLVideoElement;
@@ -323,6 +324,12 @@ impl<'dom> LayoutDom<'dom, Node> {
 
     pub(crate) fn image_data(self) -> Option<(Option<Image>, Option<ImageMetadata>)> {
         self.downcast::<HTMLImageElement>().map(|e| e.image_data())
+    }
+
+    /// The resolved `data` URL of an `<object>` that is an image candidate.
+    pub(crate) fn object_data_url(self) -> Option<String> {
+        self.downcast::<HTMLObjectElement>()
+            .and_then(|e| e.resolved_data_url())
     }
 
     pub(crate) fn load_time(self) -> Option<CrossProcessInstant> {

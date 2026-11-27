@@ -694,18 +694,10 @@ impl<'dom> NodeExt<'dom> for ServoLayoutNode<'dom> {
             return None;
         }
 
-        let element = self.as_element()?;
-        // A `type` attribute only opts the object out of image rendering when it
-        // declares a non-image mime type. Image mime types (or an absent attribute,
-        // where the type is sniffed from the response) still render as images.
-        if let Some(type_attr) = element.attribute_as_str(&ns!(), &local_name!("type")) {
-            if !type_attr.trim().to_ascii_lowercase().starts_with("image/") {
-                return None;
-            }
-        }
-        element
-            .attribute_as_str(&ns!(), &local_name!("data"))
-            .map(|string| string.to_owned())
+        // The data URL comes pre-resolved from the object element (script side),
+        // where base-URL resolution machinery exists, and is only stored when the
+        // object is an image candidate (no `type` or an image mime type).
+        self.object_data_url()
     }
 
     fn ensure_inner_layout_data(&self) -> AtomicRefMut<'dom, InnerDOMLayoutData> {
