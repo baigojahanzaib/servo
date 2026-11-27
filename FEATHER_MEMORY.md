@@ -4491,3 +4491,13 @@ Mechanism (architecture that matters for future work):
 - Type/lifetime notes: calc-valued lengths use raw pointers into style memory (resolve_calc_value) — restricting adoption to plain unpacked Length avoids all lifetime hazards. TemplateTrackList associated type is a Map over slice::Iter<TrackListValue> with a fn-pointer closure — adoption stores cloned TrackListValues so both arms share one iterator type.
 Phase-1 limits (fallback to normal grid, no crash): fr/percentage/content-sized/auto tracks, auto-fill/fit repeats, auto or named-line placement, item participation in parent track sizing (the deep upstream-scale part), subgridded line names, child padding/border misaligns track positions vs parent lines slightly.
 Next phases if continued: (2) fr/percentage resolution needs parent geometry at layout time not construction — requires threading sized tracks through the recursion; (3) full content-participation is the multi-week upstream version — see docs/wiki/SUBGRID-PLAN.md.
+
+## sec1zt173 — cookiestore roundtrip FIXED (secure-cookie trustworthiness, three sites)
+cookieStore silently dropped every cookie on localhost: cookieStore.set unconditionally marks
+Secure (correct per spec), but THREE independent bare-scheme gates required is_secure_scheme:
+ServoCookie::new_wrapped write validation, CookieStorage::push insertion, appropriate_for_url
+retrieval. All now is_potentially_trustworthy() — localhost/127.0.0.1/loopback roundtrip per
+secure-contexts spec, matching Chrome. Remote insecure hosts keep full protection.
+Symptom-index: API resolves successfully but effect silently absent → suspect multi-layer
+spec-deviation gates; grep the WHOLE path (construction/insertion/retrieval) for the same
+wrong check — servo's cookie code had it in three places and fixing one/two still fails.
