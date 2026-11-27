@@ -5003,3 +5003,26 @@ starves? compare the batch6 SeekData deadlock shape — same family:
 ## sec1zt246 — CRITICAL HARNESS-INTERFERENCE LESSON: the html rerun's numbers are GARBAGE (201 crashes + 344 timeouts vs baseline 25+30) because /tmp/kshell.sh's servoshell cleanup pattern kills ALL servoshell processes machine-wide INCLUDING THE WPT HARNESS'S OWN harness-spawned servoshells (they run the same binary path). Every interactive-test cleanup during a background WPT run massacres the run in progress. RULES: (1) NEVER run interactive servoshell tests while a background WPT run is active; (2) if interactive testing is unavoidable, kill by exact PID never by pattern; (3) treat any WPT run with anomalous crash/timeouts-vs-baseline as contaminated and check for interference before believing regressions. Also: run logs are ~1.5GB each on a 4.2G-free disk — archive or delete contaminated logs before restarting runs. CLEAN html rerun restarted after this note.
 ## sec1zt247 — upstream scan 2026-11-27 ~12:25 UTC: no new commits since bb9e153f1ccb — duty satisfied, nothing to cherry-pick. CLEAN html-only WPT rerun launched 12:22 UTC (/tmp/wpt-html-status.txt) measuring the fix batch — DO NOT run interactive servoshell tests until it completes (~60-90min), interference lesson sec1zt246. Binary under test includes: subframe-abort wedge fix, NV12 crash fix, container-rule fix, :dir(), srcdoc nav block, zero-delay timer fix, webrtc graceful degradation, designMode, 7 upstream cherry-picks.
 ## sec1zt248 — x-origin topnav gate IMPLEMENTATION SPEC (unimplemented): spec 'allowed to navigate' — a cross-origin iframe navigating the TOP-level traversable requires transient activation IN THE IFRAME ITSELF (parent activation insufficient — per WPT test name). Implement in navigation.rs::navigate() replacing the TODO at 'Step 5': compute target-is-top (window_proxy.parent().is_none() AND target is the top traversable — careful: navigate() targets window which may be the iframe itself for normal self-navs; only gate when the target browsing context is top-level AND source document is inside a cross-origin subframe). Gate: if target is top-level AND source doc's origin != top-level origin AND !source_window.has_transient_activation() → return without navigating. RISK: has_transient_activation correctness unverified — false negatives break legit navs; the WPT user-click variants verify both directions. Verify ONLY via the actual WPT test cross-origin-top-navigation-with-user-activation-in-parent.window.html once harness ports free. PRIORITY NOTE: this is security-relevant but upstream-shared; the html clean rerun completing + report regeneration comes first.
+
+## serp-ghost-repro-negative 2026-11-27 (mac lane, negative results)
+
+Follow-up to serp-duplicate-results: minimal repro attempts on synthetic
+pages all CLEAN — no ghosting on scroll for: (a) plain long static page,
+(b) position:sticky header page, (c) async content-replacement page
+(innerHTML swap 1.5s post-load, SERP-like). Content scrolled correctly,
+rows contiguous, no stuck copies. Repro files live at /tmp/htdocs
+{plain,sticky,async}.html served via python http.server :8899.
+
+Refined implication: ghosting needs something the SERP has that these
+don't — candidates in decreasing likelihood: (1) async IMAGE loads
+causing re-raster of already-painted regions (SERP thumbnails — ghost
+copies in the original repro included image-bearing result blocks);
+(2) layout SHIFT events mid-scroll (SERP reflows heavily as modules
+inject); (3) position:fixed overlays + scroll combined; (4) web font
+swap re-raster. The semi-transparency of ghosts remains the strongest
+mechanism clue: new content alpha-blends OVER old rather than replacing —
+points at missing buffer-clear in the scroll damage path, triggered only
+when a re-raster invalidation arrives mid-scroll. Next experiment for
+whoever picks this up: add async-loading images to the async.html harness
+(mid-scroll insertion) — if ghosts appear, the mechanism is
+'re-raster invalidation during active scroll drops the clear'.
