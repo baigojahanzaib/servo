@@ -4414,10 +4414,12 @@ Fix: rm -rf the incremental dir (safe — only costs recompile time, deps stay).
 STANDING HYGIENE: if feather builds start failing with os error 28, delete incremental first.
 Also screencasts ~1G accumulates; prune old rounds.
 
-## sec1zt168 — webgpu enablement attempt in progress (branch devin/*-webgpu)
-One-line feature add ("webgpu" in shell-new servo features) + pref. Compile cost: heavy —
-naga/wgpu-hal crate tree. Verification plan unchanged: navigator.gpu presence →
-requestAdapter() → requestDevice() chain on localhost. If adapter-null on this VM
-(likely — llvmpipe GL only, vulkan/lavapipe may not be installed), verdict is
-enable-anyway-if-no-crash vs keep-off — decide by whether requestAdapter RESOLVES-null
-(spec-correct degradation, safe to ship) vs panics/hangs (keep off).
+## sec1zt168 — webgpu SHIPPED (feather#280) — pref-gate audit FULLY CLOSED
+Shipped verdict: navigator.gpu exists, requestAdapter() RESOLVES-null with zero panics on the
+GPU-less VM — spec-correct degradation, safe to ship. Sites get a truthful negative instead of
+API absence (bot-signal). Real-GPU adapter path untested here (no vulkan on VM) — Windows/Mac
+lanes can verify the positive path. Compile cost was one-time; deps now in target.
+PREF-GATE AUDIT FINAL: every one of the 26 gated-off prefs has a verdict — shipped batch-1
+(#273: visualViewport/cookieStore/adoptedStyleSheets/composition/entries/wakeLock/protocol),
+permissions+storage (#271/#272), sanitizer (#275), webgpu (#280); excluded with evidence:
+captureStream (hollow stub), webrtc (gstreamer panic); all others documented deferred.
