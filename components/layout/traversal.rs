@@ -104,7 +104,15 @@ pub(crate) fn compute_damage_and_rebuild_box_tree<'dom>(
     // tree layout is necessary and there is no point processing any other damage.
     if box_tree.is_none() {
         *box_tree = Some(Arc::new(BoxTree::construct(layout_context, root_node)));
-        return layout_damage;
+        // A freshly constructed box tree has no fragment tree: fragments for the
+        // new boxes have never been laid out. The returned damage must therefore
+        // always include a full relayout — propagating only overflow-level damage
+        // here meant the reflow took the recalculate-overflow-only path, which
+        // (correctly) expects an existing fragment tree and panicked when it was
+        // absent ('Should always have a FragmentTree when layout unnecessary').
+        // This fired whenever layout trees had been dropped (e.g. the hidden-tab
+        // memory lever) and the next reflow arrived with only overflow damage.
+        return layout_damage | LayoutDamage::Relayout;
     }
 
     // Propagate the damage from the dirty part of the tree upward. In this part of
