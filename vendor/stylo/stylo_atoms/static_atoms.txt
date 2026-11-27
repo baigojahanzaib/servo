@@ -138,6 +138,7 @@ pause
 play
 playing
 pointer
+display-mode
 popstate
 postershown
 prefers-color-scheme

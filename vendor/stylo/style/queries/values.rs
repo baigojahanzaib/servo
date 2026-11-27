@@ -36,6 +36,18 @@ impl Orientation {
     }
 }
 
+/// Values for the display-mode media feature.
+/// https://drafts.csswg.org/mediaqueries-5/#display-mode
+#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
+#[repr(u8)]
+#[allow(missing_docs)]
+pub enum DisplayMode {
+    Browser,
+    Fullscreen,
+    MinimalUi,
+    Standalone,
+}
+
 /// Values for the prefers-color-scheme media feature.
 #[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
 #[repr(u8)]

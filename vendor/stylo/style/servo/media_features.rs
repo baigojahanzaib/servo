@@ -7,7 +7,7 @@
 use crate::derives::*;
 use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
 use crate::queries::values::{
-    Orientation, PrefersColorScheme, PrefersContrast, PrefersReducedMotion,
+    DisplayMode, Orientation, PrefersColorScheme, PrefersContrast, PrefersReducedMotion,
     PrefersReducedTransparency,
 };
 use crate::values::computed::{CSSPixelLength, Context, Ratio, Resolution};
@@ -192,6 +192,16 @@ fn eval_any_hover(context: &Context, query_value: Option<Hover>) -> bool {
     eval_hover_capabilities(query_value, context.device().all_pointer_capabilities())
 }
 
+/// <https://drafts.csswg.org/mediaqueries-5/#display-mode>
+fn eval_display_mode(_: &Context, query_value: Option<DisplayMode>) -> bool {
+    // Servo has no installed-web-application concept: every browsing context
+    // is a normal browser tab, so the display mode is always `browser`.
+    match query_value {
+        Some(v) => v == DisplayMode::Browser,
+        None => true,
+    }
+}
+
 /// <https://drafts.csswg.org/mediaqueries-4/#aspect-ratio>
 fn eval_aspect_ratio(context: &Context) -> Ratio {
     let size = context.device().au_viewport_size();
@@ -199,7 +209,7 @@ fn eval_aspect_ratio(context: &Context) -> Ratio {
 }
 
 /// A list with all the media features that Servo supports.
-pub static MEDIA_FEATURES: [QueryFeatureDescription; 19] = [
+pub static MEDIA_FEATURES: [QueryFeatureDescription; 20] = [
     feature!(
         atom!("width"),
         AllowsRanges::Yes,
@@ -288,6 +298,12 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 19] = [
         atom!("-moz-device-pixel-ratio"),
         AllowsRanges::Yes,
         Evaluator::Float(eval_device_pixel_ratio),
+        FeatureFlags::empty(),
+    ),
+    feature!(
+        atom!("display-mode"),
+        AllowsRanges::No,
+        keyword_evaluator!(eval_display_mode, DisplayMode),
         FeatureFlags::empty(),
     ),
     feature!(
