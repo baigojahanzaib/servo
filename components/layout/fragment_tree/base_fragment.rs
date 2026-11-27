@@ -223,6 +223,12 @@ impl From<ServoLayoutNode<'_>> for BaseFragmentInfo {
                 &local_name!("button") => {
                     flags.insert(FragmentFlags::IS_BUTTON);
                 },
+                &local_name!("fieldset") => {
+                    flags.insert(FragmentFlags::IS_FIELDSET);
+                },
+                &local_name!("legend") => {
+                    flags.insert(FragmentFlags::IS_LEGEND);
+                },
                 _ => {},
             }
 
@@ -250,7 +256,7 @@ impl From<ServoLayoutNode<'_>> for BaseFragmentInfo {
 bitflags! {
     /// Flags used to track various information about a DOM node during layout.
     #[derive(Clone, Copy, Debug)]
-    pub(crate) struct FragmentFlags: u16 {
+    pub(crate) struct FragmentFlags: u32 {
         /// Whether or not the node that created this fragment is a `<body>` element on an HTML document.
         const IS_BODY_ELEMENT_OF_HTML_ELEMENT_ROOT = 1 << 0;
         /// Whether or not the node that created this Fragment is a `<br>` element, or a `::before`
@@ -299,6 +305,10 @@ bitflags! {
         /// `containertimingignore` attribute, so that it and its descendants do not
         /// contribute to any enclosing container root.
         const IS_CONTAINER_TIMING_IGNORE = 1 << 15;
+        /// Whether or not the node that created this Fragment is a `<fieldset>` element.
+        const IS_FIELDSET = 1 << 16;
+        /// Whether or not the node that created this Fragment is a `<legend>` element.
+        const IS_LEGEND = 1 << 17;
     }
 }
 

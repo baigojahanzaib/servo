@@ -25,7 +25,9 @@ use crate::flow::{
     BlockContainer, CollapsibleWithParentStartMargin, ContainingBlockPaddingAndBorder,
     ResolvedMargins, solve_containing_block_padding_and_border_for_in_flow_box, solve_margins,
 };
-use crate::fragment_tree::{BoxFragment, CollapsedBlockMargins, CollapsedMargin, FragmentFlags};
+use crate::fragment_tree::{
+    BoxFragment, CollapsedBlockMargins, CollapsedMargin, FragmentChildren, FragmentFlags,
+};
 use crate::geom::{LogicalRect, LogicalSides1D, LogicalVec2};
 use crate::layout_box_base::LayoutBoxBase;
 use crate::positioned::PositioningContext;
@@ -438,10 +440,49 @@ impl SameFormattingContextBlock {
             );
         }
 
+        // The rendered legend of a fieldset straddles the fieldset's top border:
+        // shift the first in-flow legend fragment upward so its border-box center
+        // sits on the center of the fieldset's block-start border edge.
+        // <https://html.spec.whatwg.org/multipage/#the-fieldset-and-legend-elements>
+        // NOTE: this positions the legend correctly but does not yet suppress the
+        // fieldset border behind it (the border gap), and it applies to the first
+        // in-flow legend fragment regardless of direct-child nesting depth.
+        let mut fragments = flow_layout.fragments;
+        let is_fieldset = self
+            .base
+            .base_fragment_info
+            .flags
+            .contains(FragmentFlags::IS_FIELDSET);
+        if is_fieldset
+        {
+            if let FragmentChildren::PhysicalDeprecated(children) = &mut fragments {
+                if let Some(legend) = children.iter().find(|child| {
+                    child
+                        .base()
+                        .is_some_and(|base| base.flags.contains(FragmentFlags::IS_LEGEND))
+                }) {
+                    if let Some(base) = legend.base() {
+                        let rect = base.rect();
+                        let legend_height = rect.size.height;
+                        // Target: legend center at -(padding_top + border_top / 2) in
+                        // fieldset content-box coordinates (the border edge center).
+                        // NOTE: horizontal writing modes only; vertical modes need the
+                        // logical form of this offset.
+                        let target_center = -(pbm.padding.block_start + pbm.border.block_start / 2);
+                        let current_center = rect.origin.y + legend_height / 2;
+                        let shift = target_center - current_center;
+                        let mut new_rect = rect;
+                        new_rect.origin.y += shift;
+                        base.set_rect(new_rect);
+                    }
+                }
+            }
+        }
+
         BoxFragment::new(
             base_fragment_info,
             style.clone(),
-            flow_layout.fragments,
+            fragments,
             content_rect.as_physical_deprecated(containing_block),
             pbm.padding.to_physical(containing_block_writing_mode),
             pbm.border.to_physical(containing_block_writing_mode),

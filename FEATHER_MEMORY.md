@@ -5611,6 +5611,9 @@ TYPED EVENTS: PageSwapEvent/PageRevealEvent interfaces implemented (inherit Page
 ## fetch + window.name PROBE-NEGATIVE — 2026-11-27 (windows child)
 fetch canonical behaviors all correct: AbortController abort (correct AbortError), redirect follow, manual redirect mode, no-store cache mode, text()/headers access. The 13 fetch timeout files are edge/harness noise — per-test triage unlikely to yield real bugs. window.name persists correctly across same-tab navigation. The probe-negative ledger now covers literally every cheaply-probeable primitive in the leaves doc; remaining real work is exclusively the deep inventory: fieldset/legend (M, pre-seeded entry points), dir-style architectural, close-watcher Esc input routing, typed-interfaces follow-ups (activation/viewTransition need NavigationActivation+ViewTransition implementations first), canvas (deferred), bfcache (XL).
 
+
+## memory leak UNFIXED on merged head — 56MB/nav real content, 0 trivial — 2026-11-27 (windows child, for Linux lane)
+leakcheck_real harness on merged-tip binary (post PR#2+#3 squash): 8 sequential heavy wikipedia navigations RSS 266->717MB monotonic, ~56MB/nav — NOT fixed. CRITICAL NUANCE: trivial test pages show FLAT rss (0MB/nav over 20 same-origin navs) — the leak scales with page complexity/real JS content. Consistent with per-navigation document/script-teardown structural theory: heavy documents leave most of their graph behind, trivial ones little enough to be invisible in noise. Harnesses leakcheck.py+leakcheck_real.py in work dir — 90s repeatable. Method: eval-file-driven window.location navigations + tasklist CSV RSS sampling (mem col = parts[-1]).
 ## egui Area hit-testing lesson (banked 2026-11-27, macOS lane)
 Content overflowing an egui Area's declared rect RENDERS visually but is
 DEAD to hit-testing — clicks never reach the widget and no error is logged.
@@ -5620,12 +5623,10 @@ Cost a debugging round in the downloads-panel work: rows inside the rect
 worked, the footer below it was visible-but-inert. Symptom: click closes
 the panel (outside-close or nothing) with zero actions in FEATHER_ACTIONS
 log. For discovery entries prefer hamburger-menu rows — that path is proven.
-
 ## settings-depth audit (banked 2026-11-27): feather shell settings UI is
 already comprehensive — search/startup/animation/theme/tabs/shields/
 browsing-data/site-permissions sections all expose the Settings struct
 fields. No meaningful unexposed options exist; don't manufacture noise here.
-
 ## sec1zt280 — media wedge SOLVED+SHIPPED: single ordering race, no second mechanism (2026-11-27)
 Fix 08325d65497 live on feather-engine. The full truth after instrumentation chaos:
 - There was only ONE mechanism all along: StateChanged(Paused/Playing) arriving before
@@ -5654,7 +5655,6 @@ Fix 08325d65497 live on feather-engine. The full truth after instrumentation cha
   boot reliability after pulling. The remaining media adoption-context mismatch
   (sec1zt278) is real but untested-independence: element uncontrollable after cross-doc
   adoption — separate smaller fix, still open.
-
 ## sec1zt281 — upstream picks + dom/elements cluster debunked (2026-11-27)
 Upstream last-checked sha now 461f99fc59f. Cherry-picked live (9c2558929c8):
 74e17f9c485 webdriver navigation-state sync, fdc6077f3a5 NavigationTiming duration,
@@ -5664,7 +5664,6 @@ elements still deferred (big/risky).
 DEBUNK: /html/dom/elements "34 unexpected" is a mirage — ~33 are dir-shadow PASS where
 upstream expects FAIL: positive deltas from OUR :dir() fix (c652b3e1aa3), not bugs.
 Leaves-doc targeting for that row is void; the cluster is closed.
-
 ## sec1zt282 — wpt CRASH-misclassification mechanics fully explained (2026-11-27, analysis-only)
 "Browser not responding → CRASH" fires ONLY when `protocol.is_alive()` fails — a
 `GET window/handles` probe with a **2-second** timeout (executorwebdriver.py:1200).
@@ -5679,7 +5678,6 @@ With the media wedge fixed the media tests no longer hit this path at all. The s
 timeout itself IS implemented (lib.rs:2944 wait_for_script_ipc_response_with_timeout +
 harness sets script:15000) — earlier belief "servo webdriver has no script timeout" was
 wrong; retracted.
-
 ## sec1zt283 — upstream 806d6369990 weak-ref elements: DEFER decision (2026-11-27)
 Evaluated: 91-file mechanical Box→Rc conversion making elements weak-referenceable,
 explicitly zero-behavior-change preparatory work for a not-yet-landed weak-attr-elements
@@ -5688,7 +5686,6 @@ our svguseelement.rs sprite fix, and picking it now means carrying rebase risk w
 payoff. Re-evaluate as a bundle when the actual weak-ref-attr-elements consumer lands
 upstream; it IS memory-retention-relevant long term (elements become GC-able while weakly
 held — interacts with the monotonic-retention story).
-
 ## sec1zt284 — memory retention: purge wiring audit + residual fix design (2026-11-27)
 AUDIT RESULTS: (1) servo_allocator::purge_arenas() EXISTS and IS already wired to pipeline
 exit (script_thread.rs handle_pipeline_exited ~line 3367) — dirty pages ARE purged on tab
@@ -5704,7 +5701,6 @@ JS heap is usually the dominant per-tab weight. FIX SHAPE: trigger a shrinking G
 frees: use /tmp/reclaim-test.py pattern + read /proc/pid/smaps_rollup RSS before/after,
 and if measurable, instrument SM heap size (js::PeekSizeOfExiting?) — implement (a) first
 as cheapest-high-value, re-measure.
-
 ## persistence batch lessons (banked 2026-11-27, macOS lane)
 - macOS Cmd+Q never delivers winit WindowEvent::CloseRequested — any
   cleanup wired only there silently skips the primary mac quit gesture.
@@ -5720,3 +5716,9 @@ as cheapest-high-value, re-measure.
 - Settings persistence pattern: Prefs struct + prefs.txt key=value lines,
   startup copy into browser.settings, sync_prefs() writes back on change.
   Any new setting must touch all four places or it silently resets.
+
+## memsec: fieldset/legend implementation map (windows lane, PR#4)
+symptom: legend renders fully inside fieldset instead of straddling border -> FIXED in PR#4. mechanisms: (1) FragmentFlags was FULL at u16 — widened to u32 in base_fragment.rs bitflags; IS_FIELDSET=1<<16, IS_LEGEND=1<<17 set in From<ServoLayoutNode> local_name match. (2) shift at same_formatting_context_block.rs layout_in_flow_non_replaced_block_level pre-BoxFragment::new: fragments are PhysicalDeprecated at assembly (NOT Logical — logical rects convert earlier), use base.rect()/set_rect() interior mutation. (3) target: legend center at -(padding.block_start+border.block_start/2) content-relative. REMAINING leaf increments: border-gap paint suppression (fieldset border paints behind legend — needs paint-time clip or border-split), direct-child-only nesting enforcement, vertical writing modes, independent-FC fieldset path (overflow!=visible fieldsets bypass same-formatting assembly entirely). probe: wtest/fsverify.html delta==0.0 straddles=true.
+
+## memsec: fieldset border-gap paint suppression — paint path mapped, NOT implemented
+target: suppress fieldset top border behind legend inline span. PAINT PATH: display_list/mod.rs build_border (~line 2297) — single wr push_border NormalBorder item per fragment; fieldset detectable via self.fragment.base.flags IS_FIELDSET; legend geometry available at paint time by iterating self.fragment children for IS_LEGEND fragment rect. BLOCKER ANALYSIS: webrender NormalBorder cannot express partial side segments — correct impl requires custom-painting top border as two segments (trivial for solid style, hard for groove/double/dotted 3D styles; UA default is groove!). design options: (a) segment-split only solid tops, leave others (most authored fieldsets solid); (b) approximate groove top as solid color segments — visual regression on default styling but removes line-through-text; (c) proper: clip-path per segment in wr. entry point confirmed: build_border early-branch before push_border when IS_FIELDSET && top border width nonzero && legend child present.
