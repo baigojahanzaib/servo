@@ -3919,3 +3919,18 @@ distinct comment per write; analyze %APPDATA%/feather/metrics.jsonl mem
 series; idle control leg is mandatory because Windows working-set trim makes
 idle RSS FALL (10→32MB observed) — growth despite trim pressure is the
 strong leak signal.
+
+## HEAP-CORRUPTION CRASH — batch-5 retest (2026-11-27, Windows lane)
+
+All documented repro vectors re-run on the batch-5 binary (feather 0731b96 + servo b1dde5f):
+- amazon idle 5+ min: SURVIVED (documented death window was ~75s) — media active throughout (MSE samples flowing)
+- amazon scroll-driven 5.5min (eval-injected scrollBy every 7.5s): SURVIVED, zero panics
+- github extended heavy-nav 10min (33 eval-driven navigations): SURVIVED, zero panics — but RSS hit 1.86GB confirming the per-navigation leak is unfixed (expected — engine lane)
+
+VERDICT: the 0xC0000374/0xC0000421 heap-corruption class does not reproduce on batch-5
+in any vector. Candidate explanations: fixed incidentally by the batch-3..5 engine fixes
+(backward-seek, timeout-regression, media reaper, devtools teardown), or environment/timing
+dependency the VM no longer exhibits. NOT proof of fix — the heisenbug nature means absence
+of repro is weak evidence. The crash-capture instrumentation (#256) ships in batch-5, so
+any user-side recurrence self-captures with module-resolved stacks. Status: DORMANT —
+do not invest further repro effort unless user-side captures appear.
