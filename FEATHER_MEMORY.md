@@ -8080,3 +8080,8 @@ Post-fix msestress run: playback froze at exactly t=15.00 (last seek target) wit
 
 ## gmail wedge non-determinism — possible font-CACHE burst effect (hypothesis)
 - Divergent evidence on identical binary: gate run 3/3 clean boots; rapid back-to-back attempts 4/4 wedged (42 stalls each). Hypothesis: repeated boots hit warm font/DNS caches so all 150+ font completions arrive in a tight simultaneous burst — maximizing the completion-race window — while cold-ish boots spread arrivals and sometimes escape. Implication for repro: wedge reproduces most reliably with rapid repeated boots; clean observations may be cache-timing artifacts. The completion-counting race hypothesis stands regardless.
+
+
+## wpt-leaf negative results — 2026-11-27 (windows child)
+- **leaf:dir() already landed on feather-engine** (c652b3e1aa3 by linux lane). Independent windows implementation (same semantics: explicit ltr/rtl ancestor-inheritance, case-insensitive, dir=auto falls through to inheritance) cross-validated theirs — functional matrix 9/9 correct: rtl=5/ltr=9 counts incl script element, nested rtl-in-ltr-in-rtl inheritance, uppercase RTL, default-ltr. No PR needed.
+- **leaf:flex-gap primitive ALREADY WORKS** — measured via getBoundingClientRect harness (windows, build-engine binary): gap:20px exact spacing, column-gap:30px exact, row-gap:15px with flex-wrap correct row offset, gap:10% resolves against container width correctly. The ~20 failing WPT gap files are NOT a missing primitive — suspect reftest pixel-noise or exotic interactions (writing-mode/fragmentation). Do not invest here without per-test rendering evidence. Method: harness = gapcheck.html + dirverify-style eval driver, pattern reusable for any layout-measurement verification.
