@@ -504,8 +504,17 @@ impl SameFormattingContextBlock {
                             let current_x = rect.origin.x + rect.size.width / 2;
                             new_rect.origin.x += target_x - current_x;
                         } else {
-                            let target_center =
-                                -(pbm.padding.block_start + pbm.border.block_start / 2);
+                            // Spec: the space allocated for the border on the block-start
+                            // side is max(border-block-start-width, legend margin-box
+                            // block size) — the legend straddles the center of that
+                            // ALLOCATED space, not the physical border edge. In content-box
+                            // coordinates the border-box outer edge sits at
+                            // -(padding + border); the center of the allocated area is
+                            // allocated/2 below it.
+                            let allocated = pbm.border.block_start.max(legend_height);
+                            let target_center = -(pbm.padding.block_start +
+                                pbm.border.block_start) +
+                                allocated / 2;
                             let current_center = rect.origin.y + legend_height / 2;
                             let shift = target_center - current_center;
                             new_rect.origin.y += shift;
