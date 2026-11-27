@@ -4030,3 +4030,18 @@ the invocation cache covers within-session consistency already.
 - Input-testing trap: shell renav + session-restore interference makes
   omnibox-driven verification flaky on restored tabs — open a FRESH tab for
   live probes, or use drag-drop harness pages which are single-purpose.
+
+## sec1zt148 — crash isolation Stage 0 VERIFIED CLOSED (feather#268 evidence)
+Forced ServoTestUtils.panic() via eval with FEATHER_TESTUTILS=1: identical pid
+before/after — the process survives script-thread panics. Servo's own in-tab
+crash interstitial renders ("Servo crashed!" + Reload + backtrace); the rest of
+chrome stays live; crash-panic artifact captured on the persistent path.
+KEY ARCHITECTURE FACT: the constellation does NOT auto-reload the crashed tab —
+it tears down the pipeline and serves a crash interstitial inside the tab; the
+user reloads. Engine wiring was already complete from phase 1 (hard_fail:false +
+panic hook chaining log::error). Verification hook: FEATHER_TESTUTILS=1 exposes
+ServoTestUtils. Symptom: "tab shows 'Servo crashed!' page" → expected recovery
+behavior, NOT a new bug; check whether the originating panic class is script
+(recovered, fine) vs singleton-thread (WR/compositor — never-bugs, fix upstream).
+Remaining per design doc: Stage 1 media-thread granularity (1-2d), Stage 2
+singleton respawn (weeks, defer), Stage 3 multiprocess (beta conversation).
