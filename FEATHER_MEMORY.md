@@ -5740,3 +5740,15 @@ pipeline teardown — suspects: layout thread pool stacks/arenas, webrender per-
 state in the painter, font caches (global, no eviction), stylo thread-local caches,
 HTTP cache. PROFILING NEEDED: heaptrack/massif or smaps diff before/after close — this is
 a dedicated profiling session's work, not greppable. Negative results mandatory-indexed here.
+
+## STANDING ORDER — macOS lane work queue (coordinator directive 2026-11-27, verbatim intent)
+NEVER end your turn with waiting_for_user. When a task completes,
+immediately start the next item in this list without coordinator input:
+  (1) tab groups persistence across restart — DONE (#357+#358, verified natural cycle)
+  (2) crash-recovery UX polish — DONE (#358, SIGKILL-verified)
+  (3) friction audit pass — sweep shell for unwired/dead affordances
+  (4) wiki docs for shell features
+  (5) verify engine fixes from the shell side
+If genuinely everything is done: real-usage dogfood pass on the 20-site
+sweep and file friction items. There is always work. Context compacts
+automatically — do not stop for it, do not park awaiting merge.
