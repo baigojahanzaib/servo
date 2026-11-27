@@ -4465,3 +4465,18 @@ DURABLE LESSON: devtools breakage can be debug-build-only — debug_asserts in t
 turn wire-shape bugs into connection deaths. When devtools eval times out, check feather stderr
 for 'Message is not a valid reply' BEFORE suspecting script-thread plumbing; the three eval-path
 stages (message arrival / fire_eval / EvalResult) can all be healthy while delivery dies.
+
+## sec1zt171 — matrix transition reds: NOT a bug — harness load-flake (negative result)
+transition-interpolates/transition-completes red in the full-matrix run but PASS on an idle
+system: mid@60ms=0.939 (threshold 0.95), end@600ms=0.300 exact. The transition clock is
+wall-clock-correct; the harness booting 45 fresh instances back-to-back starves early frames
+enough to slip the tight 60ms threshold. Symptom-index: animation probes failing only in batch
+runs → suspect load-flake BEFORE engine clock bugs. Probe threshold loosening is test-only
+polish, not prioritized.
+
+## sec1zt172 — full-matrix Linux regen WORKING end state (feather#286)
+242/251, all 9 reds categorized: webgl x2 environmental (GPU-less VM), webrtc/cookiestore
+deliberate-off/hollow, range-geometry architectural-documented, transitions load-flake
+(sec1zt171), editing designmode + text-orientation engine-scale documented, writing-modes 1
+remaining. Drag-drop green in-grid. The harness is now a working Linux instrument — use it for
+mechanism regression checks after engine batches.
