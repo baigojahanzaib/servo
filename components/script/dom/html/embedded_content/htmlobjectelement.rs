@@ -114,7 +114,7 @@ impl<'dom> LayoutDom<'dom, HTMLObjectElement> {
         unsafe {
             self.unsafe_get()
                 .resolved_data_url
-                .borrow()
+                .borrow_for_layout()
                 .as_ref()
                 .map(|url| url.to_string())
         }
