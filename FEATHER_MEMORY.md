@@ -5679,3 +5679,12 @@ With the media wedge fixed the media tests no longer hit this path at all. The s
 timeout itself IS implemented (lib.rs:2944 wait_for_script_ipc_response_with_timeout +
 harness sets script:15000) — earlier belief "servo webdriver has no script timeout" was
 wrong; retracted.
+
+## sec1zt283 — upstream 806d6369990 weak-ref elements: DEFER decision (2026-11-27)
+Evaluated: 91-file mechanical Box→Rc conversion making elements weak-referenceable,
+explicitly zero-behavior-change preparatory work for a not-yet-landed weak-attr-elements
+feature. Decision: SKIP for now — no behavioral benefit, non-trivial conflict risk against
+our svguseelement.rs sprite fix, and picking it now means carrying rebase risk with zero
+payoff. Re-evaluate as a bundle when the actual weak-ref-attr-elements consumer lands
+upstream; it IS memory-retention-relevant long term (elements become GC-able while weakly
+held — interacts with the monotonic-retention story).
