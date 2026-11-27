@@ -51,7 +51,7 @@ use crate::sizing::{
     self, ComputeInlineContentSizes, ContentSizes, InlineContentSizesResult, LazySize, Size,
     SizeConstraint, Sizes,
 };
-use crate::style_ext::{AspectRatio, ContentBoxSizesAndPBM, LayoutStyle, PaddingBorderMargin};
+use crate::style_ext::{AspectRatio, ComputedValuesExt, ContentBoxSizesAndPBM, LayoutStyle, PaddingBorderMargin};
 
 mod construct;
 pub mod float;
@@ -1871,17 +1871,32 @@ fn solve_containing_block_padding_and_border_for_in_flow_box<'a>(
     let block_stretch_size = containing_block.block_stretch_size(pbm_sums.block);
     let automatic_block_size = automatic_block_size(layout_context, base);
 
-    // TODO: support preferred aspect ratios on boxes that don't establish an independent
-    // formatting context.
-    let preferred_aspect_ratio =
-        context.and_then(|context| context.preferred_aspect_ratio(&pbm.padding_border_sums));
+    // Boxes that establish an independent formatting context resolve their
+    // ratio through the context; plain in-flow boxes use the `aspect-ratio`
+    // property directly (no natural ratio for non-replaced boxes).
+    let preferred_aspect_ratio = match context {
+        Some(context) => context.preferred_aspect_ratio(&pbm.padding_border_sums),
+        None => layout_style
+            .style()
+            .preferred_aspect_ratio(None, &pbm.padding_border_sums),
+    };
     let is_table = layout_style.is_table();
 
     // https://drafts.csswg.org/css2/#the-height-property
     // https://drafts.csswg.org/css2/visudet.html#min-max-heights
-    let tentative_block_content_size = context.and_then(|context| {
-        context.tentative_block_content_size(preferred_aspect_ratio, inline_stretch_size)
-    });
+    let tentative_block_content_size = match context {
+        Some(context) =>
+            context.tentative_block_content_size(preferred_aspect_ratio, inline_stretch_size),
+        // Conservative in-flow transfer: only from a definite inline stretch
+        // size, avoiding cyclic dependencies on content-driven inline sizes.
+        None => preferred_aspect_ratio.and_then(|ratio| {
+            inline_stretch_size.map(|inline_size| {
+                ratio
+                    .compute_dependent_size(LogicalAxis::Block, inline_size)
+                    .into()
+            })
+        }),
+    };
     let tentative_block_size = if let Some(block_content_size) = tentative_block_content_size {
         SizeConstraint::Definite(content_box_sizes.block.resolve(
             LogicalAxis::Block,
