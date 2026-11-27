@@ -5664,3 +5664,18 @@ elements still deferred (big/risky).
 DEBUNK: /html/dom/elements "34 unexpected" is a mirage — ~33 are dir-shadow PASS where
 upstream expects FAIL: positive deltas from OUR :dir() fix (c652b3e1aa3), not bugs.
 Leaves-doc targeting for that row is void; the cluster is closed.
+
+## sec1zt282 — wpt CRASH-misclassification mechanics fully explained (2026-11-27, analysis-only)
+"Browser not responding → CRASH" fires ONLY when `protocol.is_alive()` fails — a
+`GET window/handles` probe with a **2-second** timeout (executorwebdriver.py:1200).
+Servo's webdriver server is SINGLE-THREADED: while inside
+`wait_for_script_ipc_response_with_timeout` (up to the 15s harness-configured script
+timeout), it cannot answer the probe → is_alive false → live healthy browser misclassified
+as CRASH. The race: wptrunner test external-timeout (~10s+extras) usually fires BEFORE the
+15s script timeout, so the script-timeout rescue never gets to run. This is an
+UPSTREAM-ARCHITECTURE artifact (single-threaded command processing), not feather-specific —
+documented, deliberately not fixed: the honest fix is concurrent command handling, big.
+With the media wedge fixed the media tests no longer hit this path at all. The script
+timeout itself IS implemented (lib.rs:2944 wait_for_script_ipc_response_with_timeout +
+harness sets script:15000) — earlier belief "servo webdriver has no script timeout" was
+wrong; retracted.
