@@ -49,24 +49,55 @@ pub(crate) struct ServiceWorkerContainer {
     /// Handler of algorithm results.
     #[no_trace]
     callback: DomRefCell<Option<GenericCallback<ServiceWorkerAlgorithmResult>>>,
+
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-container-ready-attribute>
+    /// The ready promise. Never rejects; resolves once a registration with an
+    /// active worker materializes in this global. Stored rooted: the codegen
+    /// getter receives no JSContext, so re-rooting per access is impossible.
+    /// The promise object is small and lives exactly as long as the container
+    /// (which is owned by the navigator and torn down with the window).
+    #[no_trace]
+    #[ignore_malloc_size_of = "one small promise, bounded by container lifetime"]
+    #[cfg_attr(crown, crown::unrooted_must_root_lint::allow_unrooted_interior)]
+    ready_promise: DomRefCell<Option<RootedPromise>>,
 }
 
 impl ServiceWorkerContainer {
-    fn new_inherited() -> ServiceWorkerContainer {
+    fn new_inherited(ready_promise: RootedPromise) -> ServiceWorkerContainer {
         ServiceWorkerContainer {
             eventtarget: EventTarget::new_inherited(),
             controller: Default::default(),
             pending_algorithm_results: Default::default(),
             callback: Default::default(),
+            ready_promise: DomRefCell::new(Some(ready_promise)),
         }
     }
 
     pub(crate) fn new(cx: &mut JSContext, global: &GlobalScope) -> DomRoot<ServiceWorkerContainer> {
+        let promise = Promise::new(cx, global);
         reflect_dom_object(
             cx,
-            Box::new(ServiceWorkerContainer::new_inherited()),
+            Box::new(ServiceWorkerContainer::new_inherited(promise)),
             global,
         )
+    }
+
+    /// If the container's ready promise exists and is still pending, resolve it with
+    /// a registration that has an active worker.
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-container-ready-attribute>
+    fn maybe_resolve_ready(
+        &self,
+        cx: &mut JSContext,
+        registration: &ServiceWorkerRegistration,
+        has_active_worker: bool,
+    ) {
+        if !has_active_worker {
+            return;
+        }
+        let promise = self.ready_promise.borrow().as_ref().expect("ready promise").clone();
+        if promise.is_pending() {
+            promise.resolve_native(cx, registration);
+        }
     }
 
     /// <https://w3c.github.io/ServiceWorker/#reject-job-promise>
@@ -98,6 +129,7 @@ impl ServiceWorkerContainer {
                         promise.resolve_native(cx, &success);
                     },
                     JobResultValue::Register(value) => {
+                        let has_active_worker = value.active_worker.is_some();
                         let ServiceWorkerRegistrationInfo {
                             id,
                             installing_worker,
@@ -121,6 +153,8 @@ impl ServiceWorkerContainer {
                         );
 
                         // TODO Step 2.3: Else, set convertedValue to value, in equivalentJob’s client’s Realm.
+
+                        self.maybe_resolve_ready(cx, &registration, has_active_worker);
 
                         // Step 2.4: Resolve equivalentJob’s job promise with convertedValue.
                         promise.resolve_native(cx, &*registration);
@@ -147,6 +181,8 @@ impl ServiceWorkerContainer {
             return;
         };
 
+        let has_active_worker = info.active_worker.is_some();
+
         // Step 8.3: Resolve promise with the result of getting the service worker registration object
         // that represents registration in promise’s relevant settings object.
         let registration = self.global().get_serviceworker_registration(
@@ -158,6 +194,7 @@ impl ServiceWorkerContainer {
             info.waiting_worker,
             info.active_worker,
         );
+        self.maybe_resolve_ready(cx, &registration, has_active_worker);
         promise.resolve_native(cx, &*registration);
     }
 
@@ -327,6 +364,11 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
     /// <https://w3c.github.io/ServiceWorker/#service-worker-container-controller-attribute>
     fn GetController(&self) -> Option<DomRoot<ServiceWorker>> {
         None
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-container-ready-attribute>
+    fn Ready(&self) -> RootedPromise {
+        self.ready_promise.borrow().as_ref().expect("ready promise").clone()
     }
 
     /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-register> - A
