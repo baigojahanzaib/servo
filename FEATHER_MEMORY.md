@@ -4405,7 +4405,6 @@ The initial-pass/restyle theory in writing-modes-6 was built on confounded probe
 4. No initial-pass defect exists as far as current evidence shows; that suspect is RETIRED.
 5. Fix applied: the `:not(...)` selector removed from the UA rule (pseudo-elements keep inherit). Combined with the axis-swap groundwork (e969671ef), vertical writing modes should now cascade and lay out orthogonally; the glyph-orientation layer (text-orientation, latin rotation) remains the known-imperfect layer.
 Probe-design lesson for ALL lanes: when testing inherited CSS properties, never use root mutation as a restyle trigger — it confounds inheritance with cascade application. Use a non-inherited property toggle (e.g. outline-color) or forced-descendant selectors instead. And getAttribute('style') readbacks prove nothing about parsing — use cssRules[].style or getComputedStyle only.
-[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
 
 ## sec1zt167 — build-environment: 124G disk FILLED by target/debug/incremental (53G)
 The webgpu-feature build failed with "No space left on device" — not a code problem.
@@ -4430,4 +4429,24 @@ Chased the subgrid implementation path per the grid-1 verdict:
 - taffy main (0.16.0-dev, DioxusLabs/taffy) still lacks production subgrid: changelog keeps subgrids in the unsupported list; zero subgrid handling in the grid compute modules.
 CONCLUSION: subgrid-in-servo requires implementing subgrid track-sizing participation IN taffy itself (upstream-scale, multi-week algorithmic work — nested tracks must resolve against parent track sizes recursively) or architectural surgery in servo's bridge to bypass taffy for subgridded axes (comparable scale). Neither is a lane increment; this is a coordinator/funding-model decision. Cross-reference: Ladybird implements its own grid (subgrid included) — no shortcut there either since servo delegates all grid sizing to taffy.
 RECOMMENDATION: deprioritize subgrid as a standalone upstream mission; the grid mission at mechanism level is otherwise CLOSED-green per grid-1.
-[source: 986486d8d8824533801c3c14f0e76ce2; added: 2026-11-26; confidence: high]
+
+## sec1zt169 — devtools evaluateJS regression: INVESTIGATION IN PROGRESS (matrix harness blocked)
+SYMPTOM: devtools console evaluateJS NEVER replies (timeout) though the full actor chain works:
+banner → listTabs → getTarget → consoleActor all respond correctly. Eval variants (eager,
+frameActor) all timeout identically.
+EXONERATED: (1) webgpu cargo feature — rebuilt without it, timeout persists (bisect-negative);
+(2) script thread death — the shell's own webview.evaluate_javascript path (/tmp/feather-eval.js
+hook) works fine on the SAME instance, so the script thread evaluates JS healthily. The break is
+specific to the devtools eval path: console actor → script_chan → DevtoolScriptControlMsg::Eval →
+debugger_global.fire_eval → DebuggerEvalEvent handled by spidermonkey debugger JS →
+generated EvalResult binding → reply channel. Suspects in order: (a) debugger_global is None
+(script_thread.rs:2285 drops the message SILENTLY if so) — verify by instrumenting that arm;
+(b) the debugger JS handler failing to complete (resource load or PipelineId wrapping);
+(c) reply channel loss.
+TIMELINE UNCERTAINTY: matrix-results.json last committed 11-26 23:39 but content may be much
+older — and matrix.py had the self-kill bug (pkill -f matched its own cmdline, fixed in
+feather#281) meaning it possibly NEVER ran successfully on Linux; results may be mac-lane.
+So this may not be a same-day regression at all.
+NEXT: instrument the debugger_global None arm + fire_eval entry/exit + EvalResult with eprintln,
+one build cycle localizes which of the three stages dies. Alternatively engine-bisect across
+11-26/27 window (15-20min per iteration — expensive).
