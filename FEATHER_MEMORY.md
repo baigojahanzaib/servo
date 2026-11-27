@@ -6066,3 +6066,17 @@ blast radius. Verify with aol.com nav completing + execute probes alive. REPRO h
 /tmp/aol-spin-bt.txt. Also NOTE: this class probably affects other xpath-heavy pages;
 also worth checking whether document.evaluate heavy loops in WPT explain residual
 timeouts.
+
+## Non-http scheme investigation chain (macOS lane, 2026-11-28)
+file:// AND data: both blank in feather — generalized defect, not file-specific.
+Document never even parses (title-marker probe). servo embedding library is
+INNOCENT — servo's own tests assert data: reaches LoadStatus::Complete in CI.
+Defect is feather-specific. REFUTED: startup-race hypothesis (fails post-startup
+too). REFUTED: pref-diff (all overrides are innocent feature-enables). Strongest
+remaining: feather's custom winit event-loop integration — sync-scheme loads
+don't produce whatever frame-signal async loads trigger. NEXT LANE: instrument
+load-status transitions per scheme; needs build budget. Also filed separately:
+omnibox normalize() mangles data:/blob:/about: (no "://" in those schemes).
+DISK WARNING: cargo registry cache was deleted to survive a disk-full crisis —
+first rebuild re-downloads crates (+3-5min). servoshell binary build INFEASIBLE
+on this box (feature-variant deps double-compile 8GB tree).
