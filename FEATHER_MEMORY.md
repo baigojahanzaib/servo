@@ -8077,3 +8077,6 @@ Post-fix msestress run: playback froze at exactly t=15.00 (last seek target) wit
 - PERF font-path (google-property relevant): d18a53c80cb ShapePlan cache HarfRust; 15087769726 shared LRU system font+skrifa cache.
 - STABILITY: 58067970868 repeated lazy callback sends after disconnect — IPC completion-signaling family, possible wedge-relevant robustness; 9236540138a mozjs 153.8 (big, risky, schedule carefully).
 - Scan method: title-matched upstream main (4d window) vs feather-engine/build-engine, ci/chore/servoshell noise filtered.
+
+## gmail wedge non-determinism — possible font-CACHE burst effect (hypothesis)
+- Divergent evidence on identical binary: gate run 3/3 clean boots; rapid back-to-back attempts 4/4 wedged (42 stalls each). Hypothesis: repeated boots hit warm font/DNS caches so all 150+ font completions arrive in a tight simultaneous burst — maximizing the completion-race window — while cold-ish boots spread arrivals and sometimes escape. Implication for repro: wedge reproduces most reliably with rapid repeated boots; clean observations may be cache-timing artifacts. The completion-counting race hypothesis stands regardless.
