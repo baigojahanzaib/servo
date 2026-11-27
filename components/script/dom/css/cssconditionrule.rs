@@ -10,6 +10,7 @@ use style::shared_lock::{Locked, SharedRwLock, SharedRwLockReadGuard};
 use style::stylesheets::CssRules as StyleCssRules;
 
 use super::cssgroupingrule::CSSGroupingRule;
+use super::csscontainerrule::CSSContainerRule;
 use super::cssmediarule::CSSMediaRule;
 use super::cssstylesheet::CSSStyleSheet;
 use super::csssupportsrule::CSSSupportsRule;
@@ -65,6 +66,8 @@ impl CSSConditionRuleMethods<crate::DomTypeHolder> for CSSConditionRule {
         if let Some(rule) = self.downcast::<CSSMediaRule>() {
             rule.get_condition_text()
         } else if let Some(rule) = self.downcast::<CSSSupportsRule>() {
+            rule.get_condition_text()
+        } else if let Some(rule) = self.downcast::<CSSContainerRule>() {
             rule.get_condition_text()
         } else {
             unreachable!()
