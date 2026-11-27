@@ -5752,3 +5752,24 @@ immediately start the next item in this list without coordinator input:
 If genuinely everything is done: real-usage dogfood pass on the 20-site
 sweep and file friction items. There is always work. Context compacts
 automatically — do not stop for it, do not park awaiting merge.
+
+DECISIVE measurement via SERVO_MEMDUMP_AFTER=8 (built-in per-category reporter, servo.rs:1185,
+dumps to stderr every 60s — the right tool, heaptrack is unnecessary). Post-close state (4x
+example.com tabs opened+closed): resident 385MB but jemalloc-heap-allocated only 17.7MB,
+system-heap-allocated 108MB, url() js rows collapse 46→4.8MB (JS heaps ARE released cleanly —
+confirms GC-on-close hygiene working). KEY ROW: jemalloc-heap-mapped 103MB vs active 24MB vs
+allocated 17.7MB — **~80MB of jemalloc mappings are neither live allocations nor active pages**
+= fragmentation + tcache/thread-cache retention + free runs. Dirty decay is default (10s, no
+override in allocator/) so dirty pages DO self-purge — the residual is NOT purgeable: it is
+(a) small live objects pinning otherwise-free pages (fragmentation) and (b) per-thread tcache
+free-object caches (NOT covered by arena purge!). NEXT LEVERS in order of cost:
+(1) MALLOC_CONF=tcache_max small / lg_tcache_max lower or mallctl tcache.flush on pipeline exit —
+    tcaches are per-thread and threads are SHARED (68→77→69 measurement) so freed tab objects
+    sit in the surviving threads' tcaches forever — STRONGEST HYPOTHESIS, cheap to test: set
+    opt.tcache false or small in allocator and re-run /tmp/memab.py A/B;
+(2) background_thread:true in malloc_conf for async decay;
+(3) arena reset on close (mallctl arena.<i>.reset — dangerous, only for quiescent arenas).
+MEASUREMENT HARNESS all reusable: /tmp/memab.py (RSS A/B), SERVO_MEMDUMP_AFTER=8 + parse of
+/tmp/memdump.log rows (categories). Heaptrack capture failed (0-byte output through fifo on
+SIGTERM — do not retry that path). RSS file-backed caveat: ~220MB of resident is servoshell
+binary + libLLVM + fonts demand-loaded file pages — inflate absolute RSS but constant baseline.
