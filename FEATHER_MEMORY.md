@@ -3888,8 +3888,9 @@ MockBackend — it fabricates WebDocument models (titles, colors, blocks) while
 servo independently renders real content. Anything the mock fabricates can
 surface as demo data. When in doubt, the honest default is empty/neutral.
 
+## sec1zt136 — backward-seek ACCEPTANCE BAR MET round-9: playback resumes, corruption eliminated; residual position-domain defect (2026-11-27)
+Round-9 harness verdict: PASS on the coordinator bar — backward seek lands and PLAYS sustained (~40s advancing), forward seek works, repeated seeks both directions work, ZERO demux errors across all three seeks including the reseek sequence that corrupted deterministically in rounds 4-8. Scan-detail matches ground truth exactly (offs 569/221188/445241..., tc 0/4.267/8.533/10/14.267, csize=1 first then 2) — contiguous retention confirmed correct. The retention fix (fade8925118) closes the corruption saga: byte-level refeed is now sound end-to-end. RESIDUAL DEFECT: position domain — seeks to 30 and 5 both restart playback near ~2.3s instead of at target; first seek to 2 began at 1.17. Pattern consistent with mse_position_offset stuck at the FIRST seek's value (2) + elapsed, or pipeline stream-time restarting at 0 per reset while offset fails to update. Playback itself flows correctly. NEXT: check mse_position_offset update path in player.rs seek() — verify .set(time) actually lands per-seek and that position query reads it; also whether demux output pts is rebased-to-zero in push mode making position = elapsed + stuck-offset. Also still open from round-8 analysis: csize=1 first-cluster timecode can't hold rewritten values >255ms (skipped → timeline inconsistency in the first cluster) — the segment-domain alternative (drop rewrite entirely, base=live-target, start=0) may obsolete the rewrite and fix this class; evaluate after position fix. Quality-switch interaction untestable (bot wall persists).
 ## drag-drop-matrix-verdict: class fully GREEN (verified live 2026-11-27)
-
 All six matrix probes pass on the merged tree: draggable-attribute,
 dragevent-constructor (typeof=function), datatransfer-in-event,
 datatransfer-roundtrip (readback=matrix-drag), drag-events-dispatch
@@ -3897,7 +3898,6 @@ datatransfer-roundtrip (readback=matrix-drag), drag-events-dispatch
 is CLOSED as a matrix red — implementation + upstream effectAllowed fix both
 verified end-to-end (trusted-input drag: dragstart|setdata-ok|drag|dragenter|
 dragover|drop:payload|dragend).
-
 **Devtools harness lesson**: the eval chain (listTabs→getTarget→evaluateJS
 with Ok-envelope unwrap) works perfectly against a manually-launched instance.
 The run_one_page "devtools never came up"/stall failures are LAUNCH-PATH
