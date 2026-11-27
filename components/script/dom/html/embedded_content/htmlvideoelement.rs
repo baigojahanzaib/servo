@@ -149,7 +149,38 @@ impl HTMLVideoElement {
         match self.last_frame.borrow().as_ref() {
             Some(frame) => {
                 let size = Size2D::new(frame.get_width() as u32, frame.get_height() as u32);
-                if !frame.is_gl_texture() {
+                if frame.is_nv12() {
+                    // NV12 frames have no raw BGRA data — convert in software
+                    // (BT.601 limited range, the gstreamer NV12 default).
+                    // Requesting raw data of an NV12 frame hits unreachable!()
+                    // in get_data() (the createImageBitmap-from-video crash).
+                    let (y, uv) = frame.get_nv12_planes();
+                    let w = frame.get_width() as usize;
+                    let h = frame.get_height() as usize;
+                    let mut bgra = Vec::with_capacity(w * h * 4);
+                    for row in 0..h {
+                        for col in 0..w {
+                            let yv = y[row * w + col] as f32;
+                            let uv_row = (row / 2) * w + (col / 2) * 2;
+                            let cb = uv[uv_row] as f32 - 128.0;
+                            let cr = uv[uv_row + 1] as f32 - 128.0;
+                            let luma = 1.164 * (yv - 16.0);
+                            let r = (luma + 1.596 * cr).clamp(0.0, 255.0) as u8;
+                            let g = (luma - 0.813 * cr - 0.391 * cb).clamp(0.0, 255.0) as u8;
+                            let b = (luma + 2.018 * cb).clamp(0.0, 255.0) as u8;
+                            bgra.extend_from_slice(&[b, g, r, 255]);
+                        }
+                    }
+                    let alpha_mode = SnapshotAlphaMode::Transparent {
+                        premultiplied: false,
+                    };
+                    Some(Snapshot::from_vec(
+                        size.cast(),
+                        SnapshotPixelFormat::BGRA,
+                        alpha_mode,
+                        bgra,
+                    ))
+                } else if !frame.is_gl_texture() {
                     let alpha_mode = SnapshotAlphaMode::Transparent {
                         premultiplied: false,
                     };

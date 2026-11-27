@@ -4621,6 +4621,20 @@ where
             return;
         };
 
+        // A subframe load that is aborted (e.g. navigation into a scheme we
+        // cannot handle, cancelled per the external-protocol contract) still
+        // counts as finished for the parent document's load bookkeeping: the
+        // parent only completes its own load event once every started subframe
+        // load reports completion. Without this notification the parent's load
+        // event never fires and any embedder waiting on load completion —
+        // including the webdriver server — wedges permanently
+        // (the unknown-protocol-reload-crash WPT hang). The notification must
+        // be sent before close_pipeline, since it reads the pipeline and
+        // browsing context that the close removes.
+        if change.browsing_context_id != BrowsingContextId::from(webview_id) {
+            self.handle_subframe_load_finished(new_pipeline_id, true);
+        }
+
         self.close_pipeline(new_pipeline_id, DiscardBrowsingContext::No);
 
         if change.browsing_context_id == BrowsingContextId::from(webview_id) &&
