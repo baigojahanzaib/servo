@@ -4943,3 +4943,36 @@ Post-fix msestress run: playback froze at exactly t=15.00 (last seek target) wit
 ## sec1zt237 — NEGATIVE RESULT: flex gap WORKS (verified exact 20px spacing live). The ~20 flexbox-gap WPT FAILs are edge cases (percentages/calc/multiline) or reftest pixel noise, NOT the feature. Do not sink time into basic gap. Same suspicion extends to much of the flexbox 191 — requires per-test pixel-vs-real audit before any effort.
 ## sec1zt238 — attack-order continuation state: (1) :dir() DONE c652b3e1aa3. (2) nav security trio INVESTIGATION STARTED: srcdoc-blocking — spec step "navigations from an about:srcdoc document to anything but exactly about:srcdoc must be blocked"; servo handles about:srcdoc in htmliframeelement.rs:434-501 + servoparser/html.rs:74; the navigation-request path to instrument is location setter -> constellation load_url; no blocking logic exists yet. (3) x-origin topnav user-activation gate — no gate exists; transient activation state tracking is the prerequisite primitive. (4) download-attribute navigation (18 files) — shell crossover. html post-fix rerun STILL RUNNING at session end — when complete, regenerate wpt dated report comparing unexpected-only counts vs baseline (crashes should collapse); do NOT trust raw pass-rate deltas.
 ## sec1zt239 — srcdoc nav-block patch IN FLIGHT (uncommitted at session end): location.rs navigate_a_location now blocks navigations from an about:srcdoc document to any about:srcdoc* url other than exactly about:srcdoc. Compile running in /tmp/srcdocbuild.log. NEXT: if compile clean, verify with the WPT test single-run (ports may conflict with big html run — use interactive repro instead: srcdoc iframe + script setting location to about:srcdoc?x), commit+push, then attack x-origin topnav activation gate. NOTE the exact spec step may also cover non-location navigation paths (anchor clicks) — the shared navigate() is the better final location if verification shows gaps.
+
+## shell-crash-recovery handoff 2026-11-27 (mac lane, user-directed)
+
+SCOPE (user verdict): shell-level crash/hang recovery only — NOT process
+isolation. Detect engine/webview death or hang per tab, keep shell alive,
+offer per-tab reload, preserve other tabs.
+
+ALREADY EXISTS: servo auto-recovers panicked pipelines per-tab in-process
+(feather shell-new/src/engine.rs line ~109-114 embedder Panic arm prints
+'[tab-crash] pipeline panicked (tab reloaded by engine)'; hard_fail:false
+at engine.rs:442; panic hook in main.rs:75-89). Process-death case is
+solved by construction; other tabs survive.
+
+MISSING (the implementable shell work):
+1. HANG detection — the batch6 livelock class: tab alive but script thread
+   parked in semaphore_timedwait forever. No user signal today.
+2. User-visible affordance for both crash and hang: 'tab crashed/unresponsive
+   — reload' pill. Today crashes silently auto-reload (loses scroll/form
+   state with zero explanation).
+
+IMPLEMENTATION SHAPE (scoped, not built): per-webview liveness heartbeat —
+hook the shell's frame-pump/event-injection path (engine.rs/engine_surface.rs
+— grep notify_frame/present/pump for where servo surfaces composite per
+webview); record last-progress timestamp per tab. Watchdog: if a tab
+receives input or is loading/animating but produces no frame progress for
+~5s, mark unresponsive → pill overlay in the tab content area with Reload
+button (feather-styled, same family as permission pill). Pill actions:
+reload (existing navigation machinery) or dismiss. ALSO: surface the
+existing Panic-arm crash event to the UI (a toast or per-tab notice) so
+auto-reloads are explained, and persist crash events to the crashes dir
+alongside the hang artifacts already written there.
+VERIFY: FEATHER_TESTUTILS=1 ServoTestUtils.panic() injection covers crash;
+hang verification via the youtube-seek wedge repro or a busy-loop test page.
