@@ -5688,3 +5688,19 @@ our svguseelement.rs sprite fix, and picking it now means carrying rebase risk w
 payoff. Re-evaluate as a bundle when the actual weak-ref-attr-elements consumer lands
 upstream; it IS memory-retention-relevant long term (elements become GC-able while weakly
 held — interacts with the monotonic-retention story).
+
+## sec1zt284 — memory retention: purge wiring audit + residual fix design (2026-11-27)
+AUDIT RESULTS: (1) servo_allocator::purge_arenas() EXISTS and IS already wired to pipeline
+exit (script_thread.rs handle_pipeline_exited ~line 3367) — dirty pages ARE purged on tab
+close already; (2) webrender display-list resources ARE dropped on exit
+(painter.rs transaction.remove_pipeline). Therefore the measured ~190MB/4-tab retention
+(43% of per-tab growth) is NOT dirty pages and NOT display lists — residual candidates in
+order of likely mass: (a) SpiderMonkey GC heap — SM does its own page management outside
+jemalloc; shrinking GC only happens under memory pressure, tab-close does not force one;
+JS heap is usually the dominant per-tab weight. FIX SHAPE: trigger a shrinking GC
+(JS::ShrinkingGC or gc_slice with reason) when the last pipeline of a webview exits.
+(b) font cache — global, keyed independently of pipelines, no eviction on exit;
+(c) image cache — check whether per-pipeline or global. MEASUREMENT FIRST when harness
+frees: use /tmp/reclaim-test.py pattern + read /proc/pid/smaps_rollup RSS before/after,
+and if measurable, instrument SM heap size (js::PeekSizeOfExiting?) — implement (a) first
+as cheapest-high-value, re-measure.
