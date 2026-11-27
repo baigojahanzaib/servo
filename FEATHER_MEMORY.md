@@ -4327,3 +4327,16 @@ sec1zt127 (raw==DOM counts exonerated the parser), the defect has no reproducibl
 surface. Windows lane: re-test your repro — if duplication persists there, it's either
 Windows-specific navigation re-entrancy or a stale-serve artifact; the forced-honest-UA
 in-page fetch-vs-DOM discriminator from sec1zt127 remains the decisive test.
+
+## sec1zt163 — pref-gate batch-2 verdicts
+- sanitizer: SHIPPED (#275) — 3189-line real impl, sanitize() strips scripts verified.
+- canvas_capture: EXCLUDED with evidence — CaptureStream is a stub: returns a MediaStream
+  with a bare video track, no frame source, no canvas-to-track plumbing. Enabling would
+  produce black-stream inconsistency. Real implementation needs canvas→video-frame bridging.
+- webrtc: real structure (signaling state machine, offer/answer queues, 870-line peerconnection)
+  but media transport verification needs actual ICE/DTLS call testing — can't verify in this
+  VM without a peer. DEFERRED pending a loopback-test harness (two peerconnections in one
+  page is the standard trick — still needs the media backend present).
+- webgpu: untested — big surface, needs its own dedicated verification round.
+RULE CONFIRMED: typeof-presence is NOT enablement evidence — captureStream passed the
+presence check but is functionally hollow. Batch-2+ verification must exercise behavior.
