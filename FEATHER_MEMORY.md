@@ -6088,3 +6088,30 @@ give fieldset special containing-block behavior. Estimated: half-to-full session
 Repro: mach test-wpt /html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/fieldset-containing-block.html
 NOTE add134a8a47 'legend straddles fieldset border in vertical writing modes' commit
 exists in log — check what's already merged before writing anything.
+
+## sec1zt309 — fieldset spec text + implementation plan (2026-11-28, rotation input)
+EXACT SPEC (html spec 15.3.12, fetched verbatim):
+- fieldset behaves as flow-root (BFC) regardless of display.
+- rendered legend = FIRST legend child box with float:none AND position not abs/fixed.
+- border not painted behind legend rect (DONE by other lane — 92854ce43f8).
+- legend straddle positioning (DONE — 592aa606c95, add134a8a47 vertical).
+- **MISSING PIECE**: anonymous fieldset content box — appears after rendered legend,
+  contains ALL other content incl ::before/::after; its used padding is ZERO.
+- min/max-content inline size of fieldset = greater of legend vs content-box sizes.
+- block-start border space = max(border-block-start-width, legend margin-box block size).
+IMPLEMENTATION PLAN for rotated session:
+1. Box construction (components/layout/flow construction path — find where block
+   containers build children, likely construct.rs or same_formatting_context_block):
+   for fieldset elements, partition children into rendered-legend vs rest; wrap rest
+   in anonymous block box (existing anonymous-box machinery used for wrapping inline
+   content — reuse). Legend stays direct child.
+2. Sizing: fieldset intrinsic sizes = max(legend, content-box) contributions.
+3. Verify with: mach test-wpt
+   /html/rendering/non-replaced-elements/the-fieldset-and-legend-elements/fieldset-containing-block.html
+   plus legend-float.html, fieldset-transform-translatez.html.
+4. The abs-pos containing block resolution may need NO special code once the wrapper
+   exists — the reftest geometry follows from correct tree structure. Test FIRST after
+   step 1 before writing any containing-block-specific logic.
+OTHER LANE already in this area (commits #4/#5/#7/#11 merged) — rebase carefully,
+their legend-shift code in same_formatting_context_block.rs assumes flat children and
+may need adaptation once the wrapper exists (legend stays direct child so probably fine).
