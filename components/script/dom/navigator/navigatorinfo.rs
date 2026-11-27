@@ -69,8 +69,11 @@ pub(crate) fn UserAgent(user_agent: &str) -> DOMString {
 }
 
 #[expect(non_snake_case)]
-pub(crate) fn AppVersion() -> DOMString {
-    DOMString::from_static("4.0")
+pub(crate) fn AppVersion(user_agent: &str) -> DOMString {
+    // Real browsers return the UA string minus its "Mozilla/" prefix — the
+    // historic static "4.0" is a value no real browser has sent in decades
+    // and an instant bot-classification tell.
+    DOMString::from(user_agent.strip_prefix("Mozilla/").unwrap_or(user_agent))
 }
 
 #[expect(non_snake_case)]
