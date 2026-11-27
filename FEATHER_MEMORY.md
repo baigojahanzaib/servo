@@ -6139,3 +6139,17 @@ SERVOSHELL DISCRIMINATOR: infeasible on this box (feature-variant deps don't
 fit disk) BUT unnecessary — servo embedding tests already prove data: reaches
 LoadStatus::Complete; the non-http blank defect is feather-specific. NEXT LANE
 for file://: instrument load-status transitions per scheme in feather's engine.
+
+## file:// ROOT-CAUSED AND FIXED shell-side (macOS lane, PR #403, 2026-11-28)
+The blank non-http rendering was ONE LINE in feather's frame loop: the engine
+navigation driver filtered wanted urls with starts_with("http") — file:/data:
+/blob: never reached the constellation at all. NOT engine-side, NOT the library.
+Fix: gate removed; verified url_changed→HeadParsed→Complete chain + render.
+LESSON for all lanes: when zero events fire at every level, suspect the shell's
+own driver logic before the engine — the wedge/loadlog env instrumentation
+(FEATHER_WEDGE/FEATHER_LOADLOG) discriminates in minutes. The servo-embedding-
+tests-pass evidence was correct but misleading — the library WAS innocent
+because the load never reached it. file-drop feature (#352) unblocked.
+Residual same-class items: session serialization still filters non-http
+(app.rs save_session) and reopen-closed-tab recording (state.rs) — deliberate
+or oversight, worth a review pass next lane.
