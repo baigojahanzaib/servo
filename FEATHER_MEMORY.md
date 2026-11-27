@@ -3953,3 +3953,22 @@ position-update mutex path. The mse_position_offset wiring fix (a4922916078) ver
 Mission complete per coordinator's bar: "backward seek lands and plays, forward seek still
 works, repeated seeks in both directions". Quality-switch interaction untestable (bot wall).
 Residual cosmetic: playback initially advances faster than realtime (burst catch-up).
+
+## servo-history-1: session-history accumulation recon (2026-11-27)
+
+Symptom: "Cannot traverse that far into the past" when shell sends TraverseHistory
+after two shell-driven wv.load() navigations. Recon findings:
+- webview.rs back_forward_list is an embedder-side MIRROR, populated via
+  set_history() — the constellation is the source of truth.
+- Loads DO create SessionHistoryChange entries (constellation.rs 3328/3802/4561/
+  5047 add_pending_change sites) — so accumulation machinery exists.
+- Open question for the fix mission: why doesn't the change commit for
+  embedder-driven LoadUrl? Suspects: (a) change_session_history (line 5774)
+  only applies pending changes on certain load-completion events that may not
+  fire for the shell's load path; (b) the joint session history entries require
+  the NEW pipeline to reach a state the shell's restored-tab setup skips;
+  (c) TraverseHistory counts entries in the JOINT history while entries were
+  committed per-browsing-context. Instrument: log SessionHistoryChange commit
+  vs pending at traverse time.
+- Also verify: does servoshell itself (not feather) traverse correctly? If yes,
+  diff its webview setup against feather's engine.rs.
