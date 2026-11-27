@@ -5610,3 +5610,18 @@ TYPED EVENTS: PageSwapEvent/PageRevealEvent interfaces implemented (inherit Page
 
 ## fetch + window.name PROBE-NEGATIVE — 2026-11-27 (windows child)
 fetch canonical behaviors all correct: AbortController abort (correct AbortError), redirect follow, manual redirect mode, no-store cache mode, text()/headers access. The 13 fetch timeout files are edge/harness noise — per-test triage unlikely to yield real bugs. window.name persists correctly across same-tab navigation. The probe-negative ledger now covers literally every cheaply-probeable primitive in the leaves doc; remaining real work is exclusively the deep inventory: fieldset/legend (M, pre-seeded entry points), dir-style architectural, close-watcher Esc input routing, typed-interfaces follow-ups (activation/viewTransition need NavigationActivation+ViewTransition implementations first), canvas (deferred), bfcache (XL).
+
+## egui Area hit-testing lesson (banked 2026-11-27, macOS lane)
+Content overflowing an egui Area's declared rect RENDERS visually but is
+DEAD to hit-testing — clicks never reach the widget and no error is logged.
+When sizing overlay panels from row counts, every footer/separator must be
+included in the height math, or entries silently become click-through.
+Cost a debugging round in the downloads-panel work: rows inside the rect
+worked, the footer below it was visible-but-inert. Symptom: click closes
+the panel (outside-close or nothing) with zero actions in FEATHER_ACTIONS
+log. For discovery entries prefer hamburger-menu rows — that path is proven.
+
+## settings-depth audit (banked 2026-11-27): feather shell settings UI is
+already comprehensive — search/startup/animation/theme/tabs/shields/
+browsing-data/site-permissions sections all expose the Settings struct
+fields. No meaningful unexposed options exist; don't manufacture noise here.
