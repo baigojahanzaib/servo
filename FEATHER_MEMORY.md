@@ -4721,3 +4721,45 @@ Progressive playback test (bbb.mp4 via localhost, IDLE machine — WPT killed so
 
 ## sec1zt212 — freeze reproduces in bare servoshell: ENGINE defect confirmed, shell exonerated
 Same signature in mach-built servoshell: samples n=0..30 to pts 1.066 then silence. CRITICAL REASONING: appsink RECEIVING samples means the pipeline IS in PLAYING and decode works — the freeze is the SOURCE starving, not the pipeline state. The [mse] instrumentation confirms samples reach the sink callback. So: something stops the flow after ~1s. For progressive playback the source is playbin/uridecodebin internal — fork media commits should not affect it AT ALL unless the player setup (buffering config, download flags) is broken. Hmm — but samples DID flow for 1s. What happens at ~1s: the PlayerInner media-info-updated or the position-reporting starts? OR the video RENDER path (video_renderer.lock render at :1061) blocks downstream backpressure! KEY SUSPECT REFRAME: appsink in servos player is PULL or push with callbacks — if the render/consume side doesnt drain (frame renderer stuck), backpressure stops the pipeline. The llvmpipe software-GL frame render path on this VM — could frame rendering itself be the stall? BUT it rendered 30 frames fine. NEXT: gdb the FROZEN progressive instance — thread states will show exactly where the consume side is stuck. Much cheaper than bisect: one gdb, read the media thread stacks.
+
+## batch6-wedge suspect-chain sharpened: the SeekData/SeekLock input-side block (2026-11-27, macOS lane)
+
+Source-level mechanism chain for the youtube-seek freeze, indexed by function:
+
+- `components/media/player/lib.rs` — `PlayerEvent::SeekData(u64, SeekLock)`:
+  when gstreamer's demuxer repositions in the byte stream (EVERY playback
+  seek does this), the gst streaming thread BLOCKS until the script thread
+  re-feeds it from the new offset and releases the `SeekLock`. If the
+  script side never services the event, the streaming thread blocks
+  forever → no more frames → permanent spinner + frozen frame. This is
+  the primary wedge candidate.
+- `SeekLock::unlock` is already defensively bounded (5s try_recv_timeout,
+  comment: "a stuck script thread is worse than a dropped ack") — but that
+  bound only protects the SCRIPT side; nothing bounds the GST side's wait
+  for the unlock. An unserviced SeekData is a permanent gst-side wedge.
+- `components/media/backends/gstreamer/player.rs` Shutdown path comment
+  documents the inverse hazard: "the seek_data can be blocked waiting for
+  the script thread" — the authors know this coupling wedges; teardown
+  works around it, steady-state seek does not.
+- Rebase subtlety: same file notes "after a seek the flush+recreate
+  re-bases the pipeline at the first post-seek buffer" — the pipeline is
+  RECREATED on seek. If the SeekData event arrives referencing the old
+  pipeline's stream state or races the recreate, the script-side handler
+  can drop/mishandle it — matching the non-determinism (seek works in the
+  healthy state, wedges in the degraded state).
+- Script-thread side of the wedge: sample evidence shows Script#1 in ALL
+  samples inside `semaphore_timedwait` (never executing JS) — the script
+  thread is alive but never runs page JS. Since Servo's script event loop
+  waits with timeout when timers are pending, 100%-of-samples-in-wait +
+  one saturated core is consistent with a wake-spin loop: waking on tiny
+  timeouts without processing. Whether this is cause or symptom of the
+  unserviced SeekData is open — but note the pre-seek symptom (time
+  readout frozen at 0:05 while frames render) means `PositionChanged`
+  events were already not reaching the page, i.e. the script thread's
+  media-event processing was ALREADY degraded before the seek. Seek then
+  kills frame flow entirely because the gst side joins the waiters.
+- ENGINE LANE next step: instrument SeekData dispatch + unlock pairing
+  (log every SeekData emission and every unlock with ids; a wedged run
+  will show an unpaired SeekData). Also log PositionChanged production
+  rate in both boot states — the healthy/degraded divergence should be
+  visible from the first seconds.
