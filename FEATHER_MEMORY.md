@@ -5472,3 +5472,23 @@ Numerical experiment: legend{transform:translateY(-50%) translateY(-1px)} lands 
 
 ## fieldset/legend implementation entry points — 2026-11-27 (windows child, pre-seeded for implementation)
 Zero special-casing exists in components/layout (grep-confirmed). Integration points: components/layout/flow/mod.rs (BlockContainer enum line ~113, layout fns at ~395/525/909/1172) and flow/construct.rs for box construction. Implementation sketch: (1) construct.rs — when building children of a fieldset element, mark legend boxes (first-in-flow legend child per spec) with a flag on the box or a rare-data; (2) flow layout — after normal child placement, if parent box is a fieldset with a flagged legend: shift legend block-position up so its border-box center aligns with fieldset's top border edge center, add equivalent extra space reservation at content start (spec: the legend is laid out as if it were the first in-flow child but positioned straddling the border; its height contributes to fieldset content padding-top); (3) paint — suppress the fieldset's top border segment behind the legend's border-box width (spec: border rendered with a gap; alternatively paint legend background opaque — spec-correct is the gap). Identification plumbing: use the LayoutDom accessor pattern (htmlimageelement.rs:1647 canonical — implement on LayoutDom<'dom, HTMLFieldSetElement>/HTMLLegendElement with unsafe_get). Spec ref: html/rendering section 'the fieldset and legend elements' — has exact positioning algorithm including min-inline sizing interactions (legend shrink-wrap contributes to fieldset intrinsic width). Realistic cost: M (multi-session) — layout surgery plus paint gap plus intrinsic sizing.
+||||||| parent of b950e25dcd3 (mem: media cross-doc wedge dissected — misclassified not-responding)
+
+## sec1zt274 — media cross-document-move wedge dissected (2026-11-27)
+pause-move-to-other-document.html reproduces solo (25s). gdb of wedged state: aqueue:src +
+vqueue:src threads blocked in gst_base_sink_wait_preroll FOREVER; appsrc0/multiqueue/queue2
+blocked pushing into full queues; script threads idle (input path healthy). Mechanism: when
+a playing video element is adopted into another document, the gstreamer pipeline ends in a
+state where sinks never preroll — same family as the YouTube boot/seek wedge (pad
+activation + pipeline state-cycle teardown/recreate). Playback never resumes, test never
+completes. HARNESS MISCLASSIFICATION CHAIN: servo's webdriver has no script timeout, so the
+never-resolving ExecuteAsyncScript hangs the transport → wptrunner declares "Browser not
+responding" → CRASH. These media "crashes" are neither process crashes nor browser wedges —
+they are single-feature media-playback failures misclassified. Implication: the residual
+crash count in the re-baseline overstates engine instability; a webdriver script-timeout
+implementation would reclassify them as ordinary TIMEOUTs. TWO actionable items:
+(1) engine: player teardown/recreate on document adoption must not wedge the pipeline —
+check whether htmlmediaelement adoption path triggers player recreation at all, and whether
+the generation-serialized reset logic (1883f8d3435) covers it; (2) webdriver: implement the
+script timeout so never-resolving async scripts return timeout instead of hanging the transport.
+Full bt at /tmp/media-bt.txt.
