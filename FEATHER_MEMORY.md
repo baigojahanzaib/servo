@@ -5830,3 +5830,19 @@ FINAL VERDICTS:
    system-heap live objects (fontconfig/freetype/mesa caches are prime suspects; needs
    glibc-side profiling or library-by-library eviction audit). Plateau ~250-500MB depending
    on content weight — matters for the <150MB idle budget but is NOT beta-blocking.
+
+## sec1zt288 — object-element layout crash family FIXED: borrow_for_layout (2026-11-27)
+c99f789949c pushed. Mechanism: layout replaced-contents traversal reads object data-url
+cache via LayoutDom; the DomRefCell.borrow() asserts script state but layout swaps thread
+state to LAYOUT (ThreadStateRestorer, shared/layout/lib.rs:1074) — debug panic on ANY page
+with <object data>. Root-caused via RUST_BACKTRACE=1 direct repro (/tmp/crashtest/t4.html:
+embed+form+img+object named elements — repro harness). Fixed with borrow_for_layout — the
+established correct pattern already in tree (script_bindings/cell.rs:50). Verified:
+name-attribute-elements 3/3 pass (was CRASH), charset/in-object PASS (was CRASH). This was
+the dominant crash cluster in the post-input-fix baseline — the browsing-context/charset/
+html5lib "crash" lines were mostly object-embedding test pages. Debug-only assert but a real
+thread-contract violation (release builds silently raced). COOP-reporting crashes collapsed
+into ordinary feature gaps post-fix. SWEEP RESULT: HTMLImageElement uses AtomicRefCell
+(thread-safe, correct); no other embedded-content LayoutDom uses raw DomRefCell.borrow().
+REPRO LESSON: RUST_BACKTRACE=1 + direct servoshell repro gives full symbolized backtraces —
+far faster than gdb for panic-class bugs since the panic hook catches before gdb stops.
