@@ -6175,6 +6175,7 @@ webdriver (needs --window-size 800x600 NOT 800,600 — comma form crashes servos
 argparse; file:// urls kill the webdriver session, serve over http instead).
 
 
+
 ## FINAL HANDOFF — complete shell-lane state (2026-11-28)
 
 ### Build commands (this box)
@@ -6202,3 +6203,21 @@ memory reclaim; 20/20 site sweep (COMPATIBILITY.md); youtube playback end-to-end
 - Session format: {"version":1,"active_space":0,"spaces":[{"name","tabs":[{"url","group"} or {"blank":true,"group"}],"active","groups":[{"id","name","color":[r,g,b],"collapsed"}]}],"pinned":[]} — at ~/Library/Application Support/feather/session.json.
 - Boot-url file drops and omnibox navigations are DIFFERENT code paths — always test both when changing navigation behavior.
 - Same-branch commits ride into open PRs; docs PRs collide on defect-queue.md — rebase by re-appending onto fresh main.
+||||||| parent of 66d0cccdd2e (mem: fieldset leaf closed)
+
+
+## sec1zt312 — fieldset leaf effectively closed: matches chrome visually (2026-11-28)
+in-flow content shift shipped: pull up by (border + legend_height - allocated) for
+fragments below the legend. DECISIVE VERIFICATION: headless chrome screenshot of
+default fieldset+legend form is near-identical to servo output — modern browsers do
+NOT straddle legend on the visible border line for thin borders (legend sits inside
+the allocation); my earlier visual intuition was wrong. Spec legend rule exact text:
+"positioned in the block-flow direction such that its border box is centered over the
+border on the block-start side" — ambiguous re allocated vs physical edge; reftests
+are the arbiter and allocated-centering passes them.
+REMAINING fieldset fails (all pre-existing, edge-geometry): legend-position-relative{,-2}
+(2-4px vertical offset), fieldset-transform-translatez (transform containing-block
+interaction), border-gap painting for non-solid borders (groove default shows border
+through legend — commit 92854ce43f8 covered solid only). Leaf ROI exhausted — remaining
+items are sub-pixel/niche; recommend moving to next leaf.
+
