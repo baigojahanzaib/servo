@@ -5722,3 +5722,21 @@ symptom: legend renders fully inside fieldset instead of straddling border -> FI
 
 ## memsec: fieldset border-gap paint suppression — paint path mapped, NOT implemented
 target: suppress fieldset top border behind legend inline span. PAINT PATH: display_list/mod.rs build_border (~line 2297) — single wr push_border NormalBorder item per fragment; fieldset detectable via self.fragment.base.flags IS_FIELDSET; legend geometry available at paint time by iterating self.fragment children for IS_LEGEND fragment rect. BLOCKER ANALYSIS: webrender NormalBorder cannot express partial side segments — correct impl requires custom-painting top border as two segments (trivial for solid style, hard for groove/double/dotted 3D styles; UA default is groove!). design options: (a) segment-split only solid tops, leave others (most authored fieldsets solid); (b) approximate groove top as solid color segments — visual regression on default styling but removes line-through-text; (c) proper: clip-path per segment in wr. entry point confirmed: build_border early-branch before push_border when IS_FIELDSET && top border width nonzero && legend child present.
+
+## sec1zt285 — memory retention DECOMPOSED: per-tab infra dominates, SM heap ruled out (2026-11-27)
+CONTROLLED A/B (harness /tmp/memab.py: webdriver open 4 tabs, close, measure RSS):
+- Wikipedia/Linux (image-heavy): baseline 262MB, loaded 739, after-close 547 → **285MB retained**
+- example.com (text-only): baseline 262MB, loaded 407, after-close 384 → **122MB retained (~30MB/tab content-INDEPENDENT)**
+- both cases cycle2 flat = bounded saturation, reuse confirmed.
+DECOMPOSITION: retention = per-tab infrastructure (~30MB/tab, content-independent —
+pipeline/layout/webrender teardown survivors or jemalloc fragmentation across thread arenas)
+PLUS content-driven caches (~160MB for image-heavy pages). RULED OUT by measurement:
+(1) SpiderMonkey GC heap — shrinking-GC-on-close fix (9182287bf3d, pushed: GC broadcast on
+webview close + JSGC_MIN_EMPTY_CHUNK_COUNT=0) changed retention ZERO in A/B — but kept as
+correct hygiene for JS-heavy pages; (2) jemalloc dirty pages — purge_arenas already wired
+to pipeline exit (script_thread.rs ~3367); (3) image cache entries — clear() already runs
+on pipeline close (image_cache.rs ~1720). NEXT LEVER (uninvestigated): WHAT survives per
+pipeline teardown — suspects: layout thread pool stacks/arenas, webrender per-pipeline
+state in the painter, font caches (global, no eviction), stylo thread-local caches,
+HTTP cache. PROFILING NEEDED: heaptrack/massif or smaps diff before/after close — this is
+a dedicated profiling session's work, not greppable. Negative results mandatory-indexed here.
