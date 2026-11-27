@@ -4,7 +4,7 @@
 
 use std::cell::{Cell, RefCell};
 use std::ops::Range;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex, Once};
 use std::time;
@@ -179,6 +179,16 @@ struct PlayerInner {
     /// reports time-since-seek instead of presentation time. The seek target is
     /// the offset that must be added back. Zero before the first seek.
     mse_position_offset: Cell<f64>,
+    /// Serializes MSE seek reset+state-cycle workers: overlapping seeks must
+    /// not interleave pipeline state changes and appsrc recreation, or the
+    /// pipeline wedges mid-transition (clock never restarts — sec1zt220).
+    #[ignore_malloc_size_of = "External Type"]
+    mse_seek_serial: Arc<Mutex<()>>,
+    /// Generation counter for MSE seeks: a worker that finds itself superseded
+    /// while waiting on the serial lock abandons its cycle — the newer seek's
+    /// worker performs the only reset+cycle that matters.
+    #[ignore_malloc_size_of = "External Type"]
+    mse_seek_gen: Arc<AtomicU64>,
 }
 
 impl PlayerInner {
@@ -319,40 +329,44 @@ impl PlayerInner {
             // so the page's post-seek appends re-sequence the stream in-band —
             // the harness-validated design in FEATHER_MEMORY §1q/§1t.
             if let Some(PlayerSource::Mse(ref source)) = self.source {
-                // Running time at the seek moment: pipeline clock minus base
-                // time. Injected as the resequenced segment's base so post-seek
-                // media timestamps land in the live clock domain.
-                let base_ns = (|| {
-                    let pipeline = self.player.pipeline();
-                    let clock = pipeline.clock()?;
-                    let now = clock.time().nseconds();
-                    let base = pipeline.base_time().map(|b| b.nseconds()).unwrap_or(0);
-                    Some(now.saturating_sub(base))
-                })()
-                .unwrap_or(0);
-                eprintln!("[mse] seek target={} running_time_ns={}", time, base_ns);
                 // Pipeline-reset design: decodebin3's stream reselection kills
                 // re-fed streams in a live pipeline (sec1zt84 — zero frames at
                 // sink, injection iteration exhausted). Cycling the playbin to
                 // Ready and back makes ALL downstream state fresh — decodebin3
                 // re-plumbs the resequenced stream exactly like initial
-                // playback, the one path proven to work. The injected segment
-                // base is 0: the pipeline clock domain restarts with the reset.
+                // playback, the one path proven to work.
+                //
+                // The reset AND the state cycle run as one serialized unit on a
+                // worker thread (sec1zt220): overlapping seeks — which real
+                // sites fire routinely (resume-at-position, quality switches,
+                // ad transitions) — must never interleave appsrc recreation
+                // with another seek's in-flight state changes, or the pipeline
+                // wedges mid-transition and the clock never restarts. The
+                // worker must not run on the caller thread either:
+                // set_state(Ready->Playing) can block indefinitely joining
+                // streaming threads, and the caller is the script thread.
+                // A worker that finds a newer seek queued while it waited for
+                // the serial lock abandons its cycle: only the newest target
+                // matters, and its worker performs the reset+cycle.
+                let source = source.clone();
                 let pipeline = self.player.pipeline();
                 let restore = if self.paused.get() {
                     gstreamer::State::Paused
                 } else {
                     gstreamer::State::Playing
                 };
-                source.seek_reset(time, 0);
+                let serial = self.mse_seek_serial.clone();
+                let gen_counter = self.mse_seek_gen.clone();
+                let my_gen = gen_counter.fetch_add(1, Ordering::SeqCst) + 1;
+                eprintln!("[mse] seek target={} gen={}", time, my_gen);
                 if std::env::var("SERVO_MSE_NORESET").is_err() {
-                    // The state cycle MUST NOT run on the caller thread:
-                    // set_state(Ready->Playing) can block indefinitely joining
-                    // streaming threads in this pipeline, and the caller is the
-                    // shell UI thread in feather's embedding — a synchronous
-                    // cycle deadlocks the whole browser (verified live: watchdog
-                    // stall right after seek_reset, restore never returns).
                     std::thread::spawn(move || {
+                        let _guard = serial.lock().unwrap();
+                        if gen_counter.load(Ordering::SeqCst) != my_gen {
+                            eprintln!("[mse] seek gen={} superseded, skipping cycle", my_gen);
+                            return;
+                        }
+                        source.seek_reset(time, 0);
                         let r = pipeline.set_state(gstreamer::State::Ready);
                         eprintln!("[mse] seek pipeline->ready {:?}", r);
                         let r = pipeline.set_state(restore);
@@ -862,6 +876,8 @@ impl GStreamerPlayer {
             enough_data: Arc::new(AtomicBool::new(false)),
             seek_lock: None,
             mse_position_offset: Cell::new(0.0),
+            mse_seek_serial: Arc::new(Mutex::new(())),
+            mse_seek_gen: Arc::new(AtomicU64::new(0)),
         })));
 
         let inner = self.inner.borrow();
@@ -876,7 +892,16 @@ impl GStreamerPlayer {
                 // paused flag stays false forever and a later replay never forwards
                 // a fresh play() into the pipeline, freezing replay after EOS.
                 if let Some(inner_clone) = weak_inner.upgrade() {
-                    inner_clone.lock().unwrap().paused.set(true);
+                    // Never block on the PlayerInner mutex from a gstreamer
+                    // callback: the control path holds it across blocking gst
+                    // calls, so blocking here completes an ABBA deadlock cycle
+                    // (script thread wedged in gst_pad_set_active, callbacks
+                    // wedged on this mutex — verified via gdb on a live wedge).
+                    // State writes skipped under contention converge on the
+                    // next emission; a wedged browser does not recover at all.
+                    if let Some(inner) = inner_clone.try_lock().ok() {
+                        inner.paused.set(true);
+                    }
                 }
                 let _ = notify!(observer, PlayerEvent::EndOfStream);
             });
@@ -898,7 +923,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                inner_clone.lock().unwrap().play_state = play_state;
+                if let Ok(mut inner) = inner_clone.try_lock() {
+                    inner.play_state = play_state;
+                }
 
                 let state = match play_state {
                     gstreamer_play::PlayState::Buffering => Some(PlaybackState::Buffering),
@@ -925,7 +952,7 @@ impl GStreamerPlayer {
                     // presentation time (zero before the first seek — free).
                     let offset = weak_inner_pos
                         .upgrade()
-                        .map(|inner| inner.lock().unwrap().mse_position_offset.get())
+                        .and_then(|inner| inner.try_lock().ok().map(|i| i.mse_position_offset.get()))
                         .unwrap_or(0.0);
                     let _ = notify!(observer, PlayerEvent::PositionChanged(seconds + offset));
                 }
@@ -952,7 +979,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                let mut inner = inner_clone.lock().unwrap();
+                let Ok(mut inner) = inner_clone.try_lock() else {
+                    return;
+                };
 
                 if inner.last_metadata.as_ref() == Some(&metadata) {
                     return;
@@ -1025,7 +1054,9 @@ impl GStreamerPlayer {
                 let Some(inner_clone) = weak_inner.upgrade() else {
                     return;
                 };
-                let mut inner = inner_clone.lock().unwrap();
+                let Ok(mut inner) = inner_clone.try_lock() else {
+                    return;
+                };
                 if let Some(ref mut metadata) = inner.last_metadata
                     && metadata.duration != duration
                 {
@@ -1155,10 +1186,12 @@ impl GStreamerPlayer {
                                         servosrc_.fire_pending_eos();
                                     }
                                     enough_data_.store(false, Ordering::Relaxed);
+                                    eprintln!("[flowctl] need-data fired");
                                     let _ = notify!(observer_, PlayerEvent::NeedData);
                                 })
                                 .enough_data(move |_| {
                                     enough_data__.store(true, Ordering::Relaxed);
+                                    eprintln!("[flowctl] enough-data fired");
                                     let _ = notify!(observer__, PlayerEvent::EnoughData);
                                 })
                                 .seek_data(move |_, offset| {

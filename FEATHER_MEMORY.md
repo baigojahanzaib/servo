@@ -4529,3 +4529,1255 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 - Discriminating inference: the wedge NEVER recovers (7+min observation) — overload/saturation eventually recovers; this is a circular-wait DEADLOCK. Candidate cycle: layout thread holds font-cache lock while inserting 150 new font faces -> compositor blocked on layout for the frame -> UI event pump blocked on compositor present -> network completion callbacks starve -> layout waits for font-load completion notification. Google-specific because only google properties trigger mass simultaneous distinct-font insertion intersecting first-content layout + shader-variant compilation (the ps_quad_gradient compile at the exact wedge moment is suspicious — software GL compiles shaders synchronously).
 - Why navigation-path gmail survives: by then shaders are warm/cached from the first page and font cache partially populated; the perfect-storm intersection only exists at cold first load.
 - Engine lane next step: sample the wedged threads' stacks (the repro is trivial and near-deterministic: boot FEATHER_START_URL=https://mail.google.com 3x). Look specifically for: font-cache mutex hold-and-wait, webrender shader-compile blocking the composite path, and whether network-thread completion delivery is required by the blocked layout thread.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## sec1zt185 — :has() enabled + verified; github wedge is a SEPARATE defect
+:has() parse gate (layout.css.has-selector.enabled) had no servo pref field — permanently off, so valid spec selectors (:not(:has(...)) — github.com Primer uses hundreds) failed parsing and entire rules dropped. Wired the field (70907f1e6b2) + shell enablement (feather#297). Verified live per behavior-verification rule: basic :has(>) matches, :not(:has()) negation correct both directions, AND dynamic invalidation works (post-load child injection restyles parent — the hard part). Zero :has errors remain on github. DIAGNOSTIC TECHNIQUE indexed: perf/gdb on this VM need `sudo sysctl kernel.perf_event_paranoid=-1 kernel.yama.ptrace_scope=0` (passwordless sudo works). Thread heat triage: `for t in /proc/PID/task/*; cat $t/comm + stat utime` identifies spinning threads fast. GITHUB WEDGE evidence chain: script thread spinning in JIT-compiled JS (EnterJit + anon:js-executable-memory frames in perf), Style threads simultaneously hot in url Vec PartialEq (restyle storm), never settles (230%+ CPU minutes after load), devtools evals all timeout incl 1+1, but browser process alive and SSR header renders. NOT caused by the :has gap (retested post-fix — still wedges). Hypothesis class: JS-driven mutation/restyle feedback loop (mutation observer cascade or web-components attribute reflection loop). Symptom: modern JS-framework site renders SSR shell then wedges with high CPU, devtools unresponsive → check: thread heat pattern Script+Style both hot = mutation/restyle storm; Script-only hot = pure JS loop.
+
+## sec1zt186 — CSS property-coverage census method + break-word fix
+"Unsupported property declaration" log spam on real sites is mostly NOT missing properties. Live probe method: set values via el.style[prop]=val and check reflect — most suspect properties (resize/contain/scrollbar-width/text-underline-position/scroll-margin-top/forced-color-adjust) all WORK. Real gaps on github.com: (1) word-break:break-word — the legacy value EVERY major site uses; gecko has full implementation incl the overflow-wrap:anywhere coupling, gated behind layout.css.word-break.break-word.enabled parse-condition which defaults true for gecko but unwired for servo — fixed same pattern as :has. (2) text-wrap:balance/pretty genuinely absent (newer spec, text-wrap-mode/style split). (3) -moz-osx-font-smoothing + -moz-column-gap — harmless vendor prefixes. (4) @custom-media — draft spec, needs preprocessor feature. LESSON: never trust log-volume analysis for property gaps — probe reflect-test first; vendor prefixes and value-level gaps dominate. ALSO indexed: vendored stylo longhands.toml has 436 property sections; gecko-only engine="gecko" entries are candidates for the same ungating treatment (e.g. resize was engine=gecko but WORKS in servo — engine field is not authoritative, always live-probe). WEDGE INVESTIGATION negative results: repro with 400 custom props + 3000 elements + rAF-layout-read loop does NOT melt down (14fps, 119% cpu, converges); infinite rAF does not starve devtools evals; the CSS parse error spam is one-time-per-parse not looping. The github wedge remains unexplained — next discriminators: shadow-dom-heavy repro, web-components attribute reflection, or bisect by github subpage.
+
+## sec1zt187 — github wedge MECHANISM CONFIRMED: animation-driven restyle storm
+Repro chain (all negative results matter): custom-props+layout-read loop converges fine; infinite rAF doesn't starve evals; webgl2-off eliminates the DetachShader error spam but wedge persists (webgl exonerated); repo pages don't wedge at all — only the marketing homepage. MINIMAL REPRO that saturates CPU exactly like github: 400 custom properties on :root + 3000 elements + an infinite CSS opacity animation on a wrapper div — 255% CPU continuous with ZERO JS. Mechanism: animating ANY property on an element high in the tree causes the entire descendant subtree to restyle every animation frame; the cost center is custom-properties map comparison/dedup (can_deduplicate_values, Vec/url PartialEq, zip iteration dominate both Script and Style thread profiles). Opacity doesn't inherit — descendants should be completely unaffected — so the recascade is spurious. Prime suspect: animation tick produces a fresh custom-properties Arc identity for the animated element even when custom props are unchanged, so inherited-map identity comparison fails for every child → full recascade per frame. Gecko dedups these maps precisely so unchanged maps keep identity; either servo's dedup is not running or the restyle propagation ignores value-equality. Symptom: site with infinite CSS animations pins all cores and wedges devtools → check: repro with big DOM + animation on wrapper, profile for custom_properties_map comparisons. NEXT: examine how servo animation ticks dirty/restyle — components/layout animation tick path vs stylo invalidation.
+
+## matrix-reds-hunt-COMPLETE (2026-11-27, mac lane)
+Full re-verification of every catalogued matrix red on current feather-engine — THE HUNT IS EXHAUSTED:
+- designmode-property: FIXED (other lane, live-verified roundtrip) — editing 6/6
+- cookiestore-roundtrip: PASSES through harness (platform-apis 10/10) — earlier red stale
+- transforms transitions: 5/5 — earlier reds timing flakes
+- webgl-context/webgl2: both live-verified TRUE — stale/environmental
+- range-geometry: CLOSED architectural upstream gap (text nodes yield zero fragments). Nuance: element-node ranges measure correctly, only text-node ranges 0x0.
+- webrtc: graceful degradation by design
+REMAINING TRACTABLE MATRIX WORK: none — all classes green except documented architectural items. Next engine-scale candidates: inline glyph progression (vertical text), text-node fragment architecture, subgrid phases 2-3.
+
+## sec1zt188 — restyle-storm investigation state + repro suite + next steps
+STATUS: mechanism confirmed but root-cause fix NOT started — full handoff. CONFIRMED FACTS: (1) animating ANY element (even a leaf span) pins 250% CPU on big-DOM pages and 151% even on a 10-element page with 400 :root custom properties; (2) big-DOM pages with custom props but ZERO animation/JS burn 100%+ for many seconds after load before partially settling (30% at +14s) — convergence is slow even when it happens; (3) cost center in every profile: custom-properties map comparison — can_deduplicate_values, Vec/url PartialEq, zip iteration, servo_arc custom props Arc operations — on BOTH Script#1 and StyleThreads; (4) the per-frame/per-element cost scales with custom-property COUNT, and total cost scales with element count even when animating a leaf — meaning restyle work is NOT scoped to the dirty element. UNRESOLVED QUESTIONS (the actual fix targets): (a) does servo ever do incremental/scoped restyle, or does any NodeDamage::Style trigger full-document cascade traversal? mark_animating_nodes_as_dirty (animation_manager.rs) dirties with NodeDamage::Style every tick for every animating node — if restyle traversal is global, every animation frame is a full-document recascade — matches all evidence; (b) why don't unchanged custom-props maps dedupe/short-circuit — gecko relies on map dedup so unchanged inherited props keep Arc identity; check whether servo's cascade rebuilds maps from scratch per restyle. REPRO SUITE: committed at feather tests/scenarios/pages/anim-*.html + noanim-*.html on branch devin/*-restyle-repros (PR open) — serve via localhost:8411 pattern. MEASUREMENT METHOD: ps pcpu of feather-ui + per-thread heat via /proc/PID/task/*/comm+stat (no sudo needed); perf needs sysctl overrides (sec1zt185). IMPORTANT CONFOUND: this VM is GPU-less so compositing is software — separate rasterization cost from style cost in profiles (style cost proved dominant here). PROJECT IMPACT: this is THE idle-CPU budget killer (idle ~0% goal) — every animated site burns cores continuously; prioritise over feature work.
+
+## sec1zt189 — WPT harness setup + VM gotchas + compositing confound
+WPT background run infrastructure: servo builds STANDALONE fine via `.venv/bin/python mach build --dev` (the system-python mach fails on missing toml — must use the venv python; freetype2 IS installed despite an old memory note — standalone cargo check failure was a stale-env artifact). CRITICAL: build MUST use CARGO_PROFILE_DEV_DEBUG=0 — full debuginfo balloons target to 30-60G+ and the 124G disk fills mid-build (feather/shell-new/target alone is 82G; when full, `rm -rf shell-new/target/debug/incremental` frees 32G without losing dep caches). Driver: ~/wpt-run.sh waits for target/debug/servoshell (NOTE: mach build produces servoshell NOT servo — the driver binary-check must match or it false-positive declares BUILD DIED) then runs priority dirs (css/html css/cssom html websockets fetch workers) writing mozlog to /tmp/wpt-results-DATE; report via docs/wiki/wpt/wpt-report.py (feather#301). Status in /tmp/wpt-status.txt. NEXT-SESSION RESUME: check /tmp/wpt-status.txt; if runs done, generate report `python3 docs/wiki/wpt/wpt-report.py /tmp/wpt-results-DATE > docs/wiki/wpt/wpt-DATE.md` and PR it. RESTYLE-STORM CONFOUND ADDENDUM (sec1zt188): the 150% CPU baseline even on tiny-DOM animation may be largely SOFTWARE COMPOSITING (GPU-less VM repaints full window per frame at 60fps) — the style-thread custom-props cost is real and proven but the constant baseline is partly a VM artifact; on real-GPU systems wedge severity may be lower. Separate the two when fixing: profile for raster/compositing threads vs style threads. Symptom: any WPT/perf measurement on this VM → remember software rendering inflates all animation/repaint costs.
+
+## sec1zt190 — restyle IS scoped (architecture correction) — storm cost is per-frame pipeline not global cascade
+Element.restyle() registers the element in the document's pending_restyles map with RestyleHint::RESTYLE_SELF — servo HAS scoped restyle infrastructure, so the storm is NOT a full-document recascade. Revised theory of cost composition on the github-class repro: (1) constant per-frame cost: the animation pump drives full update_the_rendering → reflow + SOFTWARE compositing of the whole window per frame (GPU-less VM artifact — significant constant baseline even for tiny DOMs, explains the 151% small-DOM floor); (2) DOM-scaling cost: per-element recascade cost scales with custom-property count — each restyled element inherits/recompares the parent's custom-props map (hundreds of entries on token-heavy sites), and layout/reflow of large trees. The custom-props comparison hotness in profiles is real but may be symptom not cause: it runs wherever cascade runs. NEXT DISCRIMINATORS when fixing: (a) measure pure-compositing floor — animate a trivial transform on an empty page: whatever CPU remains is the software-rendering baseline that does NOT affect GPU users; (b) then the style-side fix targets are: reduce per-element custom-props inheritance cost (dedup effectiveness — check whether unchanged parent maps actually share Arc identity across animation ticks; if the animated element's restyle rebuilds its inherited map fresh each tick the dedup never fires) and verify animation dirtying skips non-animatable-affecting work. NOTE the FIXME at element.rs restyle(): RESTYLE_SELF is inserted unconditionally for all damage types "preserving existing behavior" — upstream-suspect.
+
+## sec1zt191 — DECISIVE: animation pipeline constant floor ~150-160% CPU even on EMPTY page
+Repro: single 50px div animating opacity on an otherwise empty page burns 159% CPU continuously (vs 151% for the same animation on a 1400-node DOM, 255% on the big github-style DOM). PROOF: the per-frame cost is dominated by a CONSTANT pipeline cost — every animation frame unconditionally re-runs layout + paint + software-composite of the full window, regardless of what actually changed. DOM content is a secondary scaling term (~+100% for big DOM). THE FIX TARGET for the idle-CPU budget: compositor-only animations (opacity/transform) must skip layout AND paint entirely — the compositor can animate them from cached layer textures; and paint should be damage-region based. Even on real-GPU systems the unconditional layout+paint re-run per frame is wrong. Ladybird comparison reference: how does their AnimationDriver determine whether a frame needs layout at all? KEY QUESTION FOR THE FIX: does servo track whether the animated property is compositor-only? START: components/compositing + style/animation keyframe evaluation path — the animated values are computed in style each tick and pushed through the normal style pipeline (that's WHY restyle happens per tick at all). Upstream-grade fix is architectural: split compositor-animation sampling out of the style flush. INTERIM cheaper win: skip LAYOUT when restyle damage is empty (opacity doesn't dirty layout — check whether LayoutDamage propagates anyway). Symptom: any CSS animation burns cores permanently regardless of page size → check update_the_rendering path, animation damage propagation, compositor-layer animation support.
+
+## sec1zt192 — REVERSAL: animation cost is ~93% llvmpipe (VM artifact), engine only ~10% — wedge priority DOWNGRADED pending real-GPU verification
+Rate measurement on the empty-page opacity-animation repro: llvmpipe threads 153% CPU total, servo threads only ~10% (Script#1 7%, WRRenderBackend 3%, everything else negligible). The 'constant pipeline floor' from sec1zt191 is Mesa SOFTWARE GL RASTERIZATION — a GPU-less-VM artifact, not servo layout/style. On real-GPU machines compositing opacity/transform animations is nearly free. REVISED UNDERSTANDING of the github wedge: severity on this VM was dominated by llvmpipe rasterizing full-window frames continuously; the script-thread-unresponsive aspect is consistent with CPU starvation (7 llvmpipe threads saturating cores), NOT necessarily a servo defect. CONSEQUENCES: (1) the restyle-storm is NOT confirmed as the idle-CPU budget killer on real hardware — needs re-verification on a GPU machine (Mac/Windows lanes) before architectural surgery; the custom-props cost is real but small-percent. (2) PERF-MEASUREMENT RULE on this VM: always split llvmpipe (Mesa software raster) from engine threads — `for t in /proc/PID/task/*; cat comm + utime` sampled twice 5s apart, diff/5 = %cpu. Any animation/repaint measurement dominated by llvmpipe says nothing about real hardware. (3) idle-CPU budget (~0% when nothing animates) is unaffected by this — no-animation idle already measures ~0. Symptom: high CPU with animation on Linux VM → check llvmpipe thread heat FIRST before attributing to engine. Symptom: script thread unresponsive + wedged page → consider llvmpipe-induced starvation before assuming engine defect.
+
+## sec1zt193 — HANDOFF 2026-11-27 ~09:45 UTC: WPT running; next work = Reddit boot-death root-cause
+STATE: (1) WPT background run LIVE — driver pid-filed in /tmp/wpt-driver.log, results streaming into /tmp/wpt-results-2026-11-27/ (css_html first, then css/cssom html websockets fetch workers). FIRST-RUN manifest update makes the first dir slow. WHEN COMPLETE: `python3 ~/feather/docs/wiki/wpt/wpt-report.py /tmp/wpt-results-2026-11-27 > ~/feather/docs/wiki/wpt/wpt-2026-11-27.md` on a fresh branch, PR it. NOTE the report.py in the feather repo — driver fix (servoshell binary name) is in ~/wpt-run.sh but NOT yet synced into docs/wiki/wpt/wpt-run.sh (copy when PRing the report). (2) Restyle-storm DOWNGRADED per sec1zt192 — needs real-GPU verification before architectural work; do NOT invest in it from this VM beyond what llvmpipe-subtracted measurement supports. (3) NEXT BACKLOG ITEM: Reddit boot-death root-cause — reddit.com produces 6KB DOM with empty text, framework boot death suspected (same class as the YouTube serviceWorker.ready win — check console errors FIRST, they're the fastest discriminator). Method: launch feather-ui reddit.com with FEATHER_DEVTOOLS=9222, devtools Runtime.consoleAPICalled / exceptionThrown events, identify the exact throwing spec surface, implement per spec. (4) Open PRs: none of mine pending at this writing. (5) coordinator knows: llvmpipe reversal reported in-flight.
+
+## sec1zt194 — REDDIT BOOT-DEATH VERDICT: server-side anti-bot gate, NOT an engine defect
+Full chain verified: (1) reddit.com serves a ~8KB anti-bot interstitial shell server-side to feather's UA — curl with the same UA receives byte-equivalent content, so nothing engine-side causes the service. (2) The gate's challenge JS EXECUTES CORRECTLY in feather — the hidden 'solution' input gets populated with the doubled challenge string (async/await + DOMContentLoaded + DOM APIs all fine). (3) form.requestSubmit() navigation is fully functional — controlled repro: a DOMContentLoaded auto-submitting form navigates with correct query string (?solution=x observed server-side). CONCLUSION: the engine correctly performs every step of the gate; the interstitial persists because reddit's gate re-serves itself (cookie-based allowlisting that never passes for this client, or the trivial doubled-string challenge is a placeholder for real PoW that varies). Whether the gate passes is bot-evasion territory, NOT engine correctness — closing this as not-a-bug. If the coordinator wants reddit to render, the lever is client-identity/bot-signal work (UA/cookie/jar behavior across the challenge redirect — verify whether the Set-Cookie from the gate response is stored and replayed), not spec-gap hunting. Symptom: site serves tiny shell with single inline script + form → check for anti-bot interstitial (reddit pattern: input[name=solution] + requestSubmit in DOMContentLoaded) before assuming boot-death. Method note: controlled localhost repro of form-submit beats devtools eval across cross-origin navigations (actors detach). Note: the 8411 test server died at some point — geotest repros now also served from a fresh server when needed; don't assume localhost:8411 is alive.
+
+## sec1zt195 — handoff addendum: wpt supplement chained + reddit closed
+WPT: main driver running html/websockets/fetch/workers; css supplement script ~/wpt-css-supplement.sh chained behind it (14 high-value css spec dirs: flexbox grid cascade values sizing position transforms animations transitions color fonts box display contain conditional). NOTE css/html was a NONEXISTENT path — skip. WHEN "ALL RUNS COMPLETE" in /tmp/wpt-status.txt: generate report with ~/feather/docs/wiki/wpt/wpt-report.py, sync the servoshell-binary fix + supplement list into docs/wiki/wpt/wpt-run.sh, single PR with report+sync. Reddit boot-death: CLOSED not-a-bug (sec1zt194) — anti-bot gate, engine executes it correctly. Backlog state after this: captureStream real impl, text-wrap, @custom-media, crash-stage-1, WebAuthn/Push — all week-ish items; no small verified item remains open. CONSIDER: with restyle-storm downgraded (llvmpipe artifact) and reddit closed, best next value = WPT-driven spec fixing (the run results will hand a prioritized defect list — exactly the user's spec-driven philosophy).
+
+## sec1zt196 — WPT preliminary signal + container-rule crash queue item
+PRELIM (partial run): css/cssom 98.7% pass (301/305!), html ~85% — servo's core-spec conformance is strong; the compat wedge is elsewhere (bot-detection, experimental features). CRASH QUEUE ITEM: css/cssom/CSSContainerRule.tentative.html CRASHES servoshell under the WPT harness (with --enable-experimental-web-platform-features). Does NOT crash feather bare (feather doesn't enable that flag / test needs testharness). REPRO properly: after the background run finishes, `./mach test-wpt tests/wpt/tests/css/cssom/CSSContainerRule.tentative.html` and read the panic backtrace — likely a container-rule CSSOM implementation gap hitting unwrap/todo. Upstream-candidate crash fix — the class the user prioritizes (crashes must never kill the browser). pageswap/pagereveal ERRORs in html/browsers/history-traversal are speculative-navigation features (prerender/pageswap) — expected-missing, low priority.
+
+## sec1zt197 — CSSContainerRule crash FIXED (beaaca6cc81) + compile-verification path correction
+FIX: cssconditionrule.rs ConditionText() was missing the CSSContainerRule downcast arm — unreachable!() panic on any container-rule conditionText read (WPT css/cssom/CSSContainerRule.tentative.html crasher). Container rule already had get_condition_text(); one arm wires it. Compile-verified, pushed to feather-engine. LIVE VERIFICATION PENDING: rebuild servoshell + rerun the repro page AFTER the WPT background run finishes (don't rebuild mid-run — invalidates measurements; the repro was confirmed crashing pre-fix via `servoshell --headless --enable-experimental-web-platform-features file:///tmp/cqtest.html` — rerunning that should print CQ-OK in title). COMPILE-CHECK GOTCHA: `cargo check -p servo-script` FAILS on freetype2 version (system 24.1.18 < required 24.3.18) because the package-only check doesn't enable the `bundled_freetype` feature — must run workspace-level `cargo check` (no -p) which mirrors mach's feature unification; ~2min incremental. Symptom: insertRule/reading CSSOM on @container rules crashed → fixed; pattern: when a CSSRule subtype is added, audit EVERY downcast chain in cssrule.rs/cssconditionrule.rs/cssgroupingrule.rs for missing arms — unreachable!() is the crash signature.
+
+## sec1zt198 — cssrule unreachable!() family audit: only Container confirmed live-crasher
+Audit of the CSSOM downcast chains (pattern from sec1zt197): cssrule.rs creation path has `StyleCssRule::Page(_) => unreachable!()`, `CounterStyle(_) => unimplemented!()`, `Document(_) => unimplemented!()` — HOWEVER @page+@counter-style repro did NOT crash servoshell (no panic in log): stylo apparently never materializes those variants into the rule list in servo's parse configuration (paged-media rules dropped). So they're latent, not live — only fix if a real repro surfaces. The Container arm WAS live because container rules parse into the list under --enable-experimental-web-platform-features. LESSON: unreachable!() arms in cssrule creation are only crash-reachable if stylo's parser actually emits the variant — check parser emission before treating as live defect. cssrule.rs:90 chain also lacks Scope/StartingStyle/Margin/PositionTry/ViewTransition arms — same latent class; if the WPT css/ css-scoping/css-cascade results show CRASH entries, these are the first suspects.
+
+## sec1zt199 — P0 REDIRECT 11:47 UTC: gmail boot freeze + youtube seek-kill regression (DROP queue)
+Coordinator P0, outranks everything: (1) GMAIL BOOT FREEZE — gmail boot permanently wedges UI thread 7+min, Windows lane has sharp characterization allegedly in FEATHER_MEMORY (NOT FOUND by grep gmail/freeze/batch — possibly not yet pushed or different wording; reproducing directly instead). Note: pre-batch-6 sweep had gmail rendering fully — so likely a batch-6-window regression. (2) YOUTUBE SEEK KILL — seeking backward (any seek?) kills playback permanently; REGRESSED — backward-seek fix was verified round-10 at commit a4922916078 (position-offset). Bisect window = commits after a4922916078; media-tree commits since then: only e0e8d13e60c (webrtc — shouldn't affect playback) — so suspect NON-media-path commits in the window (script/dom/media, constellation, servo.rs, or the shell side batch-6 PRs). STATE: WPT background run STILL RUNNING (html dir, /tmp/wpt-results-2026-11-27, supplement chained after — do not kill; it doesn't conflict with feather-ui repro testing). Container-rule fix live-verification still pending (needs servoshell rebuild — lower priority now). feather-engine remote is INTACT at 75d490be7 (verified — an earlier scare was a stale-ref artifact of mid-fetch reading). REPRO PLAN: (a) gmail: launch feather-ui gmail.com, watch UI-thread responsiveness + devtools eval; if frozen on Linux too → bisect batch-6 window same as seek. (b) youtube: launch video, seek backward, check playback death — if reproducible, git bisect between a4922916078 (good) and tip. RESUME HERE.
+
+## sec1zt200 — gmail repro interim: all threads SLEEPING not spinning (14 feather-ui + 8 JS Helper all S state, cpu-rate 0%) — if frozen it is a BLOCK/deadlock signature not a spin; devtools eval empty (could be cross-origin detach since gmail redirects through accounts — cannot distinguish). NEXT EXACT STEP: visual screenshot check of the live instance (still running, pid file state in /tmp/gmail-repro.log) then if truly wedged: gdb thread backtrace of UI thread. YouTube bisect after.
+
+## sec1zt201 — gmail freeze does NOT repro at sign-in on Linux: screenshot shows accounts.google.com/v3/signin FULLY RENDERED (email field, buttons, all chrome), all threads sleeping, cpu-rate 0% = healthy idle. The freeze must be POST-LOGIN app boot (mail.google.com proper) — untestable without google credentials on this VM. Windows lane: confirm whether your freeze is pre or post login. If post-login only, Linux lane needs test creds to repro. NOTE the interesting bit: the sign-in page itself is heavy JS (accounts bootstrap) and renders fine — so the wedge class is specific to the gmail app bundle, not google-js generally.
+
+## sec1zt202 — yt seek repro: page boots fine, but jfKfPfyJRdk shows "Video unavailable — this live stream recording is not available" — BAD TEST VIDEO (livestream VOD). NEXT: use a regular VOD e.g. any non-live video; the harness /tmp/mseh or earlier seek-verification rounds used a specific working video — check sec1zt137-era entries for the exact url used in round-10 verification. THEN: play, seek backward, observe.
+
+## sec1zt203 — yt watch-page repro: devtools evals TIMEOUT even on document.title while ALL threads idle (no spin, no llvmpipe) — BLOCKED-IDLE wedge signature, same family shape as the gmail report. UNRESOLVED whether this is the seek regression manifestation at boot, a devtools-actor death artifact, or network stall. NEXT: (1) screenshot the live window to see what rendered; (2) if video visually playing despite dead devtools → devtools artifact not engine wedge; (3) gdb backtrace Script#1 if truly stuck; (4) only then seek-bisect. repro instance live pid was 1610196-era relaunched once — check pgrep feather-ui.
+
+## sec1zt204 — YT WATCH-PAGE BLANK-WEDGE REPRODUCED ON LINUX: dQw4w9WgXcQ watch page — tab title set ("Rick Astley - Never Gon...") but body NEVER PAINTED (blank white window), all threads idle, devtools evals timeout. CONTRAST: minutes earlier the lofi watch page rendered fully in the same binary — so the wedge is either racy or content-dependent. THIS IS A LIVE LINUX REPRO of the blocked-idle wedge family — the exact repro the P0 needs. instance still running (pgrep feather-ui). NEXT: gdb -p PID thread backtraces (esp Script#1 + main) to find the block point — this is the money artifact. Do NOT kill the instance.
+
+## batch6-youtube-seek-wedge evidence (2026-11-27, macOS lane, sec986486)
+
+SYMPTOM: youtube seek kills playback (user-reported batch-6 regression).
+REPRODUCED on macOS feather-ui (engine cf9acff14): youtube.com/watch autoplay
+advanced frames normally; one click on the seek bar (~70%) → video frame froze
+permanently, buffering spinner appeared and never cleared, player time readout
+stuck at 0:05/3:33 across all later screenshots. UI thread stayed healthy
+(main parked in ReceiveNextEventCommon, window interactive).
+
+THREAD-STATE EVIDENCE (sample of wedged process, 2069 samples / ~2s):
+- Script#1 (the youtube script thread) was in `semaphore_timedwait_trap`
+  via `libdispatch: _dispatch_sema4_timedwait <- _dispatch_semaphore_wait_slow`
+  in ALL 2069 samples — a GCD-semaphore timed-wait busy loop. Process CPU
+  ~80-100% with one core saturated: the wait timeout is short/zero, so the
+  thread spins without ever making progress — classic wedge signature.
+  Stack (release, unsymbolicated): script-thread main loop →
+  +0x1ee3fa8 → +0x9c9a0 → +0x9c410 → +0x298cdfc → dispatch wait.
+  Offsets are stable within a build: feather-ui load addr 0x102f0c000,
+  compute file offsets for atos if a debug build is ever produced.
+- All other threads (Script#2/#8/#9, FetchThread, StyleThreads, caulk audio,
+  WR*, Constellation) blocked in normal wait primitives — healthy.
+  caulk.messenger (CoreAudio) idle in timed_wait — audio pipeline starved,
+  consistent with playback death.
+
+MECHANISM READ: the script thread is NOT deadlocked (it would be in
+semaphore_wait, untimed) — it is LIVELOCKED in a poll loop waiting for a
+condition that never becomes true. Prime suspect mechanism class: media
+sync/clock — after a seek the gstreamer pipeline re-prerolls; if the
+preroll/flush completion or the media-time update never reaches the script
+thread's waiter (or the wait condition is checked against stale state),
+the loop spins forever. Media event delivery suspects:
+`components/media/player/video.rs` (frame push / seek handling),
+`components/media/backends/gstreamer/player.rs` (seek + preroll/flush
+completion signaling), and the script-side HTMLMediaElement seek/ready-state
+machinery (`components/script/dom/html/media/`) — whichever condition the
+script thread polls is never satisfied post-seek.
+NOTE the pre-seek anomaly: player time readout was ALREADY stuck at 0:05
+while frames advanced — the timeupdate/currentTime path may be broken
+independently of seeking; seeking then kills frame flow entirely.
+
+GMAIL ANGLE (not yet reproduced — signed-in boot unreachable without
+credentials): if the same livelock fires in the gmail boot path, the script
+thread spinning at 100% would starve the load — consistent with the user's
+"permanent boot freeze". Signed-out gmail signin flow incl. botguard POST
+roundtrip verified HEALTHY on the same build — freeze is post-auth only.
+Repro evidence files on macOS lane VM: /tmp/yt-wedged-sample.txt (full
+sample), /tmp/gmail-baseline-sample.txt.
+
+## sec1zt205 — WEDGE SMOKING GUN: gdb of blank-wedged youtube watch page — Script#1 BLOCKED in futex inside gst_pad_set_active (libgstreamer pthread_mutex_lock). The script thread wedging in gstreamer pad activation = whole page dead while idle. EXPLAINS: blank boot wedge + dead devtools + idle cpu + plausibly the seek-kill (same lock family — seek pipeline reset churns pad activation). Deadlock partner = whoever holds mutex 0x75e30c2df430 — analyze /tmp/wedge-bt.txt (SAVED, 1226 lines, 252 threads): find threads inside gst code holding locks (media thread, GstBus sync handler, decodebin). Full bt preserved — grep gst_pad_set_active\\|gst_element\\|decodebin\\|media in it. This is likely batch-6-window media-commit regression — bisect candidates: 5e6df4c001b (seek pipeline-reset on worker thread), 4c126d64190/0cc27425170 (deferred-dispose reaper) — pad activation during teardown vs seek is the classic gst deadlock pair.
+## sec1zt206 — deadlock mechanism identified: PlayerInner lock-ordering inversion
+player.rs:955 = media-info-updated gst signal callback does inner_clone.lock().unwrap() on PlayerInner. Gst signal callbacks can fire SYNCHRONOUSLY on whatever thread triggers the state change. DEADLOCK: (a) script thread holds PlayerInner while calling gst set_state/pad-activation (seek reset / pipeline setup paths) → gst takes internal locks; simultaneously (b) gst emits media-info-updated (on gst thread or synchronously) → callback blocks on PlayerInner. If synchronous-on-same-thread: std Mutex non-reentrant SELF-deadlock. If cross-thread: classic ABBA. FIX DIRECTION (upstream-grade): NEVER call into gstreamer while holding PlayerInner — collect needed values, drop the guard, then call gst (classic pattern); and/or make the media-info-updated callback not need the lock at emission time (defer to a queued task). KEY NEXT STEP: find all sites where inner guard is live across inner.player.* calls — grep player.rs for lock() followed by .player. usage in scope. The batch-6-window commits made this latent inversion live (seek reset added pad-activation churn). This is upstream-servo-grade defect — candidate for upstream fix.
+
+## sec1zt207 — DEADLOCK ARCHITECTURE fully identified + fix design
+ROOT: the inner_player_proxy! macro (player.rs ~1267) locks PlayerInner for the ENTIRE duration of every Player trait method — play/pause/seek/stop/push_data all hold the mutex across BLOCKING gstreamer calls (set_state, pad activation). Meanwhile gst signal callbacks (media-info-updated player.rs:955, state-changed :901, position :928) lock the same PlayerInner from gst-emission contexts. ABBA DEADLOCK: script thread holds PlayerInner + waits for gst-internal pad lock (held by gst streaming thread) while gst callback thread holds gst-internal locks + waits for PlayerInner. Matches the gdb evidence exactly (Script#1 in gst_pad_set_active futex; gst callback thread in PlayerInner::lock). WHY NOW (batch-6 regression window): pre-seek-reset the blocking gst calls rarely ran on the script thread during normal playback; the seek-reset/pipeline-recreation work (5e6df4c001b etc.) massively increased pad-activation churn and callback-vs-control concurrency — the latent inversion became live. Also explains the boot-time wedge: media-info-updated fires during initial pipeline setup while script thread holds the lock across setup-time gst calls. FIX DESIGN (upstream-grade): never hold PlayerInner across blocking gst calls — restructure inner methods: take lock, extract needed state + clone the gst player/pipeline handle (gst objects are refcounted threadsafe), DROP guard, then perform the gst call. Applies to play/pause/stop/seek/set_rate/set_volume/setup paths. INTERIM cheap mitigation if full restructure is too big for one round: make the gst callbacks never block on PlayerInner — use try_lock + defer (queue the event, skip if contended) — state updates are idempotent-ish so dropped duplicate emissions are tolerable, BUT care: seek-ack channel lives behind the lock. Compile-verify each round via workspace cargo check ~2min. REPRO for verification: repeated fresh youtube watch boots + seek churn; wedge is racy so verification needs N clean boots/seeks in a row (5+).
+
+## batch6-youtube-seek-wedge REFINEMENT: two-state race at media-pipeline setup (2026-11-27, macOS lane)
+
+Second repro round, same binary: video played 50s+ clean, time readout
+advancing normally, seek to 1:15 WORKED and playback continued healthy
+(1:15→1:28 verified). Compare round 1 where the readout was stuck at 0:05
+from page load BEFORE any interaction, and the first seek wedged everything.
+Conclusion: the race is NOT at seek time — it is at media pipeline setup.
+The player lands non-deterministically in one of two states:
+- HEALTHY: clock runs, readout advances, seeks work.
+- DEGRADED: media clock never starts (readout frozen at boot timestamp
+  while frames still render for a while); any seek in this state livelocks
+  the script thread (semaphore_timedwait spin, one core saturated).
+Mechanism implication: a setup-time race in the media clock/sync
+initialization — suspect the gst pipeline clock distribution /
+`components/media/backends/gstreamer/player.rs` preroll completion vs the
+script-side media element timeline attachment. The wedge at seek time is
+downstream: seeking a clockless pipeline waits on a sync condition that
+can never fire. This also explains gmail: the same setup race in a
+boot-critical wait would freeze page boot permanently when the degraded
+state is hit — no media element needed if the shared sync primitive
+(semaphore timed-wait loop in the script thread's event plumbing) is what
+races. Investigation direction for engine lane: instrument the two states
+by logging pipeline clock state at first frame; the repro is 1-in-2-ish so
+a handful of boots brackets both.
+
+## sec1zt208 — deadlock cycle-breaker SHIPPED c534afd6c6d — VERIFICATION PENDING
+The try_lock fix compiles and is pushed. VERIFY: rebuild feather shell-new (picks up path-dep servo) then repeated fresh youtube watch boots + seek churn — wedge is racy so need 5+ clean boots. ALSO the feathershell rebuild is heavy (~10+min?) — batch it. NOTE compile-check gotcha reconfirmed: -p package checks fail on freetype2 pkg-config (system 24.1.18 < 24.3.18 required) AND FREETYPE2_NO_PKG_CONFIG=1 just aborts pkg-config not enables bundled — MUST use workspace-level cargo check no -p (~2min warm). Structural followup still open: control path holds PlayerInner across blocking gst calls (inner_player_proxy macro) — upstream-grade fix = extract-then-call pattern; current fix breaks the cycle but is technically lossy under contention.
+
+## sec1zt209 — deadlock fix VERIFIED for page-wedge; playback starvation is a SEPARATE defect still open
+Post-fix verification (rebuilt feather 10:01, fresh youtube boot): page renders FULLY (vs blank-wedge pre-fix), devtools responsive THROUGHOUT seek operations (vs total eval timeout pre-fix) — the ABBA deadlock is broken. HOWEVER playback starvation persists: video reaches playing state (paused=false, readyState 4) but position NEVER ADVANCES — even before any seek (ct0.0 after 8s of play), and after fwd-seek-to-60 then bwd-seek-to-10 the position lands at target but freezes there permanently. NOTE this matches the pre-existing defect indexed in sec1zt108-era: initial playback freeze despite buffer+readyState — the MSE starvation family, NOT the lock deadlock. So the batch-6 regression has TWO separable layers: (1) page-wedge deadlock FIXED c534afd6c6d; (2) MSE playback starvation — OPEN, the actual seek-kill mechanism. NEXT: the starvation is in the MSE push/consume path — decodebin reselection or the refeed machinery from the batch-6 media commits; the original backward-seek fix verified position advancing at round-10, so something in the window a4922916078..tip regressed frame flow. BISECT candidates the media-tree commits in that window — BUT note media tree only has e0e8d13e60c (webrtc, innocent) — so suspect script/dom/media changes or the retention/refeed commits fade8925118/dec2bd5b096/97d964bb167 cluster timing (check dates vs a4922916078).
+
+## sec1zt210 — regression-window isolation: media tree nearly CLEAN; starvation may predate or be non-media
+Window analysis a4922916078..HEAD (post-verified-round-10): media-tree commits ONLY e0e8d13e60c (webrtc fallibility — mechanically unrelated to playback pipeline) + c534afd6c6d (today fix). SO: either (a) the regression is NOT in the media tree — suspect batch-6 feather-shell-side PRs or non-media engine commits, or (b) the freeze observed on Linux now is the PRE-EXISTING flaky defect (sec1zt108-era: initial playback freezes ~1.7s despite buffer+rs4, documented BEFORE the regression window) meaning Linux was marginal all along and Windows regression may share only symptoms. CONFOUND re-test needed: current progressive freeze at ct1.3 reproduced while WPT load avg ~5 — NEEDS re-verification on idle machine (WPT nearly finished naturally — wait for it, then re-test clean). If progressive freezes even idle: bisect window broadens to include pref-batch enables (webgl2! the pref-batch enabled dom_webgl2_enabled — youtube uses webgl for player?) and cookie-secure change. KEY NEXT: clean progressive-playback test on idle machine; if broken, bisect pref batch; if fine, the starvation is MSE/youtube-specific and the media analysis resumes.
+
+## sec1zt211 — starvation mechanism narrowed: pipeline delivers ~1s then silence, no errors
+Progressive playback test (bbb.mp4 via localhost, IDLE machine — WPT killed so no contention confound): samples flow n=0..30 (pts up to 1.066s) then TOTAL SILENCE — no errors, no underrun, no further samples. Position frozen ct1.3, paused=false, rs2. SIGNATURE: pipeline stuck in PAUSED/preroll — never reaches PLAYING because pushing stalls after the initial burst; playbin position only advances in PLAYING. This is NOT load-induced. NOTE [mse] instrumentation appears even for progressive playback — servos player abstraction routes both paths through similar machinery. SUSPECT AREA: the push-side flow control — enough_data Arc<AtomicBool> (PlayerInner line 174) or the seek/setup transition failing to reach Playing. KEY CHEAP NEXT EXPERIMENTS: (1) RUST_LOG debug for servo_media on a fresh repro, watch the state transitions; (2) test whether the same freeze exists in UPSTREAM servoshell (mach binary already built!) — if upstream freezes too, this is NOT a feather regression at all but an upstream defect; if upstream plays fine, bisect the fork delta. RUN: ./target/debug/servoshell http://localhost:8422/v.html — servoshell is graphical, same VM. THIS IS THE DECISIVE cheap experiment — do it FIRST before any bisect.
+
+## sec1zt212 — freeze reproduces in bare servoshell: ENGINE defect confirmed, shell exonerated
+Same signature in mach-built servoshell: samples n=0..30 to pts 1.066 then silence. CRITICAL REASONING: appsink RECEIVING samples means the pipeline IS in PLAYING and decode works — the freeze is the SOURCE starving, not the pipeline state. The [mse] instrumentation confirms samples reach the sink callback. So: something stops the flow after ~1s. For progressive playback the source is playbin/uridecodebin internal — fork media commits should not affect it AT ALL unless the player setup (buffering config, download flags) is broken. Hmm — but samples DID flow for 1s. What happens at ~1s: the PlayerInner media-info-updated or the position-reporting starts? OR the video RENDER path (video_renderer.lock render at :1061) blocks downstream backpressure! KEY SUSPECT REFRAME: appsink in servos player is PULL or push with callbacks — if the render/consume side doesnt drain (frame renderer stuck), backpressure stops the pipeline. The llvmpipe software-GL frame render path on this VM — could frame rendering itself be the stall? BUT it rendered 30 frames fine. NEXT: gdb the FROZEN progressive instance — thread states will show exactly where the consume side is stuck. Much cheaper than bisect: one gdb, read the media thread stacks.
+
+## batch6-wedge suspect-chain sharpened: the SeekData/SeekLock input-side block (2026-11-27, macOS lane)
+
+Source-level mechanism chain for the youtube-seek freeze, indexed by function:
+
+- `components/media/player/lib.rs` — `PlayerEvent::SeekData(u64, SeekLock)`:
+  when gstreamer's demuxer repositions in the byte stream (EVERY playback
+  seek does this), the gst streaming thread BLOCKS until the script thread
+  re-feeds it from the new offset and releases the `SeekLock`. If the
+  script side never services the event, the streaming thread blocks
+  forever → no more frames → permanent spinner + frozen frame. This is
+  the primary wedge candidate.
+- `SeekLock::unlock` is already defensively bounded (5s try_recv_timeout,
+  comment: "a stuck script thread is worse than a dropped ack") — but that
+  bound only protects the SCRIPT side; nothing bounds the GST side's wait
+  for the unlock. An unserviced SeekData is a permanent gst-side wedge.
+- `components/media/backends/gstreamer/player.rs` Shutdown path comment
+  documents the inverse hazard: "the seek_data can be blocked waiting for
+  the script thread" — the authors know this coupling wedges; teardown
+  works around it, steady-state seek does not.
+- Rebase subtlety: same file notes "after a seek the flush+recreate
+  re-bases the pipeline at the first post-seek buffer" — the pipeline is
+  RECREATED on seek. If the SeekData event arrives referencing the old
+  pipeline's stream state or races the recreate, the script-side handler
+  can drop/mishandle it — matching the non-determinism (seek works in the
+  healthy state, wedges in the degraded state).
+- Script-thread side of the wedge: sample evidence shows Script#1 in ALL
+  samples inside `semaphore_timedwait` (never executing JS) — the script
+  thread is alive but never runs page JS. Since Servo's script event loop
+  waits with timeout when timers are pending, 100%-of-samples-in-wait +
+  one saturated core is consistent with a wake-spin loop: waking on tiny
+  timeouts without processing. Whether this is cause or symptom of the
+  unserviced SeekData is open — but note the pre-seek symptom (time
+  readout frozen at 0:05 while frames render) means `PositionChanged`
+  events were already not reaching the page, i.e. the script thread's
+  media-event processing was ALREADY degraded before the seek. Seek then
+  kills frame flow entirely because the gst side joins the waiters.
+- ENGINE LANE next step: instrument SeekData dispatch + unlock pairing
+  (log every SeekData emission and every unlock with ids; a wedged run
+  will show an unpaired SeekData). Also log PositionChanged production
+  rate in both boot states — the healthy/degraded divergence should be
+  visible from the first seconds.
+
+## sec1zt213 — starvation mechanism: appsrc starved, downstream queues EMPTY waiting — need-data either never re-fires or its resume never reaches the pusher
+gdb of frozen progressive instance: NO deadlock — everything cleanly waiting. appsrc0:src idle in g_cond_wait (nobody pushes), vqueue/multiqueue/queue2 srcs all starved waiting for data. Flow control: enough-data flag set → push_data errors EnoughData → script stops pushing; need-data emission clears flag + sends NeedData event. Since downstream queues are EMPTY, appsrc should re-emit need-data — so either (a) gstreamer never re-emits because the queue-level accounting is corrupted (the batch-6 in-band resequencing/reset work manipulates the appsrc!), or (b) need-data fires but the script-side resume is broken. RECONCILIATION with round-10 passing: round-10 seeks were on SHORT clips where the whole stream fit in the initial burst — a broken need-data resume never mattered. Sustained playback past the first burst is what exposes it — consistent with freeze at exactly the initial-burst boundary (~1s). NEXT DECISIVE STEPS: (1) git log player.rs full history in batch-6 window — read the actual diff of the seek-reset commits for what touches appsrc behavior; (2) instrument need_data/enough_data callbacks with eprintln — one rebuild, definitive answer on whether need-data re-fires.
+
+## sec1zt214 — STARVATION PINNED: appsrc re-emits need-data (12x) but enough-data NEVER fires and no data ever arrives — defect is in the SCRIPT/NET push path, not gstreamer flow control
+Instrumented run: need-data fires repeatedly even AFTER the last consumed sample (the pipeline keeps asking for data) — yet push_data is never called again (no more samples). enough-data never fires so flow-control pause is not involved. CONCLUSION: the progressive-download feed pump (media element fetch → player push_data) stalls after the first burst. NEXT: find the progressive feed path — components/script/dom/html/media/htmlmediaelement or media_thread — the fetch/reader loop. Suspects in batch-6: anything touching the read/pump scheduling. ALSO still unexplained: whether this freeze predates batch-6 (the sec1zt108 note suggests an older freeze existed) — but for the coordinator regression the mechanism is now the right target regardless: WHO stops pumping. grep push_data callers in script.
+
+## sec1zt215 — starvation dig state: need byte-level evidence on the FETCH side
+Facts: bbb.mp4 is 10s/970KB served from localhost (instant). need-data fires repeatedly (appsrc hungry) yet samples stop at n=30/1.066s. TWO REMAINING HYPOTHESES: (a) fetch stall — script never receives/pushes the rest of the file despite appsrc hunger — bug in the body-read pump; (b) fetch COMPLETED and everything was pushed (maybe even EOS) but the pipeline jams internally after 1s — then the starvation is inside gst decode/consume not servo at all. DISCRIMINATOR: log bytes pushed — instrument process_into_player_from_queue payload sizes + EOS push in htmlmediaelement.rs, one rebuild. ALSO cheaper interim: tcpdump/ss on the localhost connection — if the server finished sending (connection idle/closed) the fetch completed. gdb had no blocked threads in fetch either. NOTE playback_need_data early-returns when fetch context exists with cancel_reason — and unlocks+processes otherwise; need-data events ARE reaching script (since we see the events in engine). Whether process_into_player_from_queue runs with empty buffers (nothing to push because fetch delivered nothing) is hypothesis (a) mechanism exactly. Also re-check: DataBuffer payloads popped-then-dropped on push error — if ANY push_data error occurs mid-stream the data is LOST silently (warn only) — progressive corruption defect independent of flow control.
+
+## sec1zt216 — probe: buffered EMPTY, networkState=1 IDLE, rs2, ct frozen 1.3 of dur10
+The element reports networkState NETWORK_IDLE (no active fetch) — either the fetch completed (all 970KB delivered — plausible, localhost instant + duration=10 correctly parsed hints moov/ full-file knowledge) or it stalled-and-was-abandoned. buffered[] empty is unreliable (servo may not implement it for progressive). IF the fetch completed: the starvation is INSIDE the gst decode path — decoder jammed after 30 frames (appsrc hungry because ITS queue drained into the demuxer, but the decoder stops outputting — downstream multiqueue empty). IF fetch incomplete: the body-read pump abandoned the response without error. NEXT DECISIVE: (1) log bytes — eprintln in the media elements fetch-data consumer (wherever DataBuffer::Payload gets queued) printing cumulative bytes — ONE number settles it: 970k+eos = gst-internal, less = fetch-pump defect; (2) also check gst decodebin artifacts — H264 decode of bbb in this container — but FIRST the byte count. ALSO NOTE: playback froze the same way on YOUTUBE (mse) and progressive — a SHARED mechanism in the push/consume path is more likely than two independent ones — the shared piece is the player/appsrc/feed machinery not the demuxers.
+
+## devtools eval gotcha: location.* throws in the sandbox (2026-11-27, macOS lane)
+
+`evaluateJS` on a real page: `1+1` → 2.0 and `document.readyState` work, but
+ANY access to `location.href`/`location.hostname` makes the whole eval return
+None (the access itself throws or fails serialization in servo's devtools
+sandbox). Probe pages with document properties only — readyState,
+querySelector, title all work. Gmail boot harness lives at
+feather/tests/scenarios/gmail_boot_harness.py (PR #309): boot-isolated TTI
+measurement + wedge detection via interactivity probe timeout corroborated
+by the livelock CPU signature (>70% single-core sustained). Verified 2/2
+interactive runs on the signed-out chain; --url accepts signed-in boot URLs
+when credentials exist.
+
+## sec1zt217 — CONFOUND RESOLVED: h264-progressive freeze is VM decoder artifact; VP9 progressive incl backward seek fully healthy; regression is MSE-SPECIFIC
+Decisive test series on idle machine: (1) h264 bbb.mp4 progressive freezes at ~1.066s/30 frames — because the VM ONLY has openh264dec (no libav/avdec_h264) which cannot handle High-Profile/B-frame streams — ENVIRONMENT artifact, NOT the regression, do not chase it. (2) VP9 bbb60.webm progressive: plays real-time (ct 10→15.5), rs4. (3) VP9 backward seek 29s→5s: lands and CONTINUES advancing (9.5→14.0) — progressive seek fully healthy. CONCLUSION: the regression path is narrowed to MSE playback specifically (youtube uses MSE). SYMPTOM INDEX: video frozen ~1s on Linux VM with h264 → check openh264dec artifact FIRST before suspecting engine regression; progressive-vs-MSE split is the key bisect axis. NEXT: reproduce on the MSE harness (/tmp/mseh, bbb60.webm) — play then backward-seek; if dead, the regression lives in the MSE refeed/retention machinery after all (round-10 verified it working — so bisect what changed in script/dom/media since a4922916078 — BUT that window is near-empty per sec1zt210, suggesting the regression trigger may be timing/race exposed by the OTHER batch-6 changes, or the mseh harness passes while youtube fails = youtube-specific MSE feature like multiple tracks or the live-leanback config).
+
+## sec1zt218 — P0-2 youtube freeze: mechanism cornered to CLOCK-NEVER-RUNS; decode+pts healthy; audio-clock prime suspect
+SYSTEMATIC ELIMINATION on idle Linux VM, all verified: (1) h264 progressive freeze = openh264 VM artifact, NOT the regression. (2) progressive vp9 incl backward seek: HEALTHY. (3) MSE video-only incl backward seek: HEALTHY. (4) MSE two-sourcebuffer vp9+opus harness (youtube-mimicking): HEALTHY — plays fine. (5) REAL YOUTUBE watch page: playback NEVER advances — ct frozen at exactly 0/5.44/30.00 (boot and post-seek alike) despite play() accepted, pfalse, rs4, buffered data present. GDB of frozen state: BOTH sinks in gst_base_sink_wait_clock (frames AT the sinks), both appsrc push threads blocked in gst_data_queue_push downstream (congestion not starvation), libvpx decode threads idle-waiting normally. [mse] instrumentation in /tmp/yt2.log: video samples decode with CORRECT monotonic pts — post-seek samples decode at correct pts 30-68s — segment re-injection works, decode pipeline healthy end-to-end. Appsrc levels balloon to 27MB (downstream not consuming). MECHANISM VERDICT: the pipeline clock never advances — everything downstream of it is congestion backpressure. Position frozen at exactly the seek target = clock-never-started signature. PRIME SUSPECT: servo's CUSTOM audio sink (components/media/backends/gstreamer/audio_sink.rs) never starts consuming in the youtube configuration — the pipeline clock is audio-driven, a never-started audio sink = frozen clock = exactly this picture. UNEXPLAINED: why the mseav harness audio path works but youtube's doesn't — deltas: youtube runs ADS (ytcs/adview in log — multiple video elements/player instances!), uses playbackRate sets that fail NonSeekableStream, appends in gap-creating patterns (buffered gap 3.2-5.2), possibly different sample rates per quality switch. NEXT STEPS: (a) read audio_sink.rs/audio_stream_reader.rs for the consume/preroll trigger; (b) probe whether audio samples flow in frozen youtube (add [mse] audio sample probe analog to the video one at player.rs:1110); (c) test harness with playbackRate-set + multiple append gaps; (d) consider ads as the trigger — test youtube watch page that plays no ad. ALSO NOTED: track level quota (MAX_SRC_QUEUE_SIZE) not enforced — 27MB accumulated.
+
+## sec1zt219 — youtube freeze refined: visual freeze confirmed; decode stalls after initial burst; NOT a render error
+Additional evidence: (1) video is VISUALLY frozen too (pixel-diff over 5s = spinner-only ~361px) — not just position reporting. (2) [mse] video samples decode far ahead (pts to 2:05) in an initial burst then STOP entirely — consistent with sync=false-ish appsink pull during buffering then total congestion once multiqueues fill. (3) zero get_frame/render errors — the render path is not dropping frames. (4) The first frame DOES display (preroll renders). UNIFIED PICTURE: pipeline clock never starts → sinks never consume → multiqueues fill → demux/decode stalls → appsrc levels balloon (27MB observed, quota enforcement broken — separate defect). Everything downstream of the clock. THE question remains why clock never starts on youtube but does in the mseav harness. Remaining deltas untested: ADS (youtube watch pages run ad player instances first — multiple pipelines coexist!), playbackRate-set failures (NonSeekableStream warn spam — youtube sets rate, servo errors), gap-creating appends. NEXT: instrument the audio side (no audio sample probe exists — add one) to confirm whether audio frames reach their sink at all; if audio never flows, the audio-clock never starts and THAT is the freeze — then find why audio stalls on youtube but not the harness.
+
+## sec1zt220 — BREAKTHROUGH: freeze = pipeline stuck in ASYNC state transition; youtube fires multiple rapid seeks; clock never restarts
+[mse] instrumentation analysis of frozen youtube (/tmp/yt2.log): FIVE seeks fired (youtube seeks on its own — resume-at-position, ad transitions, quality switches — even with zero user input; the 'boot freeze' IS a post-seek freeze because youtube's resume seek fires at boot). First seek: running_time_ns=146000 — clock had advanced only 146 MICROSECONDS — proving clock never runs even before the first seek... OR the very first seek fired almost immediately after pipeline creation before clock started. KEY: 'seek pipeline->restore Ok(Async)' — the state restore returns ASYNC and there is NO completion logging; if the Ready→Playing transition never completes (a sink never prerolls post-reset), the pipeline is stuck mid-transition forever: no clock, no consumption, total congestion — matches every downstream observation. STRONG youtube-specific candidate for why harness passes but youtube freezes: OVERLAPPING SEEKS — the state cycle runs on a spawned thread with zero synchronization; a second seek_reset landing while the first restore is still ASYNC reenters/confuses the cycle (fresh appsrcs recreated mid-transition, state changes interleave) leaving the pipeline permanently wedged. Harness fires one seek at a time with seconds of spacing — never overlaps — passes. FIX DIRECTION: serialize the state cycle per-pipeline (a dedicated owner thread or mutex+generation counter so a newer seek supersedes/completes before the next), plus await/log the async completion. ALSO the initial-clock-never-runs question: 146us running time at first seek may mean the clock NEVER runs on youtube even pre-seek — if so the root is upstream of seeking entirely (preroll never completes even initially — perhaps because youtube's initial append pattern with gaps leaves one sink starved). Discriminator next: harness test with seek fired IMMEDIATELY at playback start (before clock starts) and overlapping rapid seeks — reproduces or exonerates the overlap theory.
+
+## sec1zt221 — FIX IMPLEMENTED: serialized generation-aware MSE seek cycle (1883f8d3435), compile-clean, verification pending
+The fix: mse_seek_serial Mutex + mse_seek_gen AtomicU64 on PlayerInner; seek() now clones the ServoMse glib object + pipeline and spawns a worker that (1) acquires the serial lock, (2) abandons if superseded by a newer generation, (3) performs seek_reset + state cycle as one unit. Either acquisition order yields correct final state: newest-target cycle always runs last. Design note: seek_reset moved INTO the worker (was synchronous) — small window where pre-reset pushes land in dying appsrcs and are dropped, accepted because MSE pages re-append post-seek anyway; watch for regression in testing. GOTCHA documented: cargo check in servo repo passes in ~2s when incremental — must still rebuild feather binary for live verification (cargo check does NOT produce a binary — the sec1zt153 trap). VERIFICATION QUEUE: (1) msestress.html rapid-seek harness — frozen at 18.6 pre-fix, should pass post-fix; (2) live youtube watch page — boot resume seek + manual seeks; (3) confirm no append-loss gaps.
