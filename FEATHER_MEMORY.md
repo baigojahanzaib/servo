@@ -5795,6 +5795,8 @@ MEASUREMENT HARNESS all reusable: /tmp/memab.py (RSS A/B), SERVO_MEMDUMP_AFTER=8
 SIGTERM — do not retry that path). RSS file-backed caveat: ~220MB of resident is servoshell
 binary + libLLVM + fonts demand-loaded file pages — inflate absolute RSS but constant baseline.
 
+## memsec: orthogonal writing-mode transposition (windows lane, PR#7)
+symptom: vertical writing-mode flex/block children size on transposed axes (flex-grow no-op or wrong-direction growth; cross-stretch resolves against wrong physical dimension) -> FIXED in PR#7. mechanism: flow/mod.rs orthogonal-flow CB construction swapped sizes but kept PARENT style; content_box_sizes_and_padding_border_margin (style_ext.rs) maps width/height to logical via containing_block.style.writing_mode — parent mode transposes for orthogonal children. fix = pass element's own style in the orthogonal CB. KEY LANDMARKS: cross_axis_is_item_block_axis (flexbox/layout.rs) logic was correct all along; ContainingBlockSize::swapped_axes is the orthogonal mechanism; width/height are physical CSS properties whose logical mapping depends on element's own writing mode. PROBES: wtest/wmflex.html, wmflex2.html, wmflexctl.html — rowflex w200/h100, colflex h100/w200 exact. BUILD GOTCHA (permanent): PATH must include /c/Program Files/LLVM/bin or glslopt/swgl fail clang-cl ToolNotFound.
 ## memory-reclaim fix VERIFIED shell-side (2026-11-27, macOS lane)
 shrinking-GC + zero empty-chunk reserve (9182287bf) confirmed working in
 the feather binary: 5 heavy tabs 2257MB → close 4 → 1182MB within seconds
@@ -5804,7 +5806,6 @@ page control next time. Also measured: ~450MB/tab for heavy real sites —
 per-tab infra dominates; youtube alone idles ~1.2GB. All lanes: memory
 reclamation is now a solved primitive, remaining work is per-tab weight
 and active-page churn, not the close-path.
-
 ## sec1zt287 — memory investigation CLOSED: no creep exists; monotonic growth was SM heap, fixed (2026-11-27)
 FINAL VERDICTS:
 1. CREEP TEST (unique pages per cycle — the real-world pattern): 4 consecutive cycles of
@@ -5830,7 +5831,6 @@ FINAL VERDICTS:
    system-heap live objects (fontconfig/freetype/mesa caches are prime suspects; needs
    glibc-side profiling or library-by-library eviction audit). Plateau ~250-500MB depending
    on content weight — matters for the <150MB idle budget but is NOT beta-blocking.
-
 ## sec1zt288 — object-element layout crash family FIXED: borrow_for_layout (2026-11-27)
 c99f789949c pushed. Mechanism: layout replaced-contents traversal reads object data-url
 cache via LayoutDom; the DomRefCell.borrow() asserts script state but layout swaps thread
@@ -5846,7 +5846,6 @@ into ordinary feature gaps post-fix. SWEEP RESULT: HTMLImageElement uses AtomicR
 (thread-safe, correct); no other embedded-content LayoutDom uses raw DomRefCell.borrow().
 REPRO LESSON: RUST_BACKTRACE=1 + direct servoshell repro gives full symbolized backtraces —
 far faster than gdb for panic-class bugs since the panic hook catches before gdb stops.
-
 ## macOS lane state 2026-11-27 late (post-compaction handoff)
 - Sweep tally: PASS google(end-to-end incl SERP+AI overview), stackoverflow,
   bbc, netflix, x.com, chatgpt; PASS-minus-DRM twitch; botwall-blocked
