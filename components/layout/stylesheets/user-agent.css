@@ -177,6 +177,11 @@ nobr wbr { white-space: normal; }
 
 bdi:dir(ltr), input[type=tel]:dir(ltr), [dir=ltr i] { direction: ltr; }
 bdi:dir(rtl), [dir=rtl i] { direction: rtl; }
+/* dir=auto resolves directionality from descendant text content (script-side
+   precomputed scan read by :dir() matching); the attribute selector scopes
+   these rules so inherited directionality alone does not set direction. */
+[dir=auto i]:dir(ltr) { direction: ltr; }
+[dir=auto i]:dir(rtl) { direction: rtl; }
 [dir=ltr i], [dir=rtl i], [dir=auto i] { unicode-bidi: isolate; }
 
 /* To ensure http://www.w3.org/TR/REC-html40/struct/dirlang.html#style-bidi:

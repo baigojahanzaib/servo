@@ -2160,6 +2160,19 @@ impl HTMLElement {
     // https://html.spec.whatwg.org/multipage/#the-directionality.
     // returns Some if can infer direction by itself or from child nodes
     // returns None if requires to go up to parent
+    /// Recompute and store the script-side directionality cache for this
+    /// element, which layout reads for `:dir()` matching. Layout threads
+    /// cannot scan descendant text for `dir=auto`, so the resolution is
+    /// precomputed here and kept current by attribute/bind/mutation hooks.
+    pub(crate) fn update_directionality_cache(&self) {
+        let value = match self.directionality().as_deref() {
+            Some("ltr") => 1,
+            Some("rtl") => 2,
+            _ => 0,
+        };
+        self.as_element().set_directionality_cache(value);
+    }
+
     pub(crate) fn directionality(&self) -> Option<String> {
         let element_direction = &self.Dir();
 
@@ -2444,6 +2457,9 @@ impl VirtualMethods for HTMLElement {
             (&local_name!("accesskey"), ..) => {
                 self.update_assigned_access_key();
             },
+            (&local_name!("dir"), ..) => {
+                self.update_directionality_cache();
+            },
             // https://html.spec.whatwg.org/multipage/#the-popover-attribute
             (&local_name!("popover"), mutation) => {
                 // > If element's popover visibility state is in the showing state and oldValue and
@@ -2524,6 +2540,7 @@ impl VirtualMethods for HTMLElement {
         if self.element.has_attribute(&local_name!("accesskey")) {
             self.update_assigned_access_key();
         }
+        self.update_directionality_cache();
     }
 
     fn unbind_from_tree(&self, cx: &mut js::context::JSContext, context: &UnbindContext) {
