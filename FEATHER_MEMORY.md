@@ -4513,3 +4513,6 @@ State: designMode implemented by ANOTHER lane in feather-engine@ea9b069ea (editi
 
 ## UPDATE: gmail wedge — requires FIRST-load path specifically; nav at t+12s after trivial boot is clean
 - Boot to trivial page, navigate to mail.google.com at t=12s: ZERO stalls, no wedge. Combined with boot-direct wedge repros: the wedge is specific to gmail being the INITIAL webview first load, not merely early in the session. Hypothesis sharpened: first-load initialization path (initial webview/document spin-up concurrent with gmail boot JS) — suspect constellation first-webview creation ordering or initial event-pump integration, since the same content 12s later on the second load is harmless.
+
+## UPDATE: boot-wedge repro matrix — gmail 3/3 deterministic at boot; docs mild; maps clean
+- Controlled boot matrix (batch-6 payload binary, 50s observation each): maps 0 stalls, docs 14 stalls (transient/mild), gmail 42 stalls in ALL 3 attempts (wedge onset ~8s after boot then continuous ~1/sec — highly deterministic at first-load). Earlier clean observations were navigation-path or lucky timing. Severity ordering gmail >> docs > maps(0) tracks google-app JS heaviness at first paint. Repro confidence for engine lane: near-100% over 3 boot attempts.
