@@ -6013,3 +6013,16 @@ Small safe picks adjacent to feather work: 461f99fc59f xpath id() first-element-
 fix). Larger: 806d6369990 weak-referenceable elements, 60019507770 input internal value.
 NOT YET APPLIED — cherry-pick attempt hit harness shutdown; queue for next session.
 
+
+## sec1zt304 — upstream picks already present; git fetch refspec lesson (2026-11-28)
+Both queued cherry-picks (461f99fc59f xpath id(), e667861e269 attribute borrow hazard)
+come out EMPTY against feather-engine — content already in tree (via upstream-merge
+overlap). No action needed; do not re-attempt.
+GIT PROXY LESSON: plain `git fetch origin feather-engine` does NOT update the remote-
+tracking ref through the git-manager proxy — origin/feather-engine silently goes stale,
+causing phantom non-fast-forward rejections. Always use:
+  git fetch origin +refs/heads/feather-engine:refs/remotes/origin/feather-engine
+then rebase + `git push origin HEAD:feather-engine`. This was the root of all push-race
+paradoxes this session, including the botched rebase that briefly dropped sec1zt301-303
+(reinstated in 954969fbd93 — verify memory entries survive any future rebase by grepping
+afterward).
