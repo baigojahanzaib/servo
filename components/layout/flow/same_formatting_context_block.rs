@@ -179,8 +179,8 @@ impl SameFormattingContextBlock {
             tentative_block_size,
             block_stretch_size,
             justify_self,
+            preferred_aspect_ratio,
             automatic_block_size,
-            ..
         } = solve_containing_block_padding_and_border_for_in_flow_box(
             layout_context,
             containing_block,
@@ -339,12 +339,25 @@ impl SameFormattingContextBlock {
             content_block_size += collapsible_margins_in_children.end.solve();
         }
 
+        // Non-replaced aspect-ratio transfer: when the inline size is definite
+        // (it always is at this point in normal flow) and the block size is
+        // automatic, the preferred aspect ratio determines the block size
+        // instead of content. `Sizes::resolve` only consults the intrinsic
+        // value when the block size is automatic, so the substitution is inert
+        // for fixed block sizes.
+        let inline_content_size = containing_block_for_children.inline_size();
         let block_size = block_sizes.resolve(
             LogicalAxis::Block,
             automatic_block_size,
             Au::zero,
             block_stretch_size,
-            || content_block_size.into(),
+            || {
+                preferred_aspect_ratio
+                    .map_or(content_block_size, |ratio| {
+                        ratio.compute_dependent_size(LogicalAxis::Block, inline_content_size)
+                    })
+                    .into()
+            },
             false, /* is_table */
         );
 

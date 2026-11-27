@@ -1342,7 +1342,17 @@ impl IndependentFormattingContext {
         let inline_size = layout
             .content_inline_size_for_table
             .unwrap_or(containing_block_for_children.inline_size());
-        let block_size = lazy_block_size.resolve(|| layout.content_block_size);
+        // Non-replaced aspect-ratio transfer: when the inline size is definite
+        // (it always is at this point in normal flow) and the block size is
+        // automatic, the preferred aspect ratio determines the block size
+        // instead of content. The transferred size only reaches the resolution
+        // when the block size is actually automatic, since `LazySize::resolve`
+        // ignores the intrinsic value otherwise.
+        let block_size = lazy_block_size.resolve(|| {
+            preferred_aspect_ratio.map_or(layout.content_block_size, |ratio| {
+                ratio.compute_dependent_size(LogicalAxis::Block, inline_size)
+            })
+        });
 
         let ResolvedMargins {
             margin,
@@ -1576,7 +1586,11 @@ impl IndependentFormattingContext {
             );
 
             content_size = LogicalVec2 {
-                block: lazy_block_size.resolve(|| layout.content_block_size),
+                block: lazy_block_size.resolve(|| {
+                    preferred_aspect_ratio.map_or(layout.content_block_size, |ratio| {
+                        ratio.compute_dependent_size(LogicalAxis::Block, inline_size)
+                    })
+                }),
                 inline: layout.content_inline_size_for_table.unwrap_or(inline_size),
             };
 
