@@ -1076,6 +1076,17 @@ pub trait WebViewDelegate {
     /// reading a cached value or querying the user for permission via the user interface.
     fn request_permission(&self, _webview: WebView, _request: PermissionRequest) {}
 
+    /// `permissions.query()` — the embedder answers what the current persisted
+    /// decision is for this origin+feature, without any user interface. The
+    /// default is `Prompt`, matching the spec when no decision is stored.
+    fn query_permission_state(
+        &self,
+        _webview: WebView,
+        _feature: PermissionFeature,
+    ) -> embedder_traits::EmbedderPermissionState {
+        embedder_traits::EmbedderPermissionState::Prompt
+    }
+
     /// Request that the embedder supply credentials to use for HTTP authentication.
     fn request_authentication(
         &self,
