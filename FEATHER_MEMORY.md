@@ -4531,3 +4531,6 @@ Implementation-depth pre-screen (grep components/layout + fonts):
 NEXT-SESSION BATCH RECIPE: add pref struct fields (default false) for appearance+hyphens first,
 enable in feather, probe computed non-empty + one behavioral check each; batch per round like
 batch-1. Est. small engine diff + shell prefs + verification cycle per candidate.
+
+## sec1zt176 — layout-pref audit batch 3: masking + scroll-behavior real
+Depth screen: counters (no layout impl — hollow, skip), transform-box (no layout impl — hollow, skip), masking (display_list clip-path hit — real), scroll-behavior (element.rs hit — real). Both wired end-to-end (prefs.rs fields + stylo mapping + shell engine.rs) and verified computing live: `clip-path:circle(40%)` non-none, `scroll-behavior:smooth`. Engine: feather-engine 9858a8266e5; shell: feather c6c803a on devin/1795753937-layoutprefs (#287). Lesson: grep components/layout + components/script for the camelCase name before enabling — no hit = hollow = worse-than-absence. Remaining servo_pref keys with no servo struct field are permanently off (set_value panics); flipping stylo preferences.toml defaults directly is an untested lever.
