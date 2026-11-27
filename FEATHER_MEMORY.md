@@ -5561,3 +5561,9 @@ the original pipeline kills a live player, so migration is correct). Implementat
 adopting_steps needs access to the player id + backend registry — the GStreamerBackend
 instances map is the thing to update; may need a new BackendMsg::MigrateContext{id,
 old_context, new_context}. Verify Shutdown semantics in the same file (lines ~150-165).
+
+## integration regression pass on merged main (banked 2026-11-27, macOS lane)
+All gesture/embedder work verified composing on integrated main post-merge:
+cmd+click background tabs, dialogs round-trip (confirm:CANCEL into DOM),
+context menus, status overlay. Zero integration regressions across the
+branch overlap regions (app.rs/state.rs were touched by 4+ concurrent PRs).
