@@ -6128,6 +6128,7 @@ ROTATION: implement per sec1zt309 plan. BoxFragment style access pattern (cost m
 then bf.style.borrow().get_box() — bf is Arc<BoxFragment> no borrow() on it, and
 style is ArcRefCell so .borrow() needed. Fragment enum must be imported.
 
+
 ## Blank-tab group serialization shipped (macOS lane, 2026-11-28)
 PR #401: blank NewTab pages in groups now serialize as {"blank":true,"group":...}
 and restore with membership — last gap from the #381 matrix closed. Verified
@@ -6153,3 +6154,23 @@ because the load never reached it. file-drop feature (#352) unblocked.
 Residual same-class items: session serialization still filters non-http
 (app.rs save_session) and reopen-closed-tab recording (state.rs) — deliberate
 or oversight, worth a review pass next lane.
+||||||| parent of b7f4d397bb6 (mem: fieldset allocated-space fix)
+
+
+## sec1zt311 — fieldset containing-block FIXED: allocated-border-space rule (2026-11-28)
+ROOT CAUSE (pixel-level): legend straddle-shift centered on the physical border edge;
+spec allocates max(border-width, legend margin block size) as the border space and
+centers the legend within it. Zero-border case: legend must not spill above fieldset.
+Servo rendered the band at y83, correct y108 — exactly legend-height/2 off.
+FIX: straddle target now -(padding+border) + max(border,legend_height)/2 in content
+coords; degenerates to old formula when border >= legend height. VERIFIED:
+fieldset-containing-block PASS (was FAIL); zero regressions — legend-position-relative-2
+and fieldset-transform-translatez FAILs both pre-existing (evening baseline).
+STILL OPEN: (a) in-flow content shift — spec also requires non-legend content to start
+after the allocated border space (allocated - border) deeper than normal; not yet
+implemented, no current test catches it but real forms with legends+content need it;
+(b) legend-float, translatez, legend-position-relative-2 — need analysis, some may need
+the anonymous content box. Repro harness: /tmp/fs-shot.py screenshots test+ref over
+webdriver (needs --window-size 800x600 NOT 800,600 — comma form crashes servoshell
+argparse; file:// urls kill the webdriver session, serve over http instead).
+
