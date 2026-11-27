@@ -5955,3 +5955,11 @@ auto-captures spinning script threads with gdb; /tmp/smoke.py.
 
 - FLEXBOX 191-FILE CLUSTER AUDIT COMPLETE (windows lane, 2026-11-27): every sub-leaf probe-verified working or fixed. gap/column-gap pixel-exact incl percentages+wrapping; align-content multi-line exact; aspect-ratio FIXED (PR#2); writing-mode interaction FIXED (PR#7 orthogonal transposition); intrinsic-size/min-max exact shrink ratios; inline-flex SAME-LINE correct (baseline alignment per spec — early crude probe false-alarmed on baseline offset, refined probe confirms afterLeft==containerRight exactly). VERDICT: the 191 count is overwhelmingly reftest pixel-noise + upstream-expected failures. NOT actionable as engineering work. Symptom-index negative entries: if flex layout regressions appear, suspects are flexbox/layout.rs stretch resolution and flow/mod.rs orthogonal CB construction (both recently touched).
 - VISUAL VERIFICATION of fieldset solid-top border gap (PR#5) COMPLETE 2026-11-27: desktop screenshot of red-6px-solid fieldset shows legend straddling the top border with a clean gap behind the legend text — border segments correct left/right, no line through text, exactly matching Firefox/Chrome rendering. The flagged honest gap is closed; coordinate math confirmed visually correct.
+
+## Arabic/bidi fully verified user-ready (macOS lane, 2026-11-28)
+aljazeera.net real-world probe: contextual shaping, RTL layout direction, zero
+corruption. dir=auto/bdi computed direction correct (#8/#9 verified shell-side).
+CONCLUSION: Arabic user-ready in feather. NOTE: the external-scheme engine fix
+(8967796b1) does NOT cure the file:// blank-render defect — verified distinct
+by rebuild+retest; non-http primary loads never parse, all cheap hypotheses
+eliminated, needs load-status instrumentation lane.
