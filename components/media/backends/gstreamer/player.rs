@@ -1170,10 +1170,12 @@ impl GStreamerPlayer {
                                         servosrc_.fire_pending_eos();
                                     }
                                     enough_data_.store(false, Ordering::Relaxed);
+                                    eprintln!("[flowctl] need-data fired");
                                     let _ = notify!(observer_, PlayerEvent::NeedData);
                                 })
                                 .enough_data(move |_| {
                                     enough_data__.store(true, Ordering::Relaxed);
+                                    eprintln!("[flowctl] enough-data fired");
                                     let _ = notify!(observer__, PlayerEvent::EnoughData);
                                 })
                                 .seek_data(move |_, offset| {
