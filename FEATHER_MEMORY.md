@@ -6040,3 +6040,29 @@ not just non-wedging — the earlier 'residual upstream-class net/fetch-completi
 note in deab4229838's message needs re-evaluation: some or all of those 'script body
 streams never finish' observations may have been cascade artifacts of this abort defect.
 aol.com stall claim should be re-tested on this fix before any net-layer hunt.
+
+## sec1zt298 — aol-class wedge ROOT-CAUSED: quadratic RootCollection::unroot in xpath eval (2026-11-28)
+The never-completing-load + wedged-script-thread class (aol.com repro, originally mis-
+diagnosed as net fetch-completion) is algorithmic: gdb of the 100%-CPU Script#2 thread
+shows document.evaluate() xpath evaluation spending everything in
+RootCollection::unroot's rposition LINEAR SCAN (full bt in session history). Mechanism:
+xpath evaluate() on '//' paths collects every descendant into a NodeSet of individually
+rooted DomRoots (thousands of simultaneous roots); dropping them in forward order makes
+each unroot scan nearly the whole roots vec — O(N^2) pointer comparisons per evaluation,
+minutes of 100% CPU on real pages. NOT a net bug: parallel CDN fetches verified healthy
+(24 parallel aolcdn scripts complete fine standalone); the 'script streams never arrive'
+observation in deab4229838 was downstream of the wedged thread. REFUTED same session:
+HTTP2_MAX_HEADER_LIST_SIZE already wired (256KB Chrome value, connector.rs:689).
+FIX DESIGN ANALYSIS (not yet implemented): (1) NodeSet Drop reverse-order — blocked:
+into_iter moves nodes out (E0509 with Drop impl); (2) eval.rs consumption order is
+semantic, can't trivially reverse; (3) RootCollection side-index HashMap<ptr-as-usize,
+usize> storing LAST occurrence index (matches rposition semantics): unroot looks up,
+falls back to scan on stale/miss (duplicates possible — same object rooted twice), swap-
+remove fixup updates swapped element's index; correct but touches hot engine-wide infra;
+(4) scan-direction-adaptive or first-K-then-full hybrid: doesn't fix worst case.
+RECOMMENDED: option 3 with fallback scan — exact correctness, O(1) fast path, moderate
+blast radius. Verify with aol.com nav completing + execute probes alive. REPRO harness:
+/tmp/aolhunt.py (auto gdb-captures spinning script thread), /tmp/aolcpu.py,
+/tmp/aol-spin-bt.txt. Also NOTE: this class probably affects other xpath-heavy pages;
+also worth checking whether document.evaluate heavy loops in WPT explain residual
+timeouts.
