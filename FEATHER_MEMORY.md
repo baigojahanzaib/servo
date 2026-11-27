@@ -8107,3 +8107,11 @@ REMEDIATION PLAN (ordered leverage/cost):
 3. appVersion correct per flavor. CHEAP.
 4. WebGL masked strings → flavor-correct values. MEDIUM (graphics layer).
 5. Long-term: evaluate firefox-flavor as the DEFAULT everywhere (chrome claim is unmatchable at TLS layer; firefox claim at least is internally consistent for everything except TLS).
+
+
+## state-loss root cause — write paths broken, NOT update wiping — 2026-11-27 (windows child)
+SYMPTOM: history.jsonl + cookie_jar.json frozen in time while session.json writes fine. User-level: trust cookies never persist across restarts → every session a fresh suspicious visitor → google adaptive risk escalation (the /sorry wall) + gmail sign-in friction.
+MECHANISM (two independent same-class defects):
+- shell history.rs: BufWriter NEVER flushed — records lived in memory until 8KB fill or clean drop; hard exits (close/crash/update-apply) lose everything since the last fill. Fixed: flush per record.
+- servo resource_thread.rs: cookie_jar/auth_cache/hsts written ONLY in CoreResourceMsg::Exit handler — the clean-shutdown path that hard process exits never reach. In practice cookies NEVER persisted. Fixed: 30s periodic persist thread spawned in ResourceChannelManager::start (unconditional write; cost negligible).
+LESSON for symptom index: ANY write-behind-buffer or shutdown-only persistence in this codebase is effectively a no-op because the process lifecycle is hard-exit-dominated. Audit rule: search for write_json_to_file/BufWriter flush points — if the only writer is an Exit/drop path, it does not persist in practice. session.json survived because it writes eagerly.
