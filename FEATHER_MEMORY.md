@@ -4706,3 +4706,6 @@ state is hit — no media element needed if the shared sync primitive
 races. Investigation direction for engine lane: instrument the two states
 by logging pipeline clock state at first frame; the repro is 1-in-2-ish so
 a handful of boots brackets both.
+
+## sec1zt208 — deadlock cycle-breaker SHIPPED c534afd6c6d — VERIFICATION PENDING
+The try_lock fix compiles and is pushed. VERIFY: rebuild feather shell-new (picks up path-dep servo) then repeated fresh youtube watch boots + seek churn — wedge is racy so need 5+ clean boots. ALSO the feathershell rebuild is heavy (~10+min?) — batch it. NOTE compile-check gotcha reconfirmed: -p package checks fail on freetype2 pkg-config (system 24.1.18 < 24.3.18 required) AND FREETYPE2_NO_PKG_CONFIG=1 just aborts pkg-config not enables bundled — MUST use workspace-level cargo check no -p (~2min warm). Structural followup still open: control path holds PlayerInner across blocking gst calls (inner_player_proxy macro) — upstream-grade fix = extract-then-call pattern; current fix breaks the cycle but is technically lossy under contention.
