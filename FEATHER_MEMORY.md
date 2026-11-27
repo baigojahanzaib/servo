@@ -6174,3 +6174,31 @@ the anonymous content box. Repro harness: /tmp/fs-shot.py screenshots test+ref o
 webdriver (needs --window-size 800x600 NOT 800,600 — comma form crashes servoshell
 argparse; file:// urls kill the webdriver session, serve over http instead).
 
+
+## FINAL HANDOFF — complete shell-lane state (2026-11-28)
+
+### Build commands (this box)
+```
+cd /Users/devin/feather/shell-new
+PKG_CONFIG_PATH=/Library/Frameworks/GStreamer.framework/Versions/1.0/lib/pkgconfig cargo build --release
+install_name_tool -add_rpath /Library/Frameworks/GStreamer.framework/Versions/1.0/lib target/release/feather-ui   # after EVERY build
+```
+Shell-only rebuild 2-5min; servo-dep rebuilds ~6.5min. NOTE: cargo registry cache was deleted 2026-11-28 (disk crisis) — first fresh build re-downloads crates, +3-5min.
+Debug env vars: FEATHER_LOADLOG=1 (webview load status), FEATHER_WEDGE=1/FEATHER_ACTIONS=1 (navigation driver), FEATHER_DEVTOOLS=1 (devtools server on :12374, firefox protocol, reports zero tabs — integration partial).
+
+### Verified green on latest engine (do not re-verify)
+memory reclaim; 20/20 site sweep (COMPATIBILITY.md); youtube playback end-to-end; media controls; text input; SPA nav; scroll; storage prompts; prefers-color-scheme through feather's own toggle; arabic shaping+painting+dir/bidi+RTL (aljazeera real-world); object-element fix; external-scheme handoff LOAD-FIRED; tab-group persistence (all dimensions incl. collapsed state); crash recovery SIGKILL; file:// rendering (fixed #403, closed #404).
+
+### Open items (in priority order, as documented in defect-queue.md)
+1. Authenticated dogfood — gmail/facebook/linkedin need real credentials; probe surface anonymous-only is exhausted.
+2. Amazon hydration layout — intermittent, cold-first-load biased, 3/3 correct since original sighting; one cold-profile repro left before closing.
+3. DRM/EME — the only media gap; widevine-class work, engine lane.
+4. Hardware-verification checklist with the user: middle-click, mouse back/forward buttons, real file drops (#352 assumed working now that file:// loads — the drag path itself never verified cross-app).
+5. Windows file-picker verification.
+6. Omnibox data: URL mangling — normalize() requires "://", strips data: syntax (#393 filed, fix needed).
+
+### Methodology notes (learned the hard way)
+- Zero events at every level = suspect the shell's own driver logic BEFORE the engine. The wedge/loadlog env instrumentation discriminates shell-vs-engine in minutes. file:// was one http-only gate line, found only after eliminating race/prefs/library/external-scheme.
+- Session format: {"version":1,"active_space":0,"spaces":[{"name","tabs":[{"url","group"} or {"blank":true,"group"}],"active","groups":[{"id","name","color":[r,g,b],"collapsed"}]}],"pinned":[]} — at ~/Library/Application Support/feather/session.json.
+- Boot-url file drops and omnibox navigations are DIFFERENT code paths — always test both when changing navigation behavior.
+- Same-branch commits ride into open PRs; docs PRs collide on defect-queue.md — rebase by re-appending onto fresh main.
