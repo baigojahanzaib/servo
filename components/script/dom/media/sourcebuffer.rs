@@ -130,9 +130,10 @@ impl SourceBuffer {
         }
         // Boundary scan: webm clusters first, fmp4 moofs as fallback — the two
         // container families youtube actually uses.
-        let clusters = crate::dom::media::ebml::scan_cluster_offsets(&stream);
-        let boundaries: Vec<(usize, f64)> = if !clusters.is_empty() {
-            clusters
+        let full = crate::dom::media::ebml::scan_cluster_full(&stream);
+        let has_timecodes = full.iter().any(|(_, tc, _, _)| *tc > 0.0);
+        let boundaries: Vec<(usize, f64)> = if !full.is_empty() {
+            full.iter().map(|(off, tc, _, _)| (*off, *tc)).collect()
         } else {
             crate::dom::media::ebml::scan_moof_offsets(&stream)
                 .into_iter()
@@ -156,6 +157,39 @@ impl SourceBuffer {
             0
         };
         let start_off = boundaries[start_idx].0;
+        // Timestamp re-basing (sec1zt128/129): the refed clusters carry their
+        // ORIGINAL timecodes, but the post-reset pipeline restarts at zero —
+        // the collision drops/clips frames in the overlap region (the Swiss-
+        // cheese holes) and restarts pts at 0. Rewrite each refed cluster's
+        // timecode in place: new = seek_target + (orig - first_refed_orig),
+        // producing a contiguous stream that starts exactly at the target.
+        // Rewrites are same-length big-endian into the existing timecode
+        // element, so stream length and all offsets are preserved. A cluster
+        // whose value doesn't fit its element size is left as-is (rare —
+        // youtube uses 4+ byte timecodes).
+        if has_timecodes {
+            let base_tc = full[start_idx].1;
+            let target_ms = (seek_target * 1000.0).round() as u64;
+            let first_ms = (base_tc * 1000.0).round() as u64;
+            for (idx, (_, tc, coff, csize)) in full.iter().enumerate() {
+                if idx < start_idx || *csize == 0 {
+                    continue;
+                }
+                let orig_ms = (*tc * 1000.0).round() as u64;
+                let delta = orig_ms.saturating_sub(first_ms);
+                let new_val = target_ms.saturating_add(delta);
+                let max_val = if *csize >= 8 {
+                    u64::MAX
+                } else {
+                    (1u64 << (*csize as u32 * 8)) - 1
+                };
+                if new_val <= max_val && *coff + *csize <= stream.len() {
+                    let bytes = new_val.to_be_bytes();
+                    stream[*coff..*coff + *csize]
+                        .copy_from_slice(&bytes[8 - *csize..]);
+                }
+            }
+        }
         // Cut chunk boundaries: each boundary offset at-or-after start, plus
         // end-of-stream. Group clusters into pushes of at most ~1.5MB so the
         // engine per-track quota isn't blown.

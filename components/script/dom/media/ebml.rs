@@ -89,6 +89,53 @@ pub(crate) fn scan_cluster_offsets(data: &[u8]) -> Vec<(usize, f64)> {
     out
 }
 
+/// Cluster scan with timecode-element byte positions: (cluster_offset,
+/// timecode_secs, tc_content_offset, tc_content_size). The content position
+/// and size let the MSE re-feed rewrite timestamps in place — re-basing the
+/// refed stream onto the post-seek domain without changing stream length
+/// (sec1zt128/129).
+pub(crate) fn scan_cluster_full(data: &[u8]) -> Vec<(usize, f64, usize, usize)> {
+    let mut out = Vec::new();
+    let mut pos = 0usize;
+    while pos + 4 <= data.len() {
+        if data[pos] == 0x1F && data[pos + 1] == 0x43 && data[pos + 2] == 0xB6 && data[pos + 3] == 0x75 {
+            let window_end = (pos + 4 + 512).min(data.len());
+            let mut i = pos + 4;
+            let mut found = None;
+            while i + 2 <= window_end {
+                if data[i] == 0xE7 {
+                    let (size, vlen) = read_vint(&data[i + 1..]);
+                    if size > 0 && size <= 8 && i + 1 + vlen + size <= window_end {
+                        let content_off = i + 1 + vlen;
+                        let mut val: u64 = 0;
+                        for b in &data[content_off..content_off + size] {
+                            val = (val << 8) | (*b as u64);
+                        }
+                        found = Some((val as f64 / 1000.0, content_off, size));
+                        break;
+                    }
+                }
+                i += 1;
+            }
+            if let Some((tc, coff, csize)) = found {
+                out.push((pos, tc, coff, csize));
+            } else {
+                out.push((pos, 0.0, 0, 0));
+            }
+            let (size, vlen) = read_vint_size(&data[pos + 4..]);
+            if size > 0 {
+                let next = pos + 4 + vlen + size as usize;
+                pos = if next > pos { next.min(data.len()) } else { pos + 4 };
+            } else {
+                pos += 4;
+            }
+        } else {
+            pos += 1;
+        }
+    }
+    out
+}
+
 /// Scan an fmp4 bytestream for moof box byte offsets. Each moof+mdat pair is
 /// a self-contained media fragment — the natural re-feed boundary (sec1zt126).
 pub(crate) fn scan_moof_offsets(data: &[u8]) -> Vec<usize> {
