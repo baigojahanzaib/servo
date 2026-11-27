@@ -6035,3 +6035,14 @@ work in servo is far heavier than in real browsers (polymer boot + our slower JS
 Implication for priority: dark-nav correctness is downstream of raw JS/DOM perf — the
 composite-off-UI-thread work + general perf matter more than further dark-nav probing.
 Negative result: zero console errors again confirmed on this run.
+
+## sec1zt306 — wedge regression VERDICT: fixed, verified with exact repro (2026-11-28)
+Repro per coordinator: hanging embedded image (never-completing subresource, hangsrv.py
+port 8460, hangpage.html) + 5s pageLoad timeout, then re-navigate. Results: timeout at
+exactly 5.0s, recovery nav completes in 0.02s, execute alive (readyState complete),
+second cycle identical. NO permanent dead webview. Attribution caveat: the recovery path
+mechanically depends on input-wedge fix 825fe34188f + permanent-webview fix bb5c9bc9b94,
+not memory-only 9182287bf. Harness: /tmp/wedge-repro-final.py — REPRO RECIPE NOTES:
+navigating directly to a hanging image URL does NOT hang (image-document wrapper
+completes instantly); must embed as subresource in HTML page. Server dies over time —
+restart hangsrv.py before use. DEFECT CLOSED.
