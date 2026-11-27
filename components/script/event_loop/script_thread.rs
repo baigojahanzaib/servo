@@ -55,10 +55,12 @@ use hyper_serde::Serde;
 use jiff::ZonedDateTime;
 use js::context::{JSContext, NoGC};
 use js::glue::GetWindowProxyClass;
-use js::jsapi::{GCReason, JSContext as UnsafeJSContext};
+use js::jsapi::{GCReason, JSContext as UnsafeJSContext, JSGCParamKey};
 use js::jsval::UndefinedValue;
 use js::rust::ParentRuntime;
-use js::rust::wrappers2::{JS_AddInterruptCallback, JS_GC, SetWindowProxyClass};
+use js::rust::wrappers2::{
+    JS_AddInterruptCallback, JS_GC, JS_SetGCParameter, SetWindowProxyClass,
+};
 use layout_api::{LayoutConfig, LayoutFactory, RestyleReason, ScriptThreadFactory};
 use media::WindowGLContext;
 use metrics::MAX_TASK_NS;
@@ -2018,6 +2020,10 @@ impl ScriptThread {
                 self.forward_accessibility_action(pipeline_id, action_request);
             },
             ScriptThreadMessage::TriggerGarbageCollection => unsafe {
+                // Keep no empty chunks in reserve so the GC below actually
+                // decommits them back to the OS instead of caching them for
+                // reuse; without this a closed tab's JS heap stays resident.
+                JS_SetGCParameter(cx, JSGCParamKey::JSGC_MIN_EMPTY_CHUNK_COUNT, 0);
                 JS_GC(cx, GCReason::API);
             },
             ScriptThreadMessage::SetNetworkOnlineState(online) => {

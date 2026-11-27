@@ -3633,6 +3633,14 @@ where
             }
         }
 
+        // The closed webview's documents are gone; force a garbage collection on
+        // every script thread so their JS heaps are swept and (with the GC
+        // parameters set in the handler) decommitted back to the OS instead of
+        // lingering in per-runtime chunk caches.
+        for event_loop in self.event_loops() {
+            let _ = event_loop.send(ScriptThreadMessage::TriggerGarbageCollection);
+        }
+
         debug!("{webview_id}: Closed");
     }
 
