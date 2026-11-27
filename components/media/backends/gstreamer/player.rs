@@ -366,6 +366,28 @@ impl PlayerInner {
                             eprintln!("[mse] seek gen={} superseded, skipping cycle", my_gen);
                             return;
                         }
+                        // Wait for any in-flight state transition — critically
+                        // the initial startup preroll — to settle before
+                        // resetting: recreating appsrcs mid-transition breaks
+                        // decodebin3's plumbing and the restore never completes
+                        // (boot freeze: sites that resume-at-position seek
+                        // within milliseconds of pipeline creation, wedging
+                        // playback at the seek target — sec1zt222). Bounded:
+                        // a slow preroll must not deadlock the seek path.
+                        let deadline = std::time::Instant::now() +
+                            std::time::Duration::from_secs(5);
+                        loop {
+                            let (_, _current, pending) =
+                                pipeline.state(gstreamer::ClockTime::ZERO);
+                            if pending == gstreamer::State::VoidPending {
+                                break;
+                            }
+                            if std::time::Instant::now() > deadline {
+                                eprintln!("[mse] seek gen={} state settle timeout", my_gen);
+                                break;
+                            }
+                            std::thread::sleep(std::time::Duration::from_millis(50));
+                        }
                         source.seek_reset(time, 0);
                         let r = pipeline.set_state(gstreamer::State::Ready);
                         eprintln!("[mse] seek pipeline->ready {:?}", r);
