@@ -468,11 +468,29 @@ impl SameFormattingContextBlock {
                         // fieldset content-box coordinates (the border edge center).
                         // NOTE: horizontal writing modes only; vertical modes need the
                         // logical form of this offset.
-                        let target_center = -(pbm.padding.block_start + pbm.border.block_start / 2);
-                        let current_center = rect.origin.y + legend_height / 2;
-                        let shift = target_center - current_center;
+                        let wm = style.writing_mode;
                         let mut new_rect = rect;
-                        new_rect.origin.y += shift;
+                        if wm.is_vertical() {
+                            // Vertical modes: the block-start edge is horizontal,
+                            // so the legend's horizontal center straddles it.
+                            // vertical-lr: block-start is the left edge (same sign
+                            // as the horizontal case). vertical-rl: block-start is
+                            // the right edge, at inline_size + padding + half border.
+                            let target_x = if wm.is_vertical_lr() {
+                                -(pbm.padding.block_start + pbm.border.block_start / 2)
+                            } else {
+                                containing_block_for_children.inline_size() +
+                                    (pbm.padding.block_start + pbm.border.block_start / 2)
+                            };
+                            let current_x = rect.origin.x + rect.size.width / 2;
+                            new_rect.origin.x += target_x - current_x;
+                        } else {
+                            let target_center =
+                                -(pbm.padding.block_start + pbm.border.block_start / 2);
+                            let current_center = rect.origin.y + legend_height / 2;
+                            let shift = target_center - current_center;
+                            new_rect.origin.y += shift;
+                        }
                         base.set_rect(new_rect);
                     }
                 }
