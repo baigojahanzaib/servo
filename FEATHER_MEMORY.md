@@ -5363,3 +5363,14 @@ principled): hoist process_pending_input_events BEFORE the waiting_on_canvas_ima
 check in update_the_rendering so input is always processed; visual updates still gate.
 Queue after the WPT run + upstream cherry-picks. Verify: repro = page with a dirty canvas
 in a state where confirmation is delayed, confirm input latency/loss before and after.
+
+## sec1zt273 — post-input-fix residual crash cluster: media document-removal (2026-11-27)
+Post-input-fix html run (mid-run sample, 7063 tests): ZERO dnd/input crashes — wedge fix
+holds at scale. Residual crashes are a NEW coherent cluster: media-element document
+move/removal — pause-remove-from-document{,-different-load}, pause-move-to-other-document,
+currentTime-move-within-document, autoplay-overrides-preload (5 of 10). These look like
+genuine process crashes (not wedges) in gstreamer/player teardown when documents are
+navigated/removed while media plays — same territory as the batch-6 deferred-dispose reaper
+commits. NEXT ACTIONABLE CLUSTER after the run completes: repro one in isolation, capture
+panic message, likely teardown-ordering bug. Others: window-open-popup-behavior,
+radio-focus-navigation, shadowBlur_gaussian (canvas), origin-keyed-agent-cluster — singletons.
