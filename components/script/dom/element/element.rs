@@ -226,6 +226,13 @@ pub struct Element {
     class_list: MutNullableDom<DOMTokenList>,
     #[no_trace]
     state: Cell<ElementState>,
+    /// Cached resolution of the element's own `dir` attribute directionality,
+    /// computed script-side (where DOM text is accessible) and read by layout
+    /// for `:dir()` matching. 0 = no intrinsic directionality (fall back to
+    /// parent per the simplified model), 1 = ltr, 2 = rtl.
+    /// The scan for `dir=auto` cannot run on the layout thread, so it is
+    /// precomputed here; see `HTMLElement::update_directionality_cache`.
+    directionality_cache: AtomicUsize,
     /// These flags are set by the style system to indicate the that certain
     /// operations may require restyling this element or its descendants.
     selector_flags: AtomicUsize,
@@ -343,6 +350,7 @@ impl Element {
             attr_list: Default::default(),
             class_list: Default::default(),
             state: Cell::new(state),
+            directionality_cache: AtomicUsize::new(0),
             selector_flags: Default::default(),
             rare_data: Default::default(),
             style_data: Default::default(),
@@ -1179,6 +1187,26 @@ pub(crate) fn is_valid_shadow_host_name(name: &LocalName) -> bool {
 
 #[inline]
 #[expect(unsafe_code)]
+#[expect(unsafe_code)]
+pub(crate) fn get_directionality_cache_for_layout<'dom>(elem: LayoutDom<'dom, Element>) -> u8 {
+    unsafe { elem.unsafe_get().directionality_cache.load(Ordering::Relaxed) as u8 }
+}
+
+impl Element {
+    pub(crate) fn set_directionality_cache(&self, value: u8) {
+        self.directionality_cache.store(value as usize, Ordering::Relaxed);
+    }
+
+    pub(crate) fn directionality_cache(&self) -> u8 {
+        self.directionality_cache.load(Ordering::Relaxed) as u8
+    }
+}
+
+fn element_directionality_cache_snapshot(element: &Element) -> u8 {
+    element.directionality_cache()
+}
+
+#[expect(unsafe_code)]
 pub(crate) fn get_attr_for_layout<'dom>(
     elem: LayoutDom<'dom, Element>,
     namespace: &Namespace,
@@ -1837,6 +1865,12 @@ impl<'dom> LayoutDom<'dom, Element> {
         name: &LocalName,
     ) -> Option<&'dom AttrValue> {
         get_attr_for_layout(self, namespace, name)
+    }
+
+    #[inline]
+    #[expect(unsafe_code)]
+pub(crate) fn get_directionality_cache_for_layout(self) -> u8 {
+        get_directionality_cache_for_layout(self)
     }
 
     #[inline]
@@ -5487,6 +5521,27 @@ impl VirtualMethods for Element {
     fn children_changed(&self, cx: &mut JSContext, mutation: &ChildrenMutation) {
         if let Some(s) = self.super_type() {
             s.children_changed(cx, mutation);
+        }
+
+        // Child mutations can change the first-strong-character scan result of
+        // any `dir=auto` ancestor, so recompute their script-side directionality
+        // caches. If a cache value actually changes, descendants must be restyled
+        // since `:dir()` matching walks the ancestor chain.
+        // NOTE: characterdata mutations of existing text nodes do not reach this
+        // hook; directionality for in-place text edits on `dir=auto` subtrees can
+        // go stale until the next structural mutation — documented residual.
+        let mut current = Some(DomRoot::from_ref(self.upcast::<Node>()));
+        while let Some(node) = current {
+            if let Some(element) = node.downcast::<Element>() {
+                if let Some(html) = element.downcast::<crate::dom::html::htmlelement::HTMLElement>() {
+                    let before = element_directionality_cache_snapshot(element);
+                    html.update_directionality_cache();
+                    if element_directionality_cache_snapshot(element) != before {
+                        node.dirty(cx.no_gc(), NodeDamage::Other);
+                    }
+                }
+            }
+            current = node.GetParentNode();
         }
 
         let flags = self.get_selector_flags();

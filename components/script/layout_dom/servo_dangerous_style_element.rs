@@ -824,7 +824,25 @@ impl<'dom> ::selectors::Element for ServoDangerousStyleElement<'dom> {
                             resolved = false;
                             break;
                         }
-                        // dir=auto or invalid: treat as needing parent per simplified model
+                        // dir=auto: use the script-precomputed directionality
+                        // cache (layout cannot scan text). The cache resolves
+                        // the element's own dir attribute: 1 = ltr, 2 = rtl,
+                        // 0 = unresolved — fall through to parent per the
+                        // simplified model (invalid/missing values).
+                        if val.eq_ignore_ascii_case("auto") {
+                            match el.element.get_directionality_cache_for_layout() {
+                                2 => {
+                                    resolved = true;
+                                    break;
+                                },
+                                1 => {
+                                    resolved = false;
+                                    break;
+                                },
+                                _ => {},
+                            }
+                        }
+                        // invalid values: fall through to parent per simplified model
                     }
                     current = el.parent_element();
                 }
