@@ -82,6 +82,10 @@ struct TaffyContainerContext<'a> {
 
     /// Temporary location for children specific info, which will be moved into child fragments
     child_specific_layout_infos: Vec<Option<SpecificLayoutInfo>>,
+
+    /// Parent-track adoption when this container is itself a subgrid (phase-1).
+    subgrid_columns: Option<super::SubgridAdoption>,
+    subgrid_rows: Option<super::SubgridAdoption>,
 }
 
 struct ChildIter(std::ops::Range<usize>);
@@ -124,7 +128,10 @@ impl taffy::LayoutPartialTree for TaffyContainerContext<'_> {
         Self: 'a;
 
     fn get_core_container_style(&self, _node_id: taffy::NodeId) -> Self::CoreContainerStyle<'_> {
-        TaffyStyloStyle::new(self.style, self.fragment_flags)
+        let mut style = TaffyStyloStyle::new(self.style, self.fragment_flags);
+        style.subgrid_columns = self.subgrid_columns.clone();
+        style.subgrid_rows = self.subgrid_rows.clone();
+        style
     }
 
     fn set_unrounded_layout(&mut self, node_id: taffy::NodeId, layout: &taffy::Layout) {
@@ -343,7 +350,10 @@ impl taffy::LayoutGridContainer for TaffyContainerContext<'_> {
         &self,
         _node_id: taffy::prelude::NodeId,
     ) -> Self::GridContainerStyle<'_> {
-        TaffyStyloStyle::new(self.style, self.fragment_flags)
+        let mut style = TaffyStyloStyle::new(self.style, self.fragment_flags);
+        style.subgrid_columns = self.subgrid_columns.clone();
+        style.subgrid_rows = self.subgrid_rows.clone();
+        style
     }
 
     fn get_grid_child_style(
@@ -413,6 +423,8 @@ impl ComputeInlineContentSizes for TaffyContainer {
             source_child_nodes: &self.children,
             specific_layout_info: None,
             child_specific_layout_infos: vec![None; self.children.len()],
+            subgrid_columns: self.subgrid_columns.clone(),
+            subgrid_rows: self.subgrid_rows.clone(),
         };
 
         let (max_content_output, min_content_output) = match style.get_display().inside() {
@@ -470,6 +482,8 @@ impl TaffyContainer {
             source_child_nodes: &self.children,
             specific_layout_info: None,
             child_specific_layout_infos: vec![None; self.children.len()],
+            subgrid_columns: self.subgrid_columns.clone(),
+            subgrid_rows: self.subgrid_rows.clone(),
         };
 
         let container_style = &content_box_size_override.style;

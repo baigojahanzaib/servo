@@ -27,11 +27,34 @@ use crate::geom::{PhysicalPoint, PhysicalRect, PhysicalSize};
 use crate::layout_box_base::LayoutBoxBase;
 use crate::positioned::{AbsolutelyPositionedBox, PositioningContext};
 
+/// Tracks and gap adopted from a parent grid for a subgridded axis
+/// (phase-1 subgrid: definite, plain-length parent tracks only).
+#[derive(Clone, Debug)]
+pub(crate) struct SubgridAdoption {
+    pub tracks: Vec<style::values::generics::grid::TrackListValue<
+        style::values::computed::LengthPercentage,
+        i32,
+    >>,
+    /// The parent grid's gap in the subgridded axis, in pixels.
+    pub gap: f32,
+}
+
+impl malloc_size_of::MallocSizeOf for SubgridAdoption {
+    fn size_of(&self, _ops: &mut malloc_size_of::MallocSizeOfOps) -> usize {
+        // The adopted track list is tiny (a handful of plain-length clones).
+        self.tracks.len() * std::mem::size_of::<usize>()
+    }
+}
+
 #[derive(Debug, MallocSizeOf)]
 pub(crate) struct TaffyContainer {
     children: Vec<ArcRefCell<TaffyItemBox>>,
     style: Arc<ComputedValues>,
     fragment_flags: FragmentFlags,
+    /// Adopted parent tracks when this grid is a subgrid in the column axis.
+    pub(crate) subgrid_columns: Option<SubgridAdoption>,
+    /// Adopted parent tracks when this grid is a subgrid in the row axis.
+    pub(crate) subgrid_rows: Option<SubgridAdoption>,
 }
 
 impl TaffyContainer {
@@ -46,7 +69,7 @@ impl TaffyContainer {
         contents.traverse(context, info, &mut builder);
         let items = builder.finish();
 
-        let children = items
+        let children: Vec<_> = items
             .into_iter()
             .map(|item| {
                 let taffy_item_box = match item.kind {
@@ -74,10 +97,14 @@ impl TaffyContainer {
             })
             .collect();
 
+        adopt_subgrid_tracks(&children, &info.style);
+
         Self {
             children,
             style: info.style.clone(),
             fragment_flags,
+            subgrid_columns: None,
+            subgrid_rows: None,
         }
     }
 
@@ -252,4 +279,152 @@ impl SpecificTaffyGridInfo {
             ),
         )
     }
+}
+
+
+/// Phase-1 subgrid support: for each grid item that is itself a grid container
+/// with `subgrid` in an axis, adopt the parent's spanned tracks when they are
+/// all definite plain lengths. Anything more complex (fr, auto, percentages,
+/// content sizing, auto placement) falls back to laying out as a normal grid.
+fn adopt_subgrid_tracks(children: &[ArcRefCell<TaffyItemBox>], container_style: &ComputedValues) {
+    use style::values::generics::grid::GenericGridTemplateComponent;
+
+    let position = container_style.get_position();
+    for child in children {
+        let mut child = (**child).borrow_mut();
+        let child_style = child.style.clone();
+        let child_position = child_style.get_position();
+
+        let column_adoption = match &child_position.grid_template_columns {
+            GenericGridTemplateComponent::Subgrid(_) => compute_subgrid_adoption(
+                &position.grid_template_columns,
+                &child_position.grid_column_start,
+                &child_position.grid_column_end,
+                &position.column_gap,
+            ),
+            _ => None,
+        };
+        let row_adoption = match &child_position.grid_template_rows {
+            GenericGridTemplateComponent::Subgrid(_) => compute_subgrid_adoption(
+                &position.grid_template_rows,
+                &child_position.grid_row_start,
+                &child_position.grid_row_end,
+                &position.row_gap,
+            ),
+            _ => None,
+        };
+
+        if column_adoption.is_none() && row_adoption.is_none() {
+            continue;
+        }
+        if let TaffyItemBoxInner::InFlowBox(independent_context) = &mut child.taffy_level_box {
+            if let Some(grid) = independent_context.grid_container_mut() {
+                grid.subgrid_columns = column_adoption;
+                grid.subgrid_rows = row_adoption;
+            }
+        }
+    }
+}
+
+/// Compute the adopted track list for one subgridded axis, or `None` if the
+/// parent tracks or the child's placement are outside the phase-1 subset.
+fn compute_subgrid_adoption(
+    parent_template: &style::values::computed::GridTemplateComponent,
+    placement_start: &style::values::computed::GridLine,
+    placement_end: &style::values::computed::GridLine,
+    parent_gap: &style::values::generics::length::LengthPercentageOrNormal<
+        style::values::generics::NonNegative<style::values::computed::LengthPercentage>,
+    >,
+) -> Option<SubgridAdoption> {
+    use style::values::computed::length_percentage::Unpacked as UnpackedLengthPercentage;
+    use style::values::generics::grid::{
+        GenericGridTemplateComponent, GenericTrackBreadth, GenericTrackListValue, GenericTrackSize,
+        RepeatCount,
+    };
+
+    // The parent must have an explicit track list in this axis.
+    let track_values = match parent_template {
+        GenericGridTemplateComponent::TrackList(list) => &list.values,
+        _ => return None,
+    };
+
+    // Expand simple fixed-count repeats into a flat track list.
+    let mut expanded: Vec<GenericTrackListValue<style::values::computed::LengthPercentage, i32>> =
+        Vec::new();
+    for value in track_values.iter() {
+        match value {
+            GenericTrackListValue::TrackSize(size) => expanded.push(value.clone()),
+            GenericTrackListValue::TrackRepeat(repeat) => match repeat.count {
+                RepeatCount::Number(count) => {
+                    for _ in 0..count {
+                        for size in repeat.track_sizes.iter() {
+                            expanded
+                                .push(GenericTrackListValue::TrackSize(size.clone()));
+                        }
+                    }
+                },
+                _ => return None,
+            },
+        }
+    }
+
+    // Every expanded track must be a definite plain length (no percentages,
+    // calc, fr, minmax, fit-content or content sizing).
+    for value in &expanded {
+        if let GenericTrackListValue::TrackSize(GenericTrackSize::Breadth(
+            GenericTrackBreadth::Breadth(length_percentage),
+        )) = value
+        {
+            if !matches!(
+                length_percentage.unpack(),
+                UnpackedLengthPercentage::Length(_)
+            ) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
+    let track_count = expanded.len() as i32;
+
+    // Resolve the child's placement in this axis into a track index range.
+    if placement_start.is_span || placement_start.line_num <= 0 {
+        return None;
+    }
+    let start_line = placement_start.line_num;
+    let end_line = if placement_end.is_span {
+        if placement_end.line_num <= 0 {
+            return None;
+        }
+        start_line + placement_end.line_num
+    } else if placement_end.line_num > 0 {
+        placement_end.line_num
+    } else if placement_end.line_num < 0 {
+        // Negative lines count from the end: -1 is the last line.
+        (track_count + 2) + placement_end.line_num
+    } else {
+        return None;
+    };
+    let first_track = start_line - 1;
+    let last_track = end_line - 2; // exclusive
+    if first_track < 0 || last_track < first_track || last_track >= track_count {
+        return None;
+    }
+    let tracks: Vec<_> = expanded[(first_track as usize)..=(last_track as usize)].to_vec();
+    if tracks.is_empty() {
+        return None;
+    }
+
+    // Resolve the parent's gap in this axis.
+    let gap = match parent_gap {
+        style::values::generics::length::LengthPercentageOrNormal::Normal => 0.0,
+        style::values::generics::length::LengthPercentageOrNormal::LengthPercentage(value) => {
+            match value.0.unpack() {
+                UnpackedLengthPercentage::Length(length) => length.px(),
+                _ => return None,
+            }
+        },
+    };
+
+    Some(SubgridAdoption { tracks, gap })
 }

@@ -105,6 +105,15 @@ impl Baselines {
 }
 
 impl IndependentFormattingContext {
+    /// If this context is a grid container, return a mutable reference to the inner
+    /// [`TaffyContainer`]. Used to wire subgrid adoption from the parent grid.
+    pub(crate) fn grid_container_mut(&mut self) -> Option<&mut TaffyContainer> {
+        match &mut self.contents {
+            IndependentFormattingContextContents::Grid(container) => Some(container),
+            _ => None,
+        }
+    }
+
     pub(crate) fn new(
         base: LayoutBoxBase,
         contents: IndependentFormattingContextContents,

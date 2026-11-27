@@ -21,6 +21,11 @@ use crate::style_ext::ComputedValuesExt;
 pub struct TaffyStyloStyle<T: Deref<Target = ComputedValues>> {
     pub style: T,
     pub fragment_flags: FragmentFlags,
+    /// Track list adopted from the parent grid when this container's
+    /// `grid-template-columns` is `subgrid` (phase-1: definite parent tracks only).
+    pub subgrid_columns: Option<crate::taffy::SubgridAdoption>,
+    /// Same as `subgrid_columns`, but for rows.
+    pub subgrid_rows: Option<crate::taffy::SubgridAdoption>,
 }
 
 impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
@@ -28,7 +33,22 @@ impl<T: Deref<Target = ComputedValues>> TaffyStyloStyle<T> {
         Self {
             style,
             fragment_flags,
+            subgrid_columns: None,
+            subgrid_rows: None,
         }
+    }
+}
+
+fn track_list_value_to_taffy(
+    track: &TrackListValue<LengthPercentage, i32>,
+) -> taffy::GenericGridTemplateComponent<Atom, RepetitionWrapper<'_>> {
+    match track {
+        stylo::TrackListValue::TrackSize(size) => {
+            taffy::GenericGridTemplateComponent::Single(convert::track_size(size))
+        },
+        stylo::TrackListValue::TrackRepeat(repeat) => {
+            taffy::GenericGridTemplateComponent::Repeat(RepetitionWrapper(repeat))
+        },
     }
 }
 
@@ -275,42 +295,34 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
 
     #[inline]
     fn grid_template_rows(&self) -> Option<Self::TemplateTrackList<'_>> {
-        match &self.style.get_position().grid_template_rows {
-            stylo::GenericGridTemplateComponent::None => None,
-            stylo::GenericGridTemplateComponent::TrackList(list) => {
-                Some(list.values.iter().map(|track| match track {
-                    stylo::TrackListValue::TrackSize(size) => {
-                        taffy::GenericGridTemplateComponent::Single(convert::track_size(size))
-                    },
-                    stylo::TrackListValue::TrackRepeat(repeat) => {
-                        taffy::GenericGridTemplateComponent::Repeat(RepetitionWrapper(repeat))
-                    },
-                }))
-            },
-
-            // TODO: Implement subgrid
-            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        }
+        let values: &[TrackListValue<LengthPercentage, i32>] =
+            match &self.style.get_position().grid_template_rows {
+                stylo::GenericGridTemplateComponent::None => return None,
+                stylo::GenericGridTemplateComponent::TrackList(list) => &list.values,
+                stylo::GenericGridTemplateComponent::Subgrid(_) => {
+                    match &self.subgrid_rows {
+                        Some(adoption) => &adoption.tracks,
+                        None => return None,
+                    }
+                },
+            };
+        Some(values.iter().map(track_list_value_to_taffy))
     }
 
     #[inline]
     fn grid_template_columns(&self) -> Option<Self::TemplateTrackList<'_>> {
-        match &self.style.get_position().grid_template_columns {
-            stylo::GenericGridTemplateComponent::None => None,
-            stylo::GenericGridTemplateComponent::TrackList(list) => {
-                Some(list.values.iter().map(|track| match track {
-                    stylo::TrackListValue::TrackSize(size) => {
-                        taffy::GenericGridTemplateComponent::Single(convert::track_size(size))
-                    },
-                    stylo::TrackListValue::TrackRepeat(repeat) => {
-                        taffy::GenericGridTemplateComponent::Repeat(RepetitionWrapper(repeat))
-                    },
-                }))
-            },
-
-            // TODO: Implement subgrid
-            stylo::GenericGridTemplateComponent::Subgrid(_) => None,
-        }
+        let values: &[TrackListValue<LengthPercentage, i32>] =
+            match &self.style.get_position().grid_template_columns {
+                stylo::GenericGridTemplateComponent::None => return None,
+                stylo::GenericGridTemplateComponent::TrackList(list) => &list.values,
+                stylo::GenericGridTemplateComponent::Subgrid(_) => {
+                    match &self.subgrid_columns {
+                        Some(adoption) => &adoption.tracks,
+                        None => return None,
+                    }
+                },
+            };
+        Some(values.iter().map(track_list_value_to_taffy))
     }
 
     #[inline]
@@ -392,10 +404,17 @@ impl<T: Deref<Target = ComputedValues>> taffy::GridContainerStyle for TaffyStylo
     #[inline]
     fn gap(&self) -> taffy::Size<taffy::LengthPercentage> {
         let position_styles = self.style.get_position();
-        taffy::Size {
-            width: convert::gap(&position_styles.column_gap),
-            height: convert::gap(&position_styles.row_gap),
-        }
+        // In a subgridded axis the parent grid's gap applies instead of the
+        // child's own gap.
+        let width = match &self.subgrid_columns {
+            Some(adoption) => taffy::style_helpers::length(adoption.gap),
+            None => convert::gap(&position_styles.column_gap),
+        };
+        let height = match &self.subgrid_rows {
+            Some(adoption) => taffy::style_helpers::length(adoption.gap),
+            None => convert::gap(&position_styles.row_gap),
+        };
+        taffy::Size { width, height }
     }
 
     #[inline]
