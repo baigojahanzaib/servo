@@ -5227,3 +5227,19 @@ resource cache, and gstreamer/font caches. Next discriminator: heap_reports() je
 allocated/active/mapped before/after — if allocated drops but RSS doesn't = pure allocator
 retention; if allocated flat = still-live objects (real leak/pinning). Also note: 82 wedged
 harness servoshells found hoarding RAM after wpt runs — harness cleanup gap, kill -9 needed.
+
+## sec1zt266 — retention is BOUNDED not a linear leak (2026-11-27)
+Two consecutive open-close cycles in the SAME servoshell process:
+cycle1: 348 baseline → 794 loaded → 605 after close (+257 retained)
+cycle2: 605 → 794 loaded (identical peak!) → 639 after close (+34 retained)
+Peak RSS did NOT grow across cycles — the retained memory is REUSED by subsequent tabs.
+Interpretation: bulk of retention is saturating caches/allocator arenas (webrender resource
+cache, font cache, SpiderMonkey arena pool, jemalloc fragmentation) NOT a per-tab leak.
+Impact reframed: RSS converges to a working-set plateau (~1.6x single-tab weight) and stays —
+bad for idle-budget/monotonic-per-process-lifetime optics, but NOT unbounded growth.
+Fix implications: (1) cache eviction policies (webrender/font) matter more than leak hunting;
+(2) jemalloc purge on close DOES need verification since fragmentation in shared arenas
+defeats it; (3) measuring per-cycle delta is the right leak detector — +34MB residual/cycle
+is the true leak-rate upper bound worth chasing. Harness note: webdriver window/new starts
+failing 'no such window' after the first close-round — servo's bookkeeping drops handles;
+single-cycle-per-session measurements only.
