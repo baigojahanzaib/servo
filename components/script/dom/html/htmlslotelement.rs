@@ -359,6 +359,21 @@ impl HTMLSlotElement {
             slottable.set_assigned_slot(cx.no_gc(), Some(self));
         }
 
+        // A change in assignment changes the first-strong-character scan input of
+        // any `dir=auto` element in the slot's flat-tree ancestor chain (the slot
+        // itself scans its assigned nodes, and the scan propagates upward through
+        // shadow-tree ancestors), so recompute their directionality caches.
+        let mut current_dir = Some(DomRoot::from_ref(self.upcast::<Node>()));
+        while let Some(node) = current_dir {
+            if let Some(html) = node.downcast::<HTMLElement>() {
+                html.update_directionality_cache_and_dirty_if_changed(cx.no_gc());
+            }
+            current_dir = node
+                .parent_in_flat_tree(cx.no_gc())
+                .into_parent()
+                .map(|unrooted| unrooted.as_rooted());
+        }
+
         // If the `<slot>` element did not have assigned nodes before, be sure to clear
         // the style and layout data on the fallback content of the element.
         if !had_assigned_nodes && !slottables.is_empty() {

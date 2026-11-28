@@ -68,6 +68,7 @@ use crate::dom::html::htmldetailselement::HTMLDetailsElement;
 use crate::dom::html::htmlformelement::{FormControl, HTMLFormElement};
 use crate::dom::html::htmlframesetelement::HTMLFrameSetElement;
 use crate::dom::html::htmlhtmlelement::HTMLHtmlElement;
+use crate::dom::html::htmlslotelement::HTMLSlotElement;
 use crate::dom::html::htmllabelelement::HTMLLabelElement;
 use crate::dom::html::htmltextareaelement::HTMLTextAreaElement;
 use crate::dom::html::interactive::htmldialogelement::HTMLDialogElement;
@@ -2128,33 +2129,131 @@ impl HTMLElement {
     /// style) are skipped per
     /// <https://html.spec.whatwg.org/multipage/#the-directionality>.
     fn first_strong_descendant_is_rtl(&self) -> bool {
+        // <https://html.spec.whatwg.org/multipage/#contained-text-auto-directionality>
+        // The excluded element names are HTML elements — same-named elements in
+        // other namespaces (e.g. SVG script/textarea) do not establish context.
+        fn establishes_own_context(elem: &Element) -> bool {
+            if elem.has_attribute(&local_name!("dir")) {
+                return true;
+            }
+            if elem.namespace() != &ns!(html) {
+                return false;
+            }
+            let name = elem.local_name();
+            *name == local_name!("bdi") ||
+                *name == local_name!("script") ||
+                *name == local_name!("style") ||
+                *name == local_name!("textarea")
+        }
+
+        fn scan_text(text: &Text) -> Option<bool> {
+            let data = text.upcast::<CharacterData>().data();
+            for ch in data.chars() {
+                match bidi_class(ch) {
+                    BidiClass::L => return Some(false),
+                    BidiClass::R | BidiClass::AL => return Some(true),
+                    _ => continue,
+                }
+            }
+            None
+        }
+
+        // <https://html.spec.whatwg.org/multipage/#parent-directionality>
+        // Resolve the full inherited directionality of an element by walking
+        // the light-DOM parent chain, crossing shadow-root -> host.
+        fn resolve_directionality(elem: &Element) -> bool {
+            let mut current = Some(DomRoot::from_ref(elem));
+            while let Some(el) = current {
+                if let Some(html) = el.downcast::<HTMLElement>() &&
+                    let Some(dir) = html.directionality()
+                {
+                    return dir == "rtl";
+                }
+                let node = el.upcast::<crate::dom::node::Node>();
+                let parent = node.GetParentNode();
+                current = match parent {
+                    Some(p) if p.is::<crate::dom::shadowroot::ShadowRoot>() => {
+                        p.downcast::<crate::dom::shadowroot::ShadowRoot>()
+                            .map(|shadow| shadow.Host())
+                    },
+                    Some(p) => p.downcast::<Element>().map(DomRoot::from_ref),
+                    None => None,
+                };
+            }
+            false
+        }
+
+        // Descendant scan: returns the first strong direction found, or None.
+        // A slot element encountered mid-scan is NOT scanned through — per spec
+        // it yields the directionality of its shadow root's host instead.
         fn scan(node: &crate::dom::node::Node) -> Option<bool> {
             for child in node.children() {
                 if let Some(text) = child.downcast::<Text>() {
-                    let data = text.upcast::<CharacterData>().data();
-                    for ch in data.chars() {
-                        match bidi_class(ch) {
-                            BidiClass::L => return Some(false),
-                            BidiClass::R | BidiClass::AL => return Some(true),
-                            _ => continue,
-                        }
+                    if let Some(rtl) = scan_text(text) {
+                        return Some(rtl);
                     }
                 } else if let Some(elem) = child.downcast::<Element>() {
-                    let establishes_own_context = elem.has_attribute(&local_name!("dir")) ||
-                        elem.local_name() == &local_name!("bdi") ||
-                        elem.local_name() == &local_name!("script") ||
-                        elem.local_name() == &local_name!("style");
-                    if !establishes_own_context {
-                        if let Some(rtl) = scan(&child) {
+                    if establishes_own_context(elem) {
+                        continue;
+                    }
+                    if child.downcast::<HTMLSlotElement>().is_some() {
+                        let host_dir = node_or_slot_host_direction(&child);
+                        if let Some(rtl) = host_dir {
                             return Some(rtl);
                         }
+                        continue;
+                    }
+                    if let Some(rtl) = scan(&child) {
+                        return Some(rtl);
                     }
                 }
             }
             None
         }
 
-        scan(self.upcast::<crate::dom::node::Node>()).unwrap_or(false)
+        fn node_or_slot_host_direction(node: &crate::dom::node::Node) -> Option<bool> {
+            let slot = node.downcast::<HTMLSlotElement>()?;
+            // Only slots inside a shadow tree participate; a slot in the light
+            // document is scan-transparent for its light children (it has no
+            // shadow-root host relationship that redirects directionality).
+            let shadow = slot
+                .upcast::<crate::dom::node::Node>()
+                .containing_shadow_root()?;
+            host_directionality(Some(shadow.Host()))
+        }
+
+        fn host_directionality(host: Option<DomRoot<Element>>) -> Option<bool> {
+            host.map(|h| resolve_directionality(&h))
+        }
+
+        // <https://html.spec.whatwg.org/multipage/#auto-directionality>
+        // If the element itself is a slot in a shadow root with assigned nodes,
+        // the scan runs over the assigned slottables instead of light children.
+        let self_node = self.upcast::<crate::dom::node::Node>();
+        if let Some(slot) = self.downcast::<HTMLSlotElement>() {
+            let assigned = slot.assigned_nodes();
+            if !assigned.is_empty() && self_node.containing_shadow_root().is_some() {
+                for slottable in assigned.iter() {
+                    let child = slottable.node();
+                    if let Some(text) = child.downcast::<Text>() {
+                        if let Some(rtl) = scan_text(text) {
+                            return rtl;
+                        }
+                    } else if let Some(elem) = child.downcast::<Element>() {
+                        if !establishes_own_context(elem) &&
+                            let Some(rtl) = scan(child)
+                        {
+                            return rtl;
+                        }
+                    }
+                }
+                // Spec: return null — no strong direction found in slottables;
+                // callers fall back as if unresolved.
+                return false;
+            }
+        }
+
+        scan(self_node).unwrap_or(false)
     }
 
     // https://html.spec.whatwg.org/multipage/#the-directionality.
@@ -2171,6 +2270,17 @@ impl HTMLElement {
             _ => 0,
         };
         self.as_element().set_directionality_cache(value);
+    }
+
+    /// Recompute the directionality cache and, if the value changed, dirty the
+    /// node so `:dir()` matching re-evaluates for it and its descendants.
+    pub(crate) fn update_directionality_cache_and_dirty_if_changed(&self, no_gc: &NoGC) {
+        let element = self.as_element();
+        let before = element.directionality_cache();
+        self.update_directionality_cache();
+        if element.directionality_cache() != before {
+            self.upcast::<Node>().dirty(no_gc, NodeDamage::Other);
+        }
     }
 
     pub(crate) fn directionality(&self) -> Option<String> {

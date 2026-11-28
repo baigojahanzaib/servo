@@ -5561,6 +5561,30 @@ impl VirtualMethods for Element {
             current = node.GetParentNode();
         }
 
+        // Additionally walk the flattened-tree chain: a slotted node's text
+        // feeds the dir=auto scan of its assigned slot (and everything above
+        // the slot in the flat tree), which the light-DOM chain never reaches.
+        let mut current_flat = self
+            .upcast::<Node>()
+            .parent_in_flat_tree(cx.no_gc())
+            .into_parent()
+            .map(|unrooted| unrooted.as_rooted());
+        while let Some(node) = current_flat {
+            if let Some(element) = node.downcast::<Element>() {
+                if let Some(html) = element.downcast::<crate::dom::html::htmlelement::HTMLElement>() {
+                    let before = element_directionality_cache_snapshot(element);
+                    html.update_directionality_cache();
+                    if element_directionality_cache_snapshot(element) != before {
+                        node.dirty(cx.no_gc(), NodeDamage::Other);
+                    }
+                }
+            }
+            current_flat = node
+                .parent_in_flat_tree(cx.no_gc())
+                .into_parent()
+                .map(|unrooted| unrooted.as_rooted());
+        }
+
         let flags = self.get_selector_flags();
         if flags.intersects(ElementSelectorFlags::HAS_SLOW_SELECTOR) {
             // All children of this node need to be restyled when any child changes.
