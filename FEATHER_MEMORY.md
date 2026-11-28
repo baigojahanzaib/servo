@@ -6384,3 +6384,30 @@ REVISED FIRST SLICE: inside components/paint, spawn render thread owning
 device+context+Renderer at Paint::new; Painter::render becomes a rendezvous
 message roundtrip. Verify servoshell+WPT still pass — that alone is the refactor
 proof before touching the shell at all.
+
+## sec1zt317d — composite restructure: exact thread-split design (2026-11-28)
+Final reconnaissance facts for the paint-thread restructure (all verified in source):
+* webrender's RenderApi is ALREADY a channel proxy — Painter builds transactions
+  and sends them cross-thread by design. Display-list ingestion and transaction
+  building do NOT need to move. Only the Renderer object + GL context do.
+* Painter::new (painter.rs:156) requires rendering context current during
+  webrender::create_webrender_instance — so the paint thread must exist and own
+  the context BEFORE Renderer creation. Sequence: spawn thread → make context
+  current there → create renderer there → rendezvous back startup-ok.
+* Painter methods touching GL/renderer (must become paint-thread messages):
+  render() (update+render+metrics-after-composite), read_to_image/screenshot
+  (rendezvous — reftests+webdriver depend), resize (rendezvous), webrender
+  debug toggle, memory report, capture_webrender. ~6-8 call sites.
+* THE CLEAN SPLIT: compositor thread keeps Painter (display lists, transactions,
+  repaint decisions); new paint thread owns context+Renderer and executes
+  RenderNow messages with completion signals. paint metrics
+  (send_pending_paint_metrics_messages_after_composite) must run AFTER the
+  completion signal, not inline — currently inline in render() painter.rs:458.
+* media::WindowGLContext::initialize_image_handler + WebGLExternalImages are
+  constructed in Painter::new with rendering_context.clone() — the external
+  image handlers run INSIDE webrender render on the paint thread automatically
+  once Renderer moves; audit that their Rc usage doesn't cross back.
+IMPLEMENTATION ORDER: (1) move context+renderer creation behind thread boundary
+with everything still synchronous rendezvous — behavioral no-op refactor, verify
+WPT+servoshell unchanged; (2) shell: make paint() non-blocking + swapchain
+consumption per sec1zt317c; (3) backpressure. Step 1 alone is a full session.
