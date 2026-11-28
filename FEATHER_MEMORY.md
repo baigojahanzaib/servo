@@ -6505,3 +6505,10 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 ## sec1zt311: composite teardown panic + surface lifecycle (2026-11-28)
 - Teardown panic "Should have destroyed the FBO renderbuffers with destroy()": parked frame texture in Painter was dropped raw. Surfman surfaces/textures MUST be destroyed with the device — never dropped. Fix (269203c8d8a): Painter::drop destroys the texture with the embedder context and recycles the surface into the paint thread's swap chain BEFORE paint thread shutdown, so the chain teardown destroys it properly. Symptom index: panic in surfman renderbuffers drop at shutdown → check surface/texture lifecycle ordering, parked textures especially.
 - NEGATIVE result: directory-run crashes on the-location-interface (security_location_0, replace-with-nested-iframe) were cascade artifacts — both pass solo. The panic was real but non-fatal for the test itself.
+
+## sec1zt312: composite async — headed verification results (2026-11-28)
+- VERIFIED working headed: YouTube plays, scroll repaints correct, zero flashes/crashes across sync+async, sustained heavy-load stress clean. Input responsive in async under load.
+- NEGATIVE result: input-responsiveness delta NOT measurable on llvmpipe — composite cost at small windows/low fps is too cheap to block the sync UI thread; the improvement requires GPU hardware + large windows/high fps. 2D canvas rasterization happens in canvas/script pipeline in BOTH modes — canvas-heavy pages are the wrong stress test for composite-off-UI-thread.
+- fps directionally positive on DOM-rasterization load (5-6 async vs 4-5 sync, within noise).
+- GOTCHA: `media_gstreamer_enabled` is NOT a valid pref name — servoshell panics "Unknown preference" at startup. Media works without it.
+- Windows lane: the user-visible delta verification belongs on the Windows repro hardware — llvmpipe boxes cannot surface it.
