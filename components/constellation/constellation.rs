@@ -1838,6 +1838,30 @@ where
                     target_snapshot_params,
                 );
             },
+            ScriptToConstellationMessage::LoadUrlInPipeline(
+                target_pipeline_id,
+                load_data,
+                history_handling,
+                target_snapshot_params,
+            ) => {
+                let target_webview_id = match self.pipelines.get(&target_pipeline_id) {
+                    Some(pipeline) => pipeline.webview_id,
+                    None => {
+                        warn!(
+                            "{}: LoadUrlInPipeline for unknown pipeline",
+                            target_pipeline_id
+                        );
+                        return;
+                    },
+                };
+                self.schedule_navigation(
+                    target_webview_id,
+                    target_pipeline_id,
+                    load_data,
+                    history_handling,
+                    target_snapshot_params,
+                );
+            },
             ScriptToConstellationMessage::AbortLoadUrl => {
                 self.handle_abort_load_url_msg(webview_id, source_pipeline_id);
             },

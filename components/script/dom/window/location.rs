@@ -8,7 +8,10 @@ use js::context::JSContext;
 use net_traits::request::Referrer;
 use script_bindings::dom::MutNullableDom;
 use script_bindings::reflector::{Reflector, reflect_dom_object};
-use servo_constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
+use servo_constellation_traits::{
+    LoadData, LoadOrigin, NavigationHistoryBehavior, ScriptToConstellationMessage,
+    TargetSnapshotParams,
+};
 use servo_url::ServoUrl;
 
 use crate::dom::bindings::codegen::Bindings::LocationBinding::LocationMethods;
@@ -111,6 +114,78 @@ fn source_has_sandbox_top_navigation_permission(source_window: &Window) -> bool 
         !flags.contains(
             SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG,
         )
+}
+
+/// Forward a navigation to a window living in another script thread.
+///
+/// Cross-origin `location` writes are whitelisted operations: they must
+/// reach the target window even when that window is dissimilar-origin and
+/// lives in a different thread. The constellation message carries the
+/// target pipeline explicitly because the sender cannot use the target's
+/// own pipeline-stamped channel.
+fn forward_cross_origin_navigation(
+    cx: &mut JSContext,
+    dissimilar: &DissimilarOriginWindow,
+    url: ServoUrl,
+    history_handling: NavigationHistoryBehavior,
+) -> ErrorResult {
+    // The source of the navigation is the incumbent window — the frame
+    // performing the write.
+    let incumbent_global = GlobalScope::incumbent().expect("no incumbent global object");
+    let source_window: DomRoot<Window> =
+        DomRoot::downcast(incumbent_global).expect("global object is not a Window");
+
+    // The activation gate applies exactly as for the in-thread case:
+    // cross-origin nested frames need transient activation (or explicit
+    // sandbox permission) to navigate the top-level traversable.
+    let target_proxy = dissimilar.window_proxy();
+    let source_proxy = source_window.window_proxy();
+    if target_proxy.parent().is_none() &&
+        source_proxy.parent().is_some() &&
+        source_proxy.browsing_context_id() != target_proxy.browsing_context_id() &&
+        !source_window.origin().same_origin_domain(&dissimilar.origin()) &&
+        !source_window.has_transient_activation() &&
+        !source_has_sandbox_top_navigation_permission(&source_window)
+    {
+        return Err(Error::Security(Some(
+            "Cross-origin top-level navigation requires transient activation".into(),
+        )));
+    }
+
+    let source_document = source_window.Document();
+    let load_origin = source_window.origin().snapshot();
+    let load_data = LoadData::new(
+        LoadOrigin::Script(load_origin),
+        url,
+        source_document.about_base_url(),
+        Some(source_window.pipeline_id()),
+        Referrer::ReferrerUrl(source_document.url()),
+        source_document.get_referrer_policy(),
+        None,
+        Some(source_document.insecure_requests_policy()),
+        source_window
+            .as_global_scope()
+            .upgrade_insecure_navigations_set()
+            .clone(),
+        source_document.has_trustworthy_ancestor_origin(),
+        source_document.creation_sandboxing_flag_set_considering_parent_iframe(),
+    );
+    // The real target pipeline is the window proxy's currently-active
+    // pipeline — `DissimilarOriginWindow::pipeline_id` is a local
+    // placeholder, not an id the constellation knows.
+    let Some(target_pipeline_id) = target_proxy.currently_active() else {
+        return Ok(());
+    };
+    let _ = cx;
+    source_window.send_to_constellation(
+        ScriptToConstellationMessage::LoadUrlInPipeline(
+            target_pipeline_id,
+            load_data,
+            history_handling,
+            TargetSnapshotParams::default(),
+        ),
+    );
+    Ok(())
 }
 
 impl Location {
@@ -440,7 +515,19 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-location-replace>
     fn Replace(&self, cx: &mut JSContext, url: USVString) -> ErrorResult {
-        // TODO: This should eventually support cross-origin operation.
+        if let LocationWindow::DissimilarOrigin(dissimilar) = &self.window {
+            // Cross-origin replace() is whitelisted: forward to the target.
+            let url = match self.entry_settings_object().encoding_parse_a_url(&url.0) {
+                Ok(url) => url,
+                Err(e) => return Err(Error::Syntax(Some(format!("Couldn't parse URL: {}", e)))),
+            };
+            return forward_cross_origin_navigation(
+                cx,
+                dissimilar,
+                url,
+                NavigationHistoryBehavior::Replace,
+            );
+        }
         let window = self.window.same_origin_window()?;
 
         // Step 1: If this Location object's relevant Document is null, then return.
@@ -549,6 +636,20 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-location-href>
     fn SetHref(&self, cx: &mut JSContext, value: USVString) -> ErrorResult {
+        if let LocationWindow::DissimilarOrigin(dissimilar) = &self.window {
+            // Cross-origin location writes are whitelisted: forward the
+            // navigation to the target window's own thread.
+            let url = match self.entry_settings_object().encoding_parse_a_url(&value.0) {
+                Ok(url) => url,
+                Err(e) => return Err(Error::Syntax(Some(format!("Couldn't parse URL: {}", e)))),
+            };
+            return forward_cross_origin_navigation(
+                cx,
+                dissimilar,
+                url,
+                NavigationHistoryBehavior::Auto,
+            );
+        }
         let window = self.window.same_origin_window()?;
 
         // Step 1. If this's relevant Document is null, then return.

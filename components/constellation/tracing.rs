@@ -173,6 +173,7 @@ mod from_script {
                 Self::GetChildBrowsingContextId(..) => target!("GetChildBrowsingContextId"),
                 Self::LoadFinished { .. } => target!("LoadFinished"),
                 Self::LoadUrl(..) => target!("LoadUrl"),
+                Self::LoadUrlInPipeline(..) => target!("LoadUrlInPipeline"),
                 Self::AbortLoadUrl => target!("AbortLoadUrl"),
                 Self::DownloadRequested { .. } => target!("DownloadRequested"),
                 Self::DownloadProgress { .. } => target!("DownloadProgress"),

@@ -807,6 +807,16 @@ pub enum ScriptToConstellationMessage {
     /// A new load has been requested, with an option to replace the current entry once loaded
     /// instead of adding a new entry.
     LoadUrl(LoadData, NavigationHistoryBehavior, TargetSnapshotParams),
+    /// Load a URL in a specific pipeline that is not the sender's own —
+    /// used for cross-origin `location` writes forwarded to a window in
+    /// another script thread (the sender cannot use the target's channel,
+    /// so the target pipeline is explicit in the message).
+    LoadUrlInPipeline(
+        PipelineId,
+        LoadData,
+        NavigationHistoryBehavior,
+        TargetSnapshotParams,
+    ),
     /// Abort loading after sending a LoadUrl message.
     AbortLoadUrl,
     /// A document navigation fetched a resource that should be downloaded
