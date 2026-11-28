@@ -8029,3 +8029,20 @@ and hitting a pool/alignment limit; (3) gst sink clock-sync misbehaving for
 first frames decode during preroll/buffering, then the live decode-present
 loop never sustains. Instrument next: count frames decoded vs presented
 (gst identity probes or servos metrics) at 1080p.
+
+## sec1zt384 — wedge is DATA-RATE dependent, not resolution: full measurement matrix
+
+1080p@1Mbps: PLAYS realtime (5.53→18.09/12s). Full matrix now:
+- 480p@2M: fine | 720p@4M: fine (40s sustained) | 1080p@1M: fine
+- 1080p@8M: initial burst then total freeze
+Resolution innocent; bitrate is the variable. Yet simple byte-queue theory
+inconsistent (720p@4M sustained past where queues should fill). Best
+remaining theory: decode+present pipeline saturates above a bitrate
+threshold — during preroll decode bursts ahead (explaining initial advance),
+then steady-state can't sustain and the clock-sync layer starves
+erratically. YouTube 1080p is typically 4-8Mbps+, livestreams similar —
+squarely in the wedge zone, 720p borderline — matches user report exactly
+(videos freeze, lives fall behind). Next: isolate decode throughput alone
+(gst pipeline without presentation, or compare against gst-launch playbin
+outside servo) — if gst-launch sustains 8M, the defect is in servo's
+sink/compositor handoff, not decoding.
