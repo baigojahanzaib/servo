@@ -9610,3 +9610,8 @@ FUNCTION/MECHANISM: css/constructable-stylesheets — **the big one**
 FUNCTION/MECHANISM: navigation/bfcache
 
 Minimal repro: history.back() restored the page with identical JS state (same window.__stamp, scripts did not re-run). Back-nav slowness is NOT missing bfcache in the simple case — suspect restoration/re-render cost or real-site ineligibility. Webdriver `back` command does NOT work in servoshell (unimplemented?) — use JS history.back() for probes.
+
+## sec1zt421 — chat placement FIXED by adoptedStyleSheets flip (2026-11-28)
+FUNCTION/MECHANISM: youtube/chat-layout — **first casualty confirmed**
+
+Post-`e2869198687` probe on the user's exact livestream: `ytd-live-chat-frame` geometry x=854 y=68 w=330 h=596 on a 1200-wide viewport with inner iframe correctly sized (fw=328) — the correct right-side panel layout. The user's "chat in the wrong place" complaint was a casualty of the dropped constructable stylesheets. Confirms the root-cause theory end-to-end: one pref flip fixes whole families of component-layout defects.
