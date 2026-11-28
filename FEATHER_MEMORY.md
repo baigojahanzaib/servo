@@ -7795,3 +7795,31 @@ Remaining unknowns for the implementer: whether DissimilarOriginWindow
 exposes the target pipeline id (it wraps a WindowProxy which knows
 browsing_context_id + pipeline — verify); embedder AllowNavigationRequest
 flow expects the webview of the target — check consistency.
+
+## sec1zt372 — dissimilar-origin location-write forwarding SHIPPED (1653052cecf)
+
+The forwarding arc (scoped sec1zt370-371) is implemented end-to-end:
+
+- `ScriptToConstellationMessage::LoadUrlInPipeline(PipelineId, LoadData,
+  NavigationHistoryBehavior, TargetSnapshotParams)` — target pipeline
+  explicit because the sender cannot use the target's pipeline-stamped
+  channel. Constellation handler derives webview_id from the pipelines map
+  and reuses schedule_navigation.
+- location.rs `forward_cross_origin_navigation`: href setter + replace()
+  dispatch on `LocationWindow::DissimilarOrigin` BEFORE the
+  same_origin_window() throw. Activation gate evaluated in source thread
+  (duplicated gate logic over proxy+origin pairs).
+- **CRITICAL GOTCHA**: `DissimilarOriginWindow::pipeline_id` is a FRESHLY
+  GENERATED placeholder (PipelineId::new()) — NOT the target's real pipeline.
+  The real one is `window_proxy.currently_active()`. Using the placeholder
+  makes the constellation warn 'LoadUrlInPipeline for unknown pipeline' and
+  silently no-op. Never trust dissimilar-origin object ids.
+- Assign() NOT wired — it routes through setter_common (same-origin url base
+  dependency). href-write + replace cover the dominant real-web patterns
+  (top.location = x redirects in x-origin embeds).
+
+Verified x-origin pair (127.0.0.1 iframe in localhost parent):
+- sandboxed allow-top-navigation child: navigates top (LANDED) — first-ever
+  cross-thread x-origin nav in servo.
+- unsandboxed child no activation: correct SecurityError gate message.
+- same-origin iframe-nav-parent: unaffected.
