@@ -7,7 +7,7 @@ use std::default::Default;
 use std::iter;
 
 use dom_struct::dom_struct;
-use embedder_traits::{EmbedderControlRequest, MouseButton, SelectElementRequest};
+use embedder_traits::{EmbedderControlRequest, SelectElementRequest};
 use embedder_traits::{SelectElementOption, SelectElementOptionOrOptgroup};
 use html5ever::{local_name, LocalName, Prefix};
 use js::context::{JSContext, NoGC};
@@ -52,10 +52,11 @@ use crate::dom::html::htmlhrelement::HTMLHRElement;
 use crate::dom::html::htmloptionscollection::HTMLOptionsCollection;
 use crate::dom::node::{ChildrenMutation, Node, NodeTraits,  UnbindContext};
 use crate::dom::nodelist::NodeList;
+use crate::dom::activation::Activatable;
 use crate::dom::shadowroot::ShadowRoot;
 use crate::dom::shadowroot::ua_shadowroot::{CreateUAShadowRootForSelf, UAShadowRoot};
 use crate::dom::text::Text;
-use crate::dom::types::{FocusEvent, HTMLDataListElement, MouseEvent};
+use crate::dom::types::{FocusEvent, HTMLDataListElement};
 use crate::dom::validation::{is_barred_by_datalist_ancestor, Validatable};
 use crate::dom::validitystate::{ValidationFlags, ValidityState};
 use crate::dom::node::virtualmethods::VirtualMethods;
@@ -1030,17 +1031,45 @@ impl VirtualMethods for HTMLSelectElement {
                 .hide_embedder_control_for_element(self.upcast());
         }
 
-        // https://html.spec.whatwg.org/multipage/#select-open-picker
-        if event.IsTrusted() &&
-            !self
-                .upcast::<HTMLElement>()
-                .is_form_element_disabled(cx.no_gc()) &&
-            let Some(mouse_event) = event.downcast::<MouseEvent>() &&
-            mouse_event.button() == MouseButton::Primary &&
-            *event.type_() == *"mousedown"
-        {
-            self.show_menu(cx);
+        // NOTE: the picker is opened from `activation_behavior` (the spec
+        // activation path) rather than a `mousedown` default-action hook:
+        // servo's `handle_event` default actions run only on the ORIGINAL
+        // hit-test target, and clicks on a select land on the UA shadow
+        // innards — so a mousedown hook here never fires in practice.
+        // Activation behavior, by contrast, resolves through the
+        // shadow-inclusive ancestor chain (the same mechanism that makes
+        // input-type color/file pickers work).
+    }
+}
+
+impl Activatable for HTMLSelectElement {
+    fn as_element(&self) -> &Element {
+        self.upcast()
+    }
+
+    fn is_instance_activatable(&self) -> bool {
+        true
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#select-open-picker>
+    fn activation_behavior(
+        &self,
+        cx: &mut js::context::JSContext,
+        event: &Event,
+        _target: &EventTarget,
+    ) {
+        // Synthetic clicks (element.click()) must not pop the picker —
+        // matches other engines and avoids surprise popups from scripts.
+        if !event.IsTrusted() {
+            return;
         }
+        if self
+            .upcast::<HTMLElement>()
+            .is_form_element_disabled(cx.no_gc())
+        {
+            return;
+        }
+        self.show_menu(cx);
     }
 }
 
