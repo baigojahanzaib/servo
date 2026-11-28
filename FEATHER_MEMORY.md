@@ -9322,3 +9322,19 @@ file end (EOS path incomplete). NEXT: (1) verify position reporting source;
 compositor-scheduled frame presentation is standard, so sync=false may
 actually be the RIGHT design provided the renderer drops stale frames;
 (3) re-verify on hardware with audio present.
+
+## sec1zt399 — sync=false presents FAST-FORWARD (2.6x): renderer has no frame timing
+
+video-only with sync=false reached ct 26.5 in ~10s wall (~2.6x) then EOF-
+weirdness (ct jumped backwards — EOS/replay artifact). So the frame
+renderer presents frames immediately on receipt with no pts scheduling —
+sync=false is NOT shippable. Correct-fix design options ranked:
+(1) pts-aware presentation in media_frame_renderer: hold each frame until
+pipeline clock reaches its pts (what real browsers do — compositor-timed
+presentation) — moderate arc, correct regardless of sink sync;
+(2) fix the clock-sync deadlock in basesink avsync path — requires
+understanding why sync-wait deadlocks ONLY when an audio stream exists
+(video-only sync=true works fine at 1.005x!). Key unexplained fact:
+sync=true works perfectly for video-only but deadlocks with audio present —
+investigate avsync clock-provider selection when both sinks are appsinks.
+Test files + harness all in /tmp per sec1zt396/398.
