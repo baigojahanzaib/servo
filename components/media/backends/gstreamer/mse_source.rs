@@ -44,6 +44,29 @@ mod imp {
         /// running time at the seek moment in nanoseconds). Consumed by the
         /// first post-seek push to build the injected segment.
         pub pending_resequence: Mutex<Option<(f64, u64)>>,
+        /// Worker-channel for buffer pushes. Pushing events/buffers into a
+        /// live pipeline synchronously from the script thread deadlocks
+        /// against downstream streaming locks (proven on youtube: the script
+        /// thread wedges inside the StreamStart push_event, taking the whole
+        /// page down — eval starvation, zero further appends). All injection
+        /// + buffer pushes happen on this dedicated worker instead; the
+        /// script thread only enqueues.
+        pub push_tx: Mutex<Option<std::sync::mpsc::Sender<PushJob>>>,
+        /// Bytes enqueued but not yet pushed by the worker — counted into the
+        /// quota check so backpressure still reaches appendBuffer.
+        pub inflight_bytes: std::sync::atomic::AtomicU64,
+        /// Bumped by seek_reset: jobs enqueued before the seek carry stale
+        /// pre-seek bytes and must be dropped by the worker — otherwise the
+        /// resequence injection fires and is immediately followed by stale
+        /// pre-seek media, corrupting the re-fed stream.
+        pub push_generation: std::sync::atomic::AtomicU64,
+    }
+
+    pub struct PushJob {
+        pub track: u64,
+        pub total: u64,
+        pub data: Vec<u8>,
+        pub generation: u64,
     }
 
     impl ServoMse {
@@ -140,6 +163,74 @@ mod imp {
             total_tracks: u64,
             data: Vec<u8>,
         ) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
+            // Quota check up front (approximate: in-flight bytes are counted
+            // globally rather than per-track — conservative backpressure, so
+            // appendBuffer still throws QuotaExceeded instead of unbounded
+            // queue growth when downstream stalls).
+            {
+                let tracks = self.tracks.lock().unwrap();
+                if let Some(t) = tracks.get(&track) {
+                    let inflight = self.inflight_bytes.load(std::sync::atomic::Ordering::SeqCst);
+                    if t.appsrc.current_level_bytes() + inflight + data.len() as u64 >
+                        MAX_SRC_QUEUE_SIZE
+                    {
+                        return Err(gstreamer::FlowError::Error);
+                    }
+                }
+            }
+            if std::env::var("SERVO_MSE_SYNC").is_ok() {
+                return self.push_buffer_inner(track, total_tracks, data);
+            }
+            // Spawn the push worker lazily. It owns all event injection and
+            // buffer pushing so the script thread never blocks inside a live
+            // pipeline — the youtube deadlock (script thread wedged in the
+            // StreamStart push_event, page fully unresponsive) is structurally
+            // impossible once pushes are async.
+            {
+                let mut guard = self.push_tx.lock().unwrap();
+                if guard.is_none() {
+                    let (tx, rx) = std::sync::mpsc::channel::<PushJob>();
+                    let weak = self.obj().downgrade();
+                    std::thread::spawn(move || {
+                        while let Ok(job) = rx.recv() {
+                            let Some(obj) = weak.upgrade() else {
+                                break;
+                            };
+                            let imp = obj.imp();
+                            let len = job.data.len() as u64;
+                            let cur_gen = imp.push_generation.load(std::sync::atomic::Ordering::SeqCst);
+                            if job.generation == cur_gen {
+                                let _ = imp.push_buffer_inner(job.track, job.total, job.data);
+                            } else {
+                                eprintln!("[mse] drop stale pre-seek job track={} gen={} cur={}", job.track, job.generation, cur_gen);
+                            }
+                            imp.inflight_bytes
+                                .fetch_sub(len, std::sync::atomic::Ordering::SeqCst);
+                        }
+                    });
+                    *guard = Some(tx);
+                }
+                self.inflight_bytes
+                    .fetch_add(data.len() as u64, std::sync::atomic::Ordering::SeqCst);
+                let job = PushJob {
+                    track,
+                    total: total_tracks,
+                    data,
+                    generation: self.push_generation.load(std::sync::atomic::Ordering::SeqCst),
+                };
+                if guard.as_ref().unwrap().send(job).is_err() {
+                    return Err(gstreamer::FlowError::Error);
+                }
+            }
+            return Ok(gstreamer::FlowSuccess::Ok);
+        }
+
+        fn push_buffer_inner(
+            &self,
+            track: u64,
+            total_tracks: u64,
+            data: Vec<u8>,
+        ) -> Result<gstreamer::FlowSuccess, gstreamer::FlowError> {
             self.ensure_track(track);
             {
                 let tracks = self.tracks.lock().unwrap();
@@ -156,19 +247,31 @@ mod imp {
                     self.obj().no_more_pads();
                 }
             }
-            let mut tracks = self.tracks.lock().unwrap();
-            let Some(t) = tracks.get_mut(&track) else {
-                return Err(gstreamer::FlowError::Error);
+            // Lock discipline: the tracks mutex must never be held across a
+            // push_event/push_buffer — those can block on downstream streaming
+            // locks, and any thread touching the tracks map meanwhile (the
+            // script thread's quota pre-check, seek_reset) wedges with it.
+            // The original deadlock survived the worker-thread redesign in
+            // exactly this form: the worker blocked mid-injection holding the
+            // lock, and appendBuffer's quota pre-check died on the same mutex.
+            // gst objects are refcounted — clone the appsrc and snapshot the
+            // resequence state under the lock, then do all pushing unlocked.
+            let (appsrc, was_resequence, stream_id_pair) = {
+                let mut tracks = self.tracks.lock().unwrap();
+                let Some(t) = tracks.get_mut(&track) else {
+                    return Err(gstreamer::FlowError::Error);
+                };
+                let was = t.needs_resequence;
+                if was {
+                    t.needs_resequence = false;
+                }
+                let pair = t.stream_id.lock().unwrap().clone();
+                (t.appsrc.clone(), was, pair)
             };
-            if t.needs_resequence {
+            if was_resequence {
                 eprintln!("[mse] inject-fire inst={:x} track={}", self as *const _ as usize, track);
-                t.needs_resequence = false;
-                if let Some(srcpad) = t.appsrc.static_pad("src") {
-                    let (stream_id, group_id) = t
-                        .stream_id
-                        .lock()
-                        .unwrap()
-                        .clone()
+                if let Some(srcpad) = appsrc.static_pad("src") {
+                    let (stream_id, group_id) = stream_id_pair
                         .map(|(i, g)| (i, g))
                         .unwrap_or_else(|| (format!("servomse-{track}-reseq"), None));
                     // The resequenced stream-start must reproduce the original
@@ -184,7 +287,9 @@ mod imp {
                             evref.structure_mut().set("group-id", g);
                         }
                     }
+                    eprintln!("[mse] inject streamstart push begin track={}", track);
                     let r1 = srcpad.push_event(ev);
+                    eprintln!("[mse] inject streamstart push done track={} r={}", track, r1);
                     // No caps event: track caps are ANY (typefind re-detects
                     // on the new stream-start), and gst_event_new_caps rejects
                     // non-fixed caps with a null-event crash (event.rs:149).
@@ -222,7 +327,9 @@ mod imp {
                         eprintln!("[mse] resequence base live={} passed={}", live_base, _base_ns);
                         segment.set_base(gstreamer::ClockTime::from_nseconds(live_base));
                     }
+                    eprintln!("[mse] inject segment push begin track={}", track);
                     let r3 = srcpad.push_event(gstreamer::event::Segment::new(&segment));
+                    eprintln!("[mse] inject segment push done track={} r={}", track, r3);
                     eprintln!(
                         "[mse] resequence inject track={} streamstart={} caps={} segment={}",
                         track, r1, r2, r3
@@ -240,12 +347,12 @@ mod imp {
             // respond by evicting buffered ranges. Playing videos drain their
             // queues constantly and never hit this; paused/never-played videos
             // (infinite-feed preloads) hit it exactly as intended.
-            if t.appsrc.current_level_bytes() + size > MAX_SRC_QUEUE_SIZE {
+            if appsrc.current_level_bytes() + size > MAX_SRC_QUEUE_SIZE {
                 return Err(gstreamer::FlowError::Error);
             }
             let buffer = gstreamer::Buffer::from_slice(data);
-            let r = t.appsrc.push_buffer(buffer);
-            eprintln!("[mse] push track={} size={} result={:?} level={}", track, size, r, t.appsrc.current_level_bytes());
+            let r = appsrc.push_buffer(buffer);
+            eprintln!("[mse] push track={} size={} result={:?} level={}", track, size, r, appsrc.current_level_bytes());
             r
         }
 
@@ -253,9 +360,14 @@ mod imp {
         /// presentation: flush every track.
         pub fn end_of_stream(&self) {
             self.ensure_track(0);
-            let tracks = self.tracks.lock().unwrap();
-            for t in tracks.values() {
-                let _ = t.appsrc.end_of_stream();
+            // Same lock discipline as push_buffer_inner: EOS pushes can block
+            // downstream — clone the appsrcs under the lock, push unlocked.
+            let appsrcs: Vec<gstreamer_app::AppSrc> = {
+                let tracks = self.tracks.lock().unwrap();
+                tracks.values().map(|t| t.appsrc.clone()).collect()
+            };
+            for a in appsrcs {
+                let _ = a.end_of_stream();
             }
         }
 
@@ -267,6 +379,8 @@ mod imp {
         /// gst harness: playback resumes cleanly with continuous position.
         pub fn seek_reset(&self, target_secs: f64, base_ns: u64) {
             eprintln!("[mse] seek_reset enter target={} base_ns={}", target_secs, base_ns);
+            self.push_generation
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             *self.pending_resequence.lock().unwrap() = Some((target_secs, base_ns));
             // Hold the tracks lock for the whole reset: pushes arriving
             // mid-reset would otherwise land in a dying appsrc (or a removed
@@ -380,6 +494,9 @@ mod imp {
                 tracks: Mutex::new(BTreeMap::new()),
                 signalled_no_more_pads: std::sync::atomic::AtomicBool::new(false),
                 pending_resequence: Mutex::new(None),
+                push_tx: Mutex::new(None),
+                inflight_bytes: std::sync::atomic::AtomicU64::new(0),
+                push_generation: std::sync::atomic::AtomicU64::new(0),
             }
         }
     }
