@@ -9498,3 +9498,14 @@ progressive media verification matrix is now complete: video-only,
 audio+video (480p/720p/1080p), audio-only — all play realtime, all end
 correctly. Session total: 2 shipped engine media fixes + console logging
 + youtube root-cause chain + MSE end-to-end proof.
+
+## sec1zt411 — worker-exposure cost refinement: bindings pattern is standard
+
+119+ interfaces already use Exposed=(Window,Worker) — worker exposure is
+a well-trodden binding pattern, NOT exotic machinery. MediaSource worker
+exposure itself is small: webidl -> [Exposed=(Window,DedicatedWorker)]
+plus generalizing Constructor/IsTypeSupported from &Window to
+&GlobalScope. The arc's real weight is concentrated in: the Arc-shared
+core/registry, handle serialization, and attach plumbing. Rotation note:
+do NOT commit worker exposure alone (non-functional half-feature) —
+land it with the registry+handle slice.
