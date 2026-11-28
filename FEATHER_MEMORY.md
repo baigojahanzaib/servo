@@ -7685,3 +7685,33 @@ every SVG type inherits SVGElement so the downcast always succeeds.
 Same class remains theoretically open for any future non-SVG non-HTML
 element type — the real fix would be making the catch-all impossible
 to reach, but HTML/SVG/MathML/generic now cover all namespaces.
+
+## sec1zt368 — top-nav activation gate: sandbox-waiver principled but plumbing broken
+
+**State**: the x-origin top-nav activation gate (edc5ec2e507) regressed
+sandbox-top-navigation-grandchild-unsandboxed-inherit.tentative: unsandboxed
+grandchild inside a sandboxed-with-allow-top-navigation parent should
+inherit top-nav permission, but the gate blocks it (verified live: iframe_2
+top-location write throws SecurityError even with allow-top-navigation in
+parent sandbox attr — probe /tmp/sandtest/parent.html topology,
+localhost vs 127.0.0.1 for x-origin).
+
+**Fix attempted (in tree)**: waiver in check_top_navigation_activation_gate —
+skip the gate when source document's creation_sandboxing_flag_set is
+non-empty AND lacks the WITHOUT_USER_ACTIVATION flag. Correct in principle
+(determine_creation_sandboxing_flags unions iframe sandbox attr with owner
+document active flags) but DOES NOT WORK — verified still throws. Root cause
+unproven; suspects: (a) creation flags not plumbed into nested-navigable
+Documents, (b) active vs creation flag divergence. Note gotcha:
+creation_sandboxing_flag_set_considering_parent_iframe is WRONG for this —
+iframe without sandbox attr yields empty set, never the inherited fallback.
+
+**Decision**: kept the gate + waiver (matches Chromium for mainline cases,
+3 non-tentative test families pass) + FAIL expectation on the tentative
+test. Fixing the sandbox-flag inheritance plumbing is the followup arc —
+multi-hour, touches iframe navigable creation in constellation/script.
+
+**Gotcha — attemptTopNavigation measures throw-not-navigation**: the sandbox
+helper's success signal is whether the location write THROWS, not whether
+navigation happens. Any engine that throws synchronously fails 'should
+succeed' cases regardless of navigation behavior.

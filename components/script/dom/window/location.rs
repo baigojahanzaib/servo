@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use content_security_policy::sandboxing_directive::SandboxingFlagSet;
 use dom_struct::dom_struct;
 use js::context::JSContext;
 use net_traits::request::Referrer;
@@ -84,13 +85,32 @@ fn check_top_navigation_activation_gate(source_window: &Window, target_window: &
         source_proxy.parent().is_some() &&
         source_proxy.browsing_context_id() != target_proxy.browsing_context_id() &&
         !source_window.origin().same_origin_domain(&target_window.origin()) &&
-        !source_window.has_transient_activation()
+        !source_window.has_transient_activation() &&
+        !source_has_sandbox_top_navigation_permission(source_window)
     {
         return Err(Error::Security(Some(
             "Cross-origin top-level navigation requires transient activation".into(),
         )));
     }
     Ok(())
+}
+
+/// Whether the source window's effective sandboxing flags explicitly permit
+/// top-level navigation: some sandboxing applies (the set is non-empty) but the
+/// without-user-activation top-level navigation flag was removed by an
+/// `allow-top-navigation` token in the frame's ancestry. An unsandboxed frame
+/// has an empty set and does not qualify — it remains subject to the
+/// activation gate.
+fn source_has_sandbox_top_navigation_permission(source_window: &Window) -> bool {
+    // The creation flags already union the frame element's own sandbox
+    // attribute with the active flags of the embedding document chain
+    // (see determine_creation_sandboxing_flags), so they carry the
+    // inherited allow-top-navigation removals.
+    let flags = source_window.Document().creation_sandboxing_flag_set();
+    !flags.is_empty() &&
+        !flags.contains(
+            SandboxingFlagSet::SANDBOXED_TOP_LEVEL_NAVIGATION_WITHOUT_USER_ACTIVATION_BROWSING_CONTEXT_FLAG,
+        )
 }
 
 impl Location {
