@@ -7895,3 +7895,67 @@ URL 'foo' parse behavior, or wptserve port/host specifics. Lowest-priority
 open item now — engine behavior is verified correct outside the harness.
 Probe infrastructure note: *.localhost subdomains resolve to 127.0.0.1 —
 same-site x-origin pairs available locally without /etc/hosts edits.
+<<<<<<< Updated upstream
+||||||| Stash base
+
+## sec1zt378 — cherry-pick arc status (10 items)
+
+MERGED: #23 fonts LRU cache, #24 media factories (item2 audio-panic was
+already e65ccdfdc99), #25 RTL inline-start lists, #26 webgl uniform copies,
+#27 readonly inputs.
+OPEN at writing: #28 focus-visible.
+NO-OP SKIPS (already on feather-engine): item6 VAO Drop fix = 2a80b4af0d2,
+item9 offscreen font = 7bf49737b45.
+IN FLIGHT: item10 element weakref 197561134f3 on branch
+cherry-pick/element-weakref — conflict in Bindings.conf resolved favoring
+OUR cx list (dropped GetCommandForElement/GetPopoverTargetElement entries)
+plus upstream weakReferenceable — build running, needs verify+push+PR.
+Upstream commit index: fonts 15087769726, audio 4d59f733e40, factories
+7ad52bb9131, rtl ecd63a41ee9, uniforms 413ce6b47a7, vao 054e5a4ae1c (+ignored
+test 7d65a2bfb8d skipped), readonly 0aa5c002cba, focus-visible 14f3fedbf12,
+offscreen-font 2df3d02caa8, weakref 806d6369990.
+
+PENDING leaf-work: workers-ini verified deletions (Worker-creation-happens-
+in-parallel, Worker-postMessage-happens-in-parallel, postMessage_block — all
+PASS solo, delete inis on feather-engine); rest of workers regen was CRASH
+noise from parallel-build contention — discarded; stash@{0} holds raw regen.
+=======
+
+## sec1zt378 — cherry-pick arc status (10 items)
+
+MERGED: #23 fonts LRU cache, #24 media factories (item2 audio-panic was
+already e65ccdfdc99), #25 RTL inline-start lists, #26 webgl uniform copies,
+#27 readonly inputs.
+OPEN at writing: #28 focus-visible.
+NO-OP SKIPS (already on feather-engine): item6 VAO Drop fix = 2a80b4af0d2,
+item9 offscreen font = 7bf49737b45.
+IN FLIGHT: item10 element weakref 197561134f3 on branch
+cherry-pick/element-weakref — conflict in Bindings.conf resolved favoring
+OUR cx list (dropped GetCommandForElement/GetPopoverTargetElement entries)
+plus upstream weakReferenceable — build running, needs verify+push+PR.
+Upstream commit index: fonts 15087769726, audio 4d59f733e40, factories
+7ad52bb9131, rtl ecd63a41ee9, uniforms 413ce6b47a7, vao 054e5a4ae1c (+ignored
+test 7d65a2bfb8d skipped), readonly 0aa5c002cba, focus-visible 14f3fedbf12,
+offscreen-font 2df3d02caa8, weakref 806d6369990.
+
+PENDING leaf-work: workers-ini verified deletions (Worker-creation-happens-
+in-parallel, Worker-postMessage-happens-in-parallel, postMessage_block — all
+PASS solo, delete inis on feather-engine); rest of workers regen was CRASH
+noise from parallel-build contention — discarded; stash@{0} holds raw regen.
+
+## sec1zt379 — item10 weakref SKIP-DOCUMENTED (heavy conflict per arc rules)
+
+element-weakref cherry-pick (806d6369990) conflicts deeply with feather:
+(1) Bindings.conf trivial conflict — resolved favoring our cx list.
+(2) SVGScriptElement is a feather-present interface upstream lacks — codegen
+validator requires weakReferenceable on every SVGElement subtype, but adding
+the conf entry produces `SVGScriptElement: DomObjectWrap<DomTypeHolder> not
+satisfied` — the generated bindings don't implement the trait for it.
+Root cause unplumbed (possibly weakReferenceable types need explicit codegen
+registration our SVGScriptElement lacks). Also surfaced: my Location-invariants
+JS_ClearPendingException utility in script_bindings/utils.rs line 918 is an
+E0133 unsafe-call warning — if that code is ever re-attempted it needs an
+unsafe block. RECOMMENDATION: skip item10 until upstream reconciles, or fix
+SVGScriptElement binding generation as its own small task. Branch
+cherry-pick/element-weakref has the WIP state locally (not pushed).
+>>>>>>> Stashed changes
