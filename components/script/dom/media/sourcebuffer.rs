@@ -39,6 +39,13 @@ pub(crate) struct SourceBuffer {
     init_cache: script_bindings::cell::DomRefCell<Vec<u8>>,
     /// Set by seek: the next append must re-feed the cached init first.
     needs_init_refeed: std::cell::Cell<bool>,
+    /// fmp4 contiguity bridging: start of the most recently indexed fragment.
+    /// A fragment's true end is only known when the NEXT fragment's tfdt
+    /// arrives (single-fragment appends otherwise fall back to a fixed 1s
+    /// span, fragmenting the index into 1s islands with multi-second holes —
+    /// the livestream starvation pattern sec1zt437).
+    last_fmp4_start: std::cell::Cell<f64>,
+    has_fmp4_start: std::cell::Cell<bool>,
     track_id: Cell<u64>,
     media_source: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
     /// Streaming webm indexer — parses the concatenated byte stream with
@@ -78,6 +85,8 @@ impl SourceBuffer {
             buffered: script_bindings::cell::DomRefCell::new(TimeRangesContainer::default()),
             init_cache: script_bindings::cell::DomRefCell::new(Vec::new()),
             needs_init_refeed: std::cell::Cell::new(false),
+            last_fmp4_start: std::cell::Cell::new(0.0),
+            has_fmp4_start: std::cell::Cell::new(false),
             media_source: script_bindings::cell::DomRefCell::new(None),
             track_id: Cell::new(0),
             webm_indexer: script_bindings::cell::DomRefCell::new(crate::dom::media::ebml::WebmIndexer::new()),
@@ -512,7 +521,20 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
         let mut retained_range = None;
         if let Some((fs, fe)) = fmp4_range {
             let mut ranges = self.buffered.borrow_mut();
+            // Contiguity bridging: the previous fragment actually extended to
+            // this fragment's start (MSE appends within a track are contiguous
+            // in time). Index that true extent now that real data is available,
+            // replacing the provisional fixed-span guess. Merging is automatic
+            // for contiguous ranges; the guard skipps real discontinuities.
+            if self.has_fmp4_start.get() {
+                let prev_start = self.last_fmp4_start.get();
+                if fs > prev_start && fs - prev_start < 30.0 {
+                    let _ = ranges.add(prev_start, fs);
+                }
+            }
             let _ = ranges.add(fs, fe);
+            self.last_fmp4_start.set(fs);
+            self.has_fmp4_start.set(true);
             retained_range = Some((fs, fe));
         }
         if let (Some(first), Some(last)) = (timecodes.first(), timecodes.last()) {
