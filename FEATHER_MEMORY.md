@@ -9509,3 +9509,15 @@ plus generalizing Constructor/IsTypeSupported from &Window to
 core/registry, handle serialization, and attach plumbing. Rotation note:
 do NOT commit worker exposure alone (non-functional half-feature) —
 land it with the registry+handle slice.
+
+## sec1zt412 — seek-wedge defect FIXED: seeks recover post sync-fix
+
+1080p A+V seek test: playback advances realtime pre-seek, seek to 30s
+stalls ~2s at the seek point then RESUMES (ct continues advancing
+realtime to file end). Old defect was permanent freeze after any seek —
+dead, same sync-wedge root cause. Residual imperfection: multi-second
+recovery delay and a forward timestamp jump (30->39 in 1s) during
+catch-up — cosmetic-level, worth a future look but functional. Media
+state: progressive playback is feature-complete for the dogfood use
+case. All user-video complaints trace to either these fixed defects or
+the youtube worker-MSE gap.
