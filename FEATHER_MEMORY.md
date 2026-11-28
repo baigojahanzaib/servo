@@ -9772,3 +9772,20 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
 - replaced-intrinsic-002 is therefore NOT a regression from today's work.
   css/CSS2 unexpected count 2/8.9k with one improvement flip — today's
   engine changes show no WPT regression signal so far.
+
+## sec1zt442 (2026-11-28) — lofi divergence CLOSED: not an engine defect
+- DECISIVE: curl with a Chrome UA gets ytInitialPlayerResponse with NO
+  streamingData and playabilityStatus UNPLAYABLE "This live stream recording
+  is not available" for jfKfPfyJRdk. YouTube serves the same dead response
+  to every client — the famous original lofi stream video is simply not
+  playable in this form anymore. Servo's zero-push/no-attach behavior was
+  CORRECT handling of an unplayable video. Closed as not-a-bug.
+- The codec-profile lead is ALSO dead: MediaSource.isTypeSupported now
+  accepts all profile-qualified strings probed (vp09.00.51.08, vp09.00.10.08,
+  avc1.640028, av01.0.08M.08, mp4a.40.2...) — the old false-reading predates
+  current engine state.
+- Diff methodology validated: working livestream has inline streamingData
+  (15 formats, playback healthy); unplayable one has none. streamingData
+  presence in ytInitialPlayerResponse is the quick discriminator for future
+  "stream won't start" reports — check playabilityStatus first before any
+  engine investigation.
