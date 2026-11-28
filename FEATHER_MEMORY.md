@@ -6623,3 +6623,9 @@ Three-layer defect, each layer masked by the previous:
 
 ## sec1zt331: apple scroll-hero gap scoped — ScrollTimeline absent (2026-11-28)
 - batch-194 apple blank scroll-hero: NOT a pref gap — feather shell already sets dom_web_animations_enabled=true (engine.rs:475). Gap is scroll-driven animations: no ScrollTimeline/ViewTimeline webidl in servo at all. Large multi-session feature (scroll-linked animation timelines + compositor integration). Documented as known large gap, not a leaf.
+
+## sec1zt332: blank-grid mechanism — negative results batch (2026-11-28, symptom index)
+- NOT the idle-surface-discard lever: dropped long ago (7c19cc3d476, restore races).
+- NOT loading=lazy absence: attribute unimplemented in htmlimageelement.rs but that causes EAGER loading — more rendering, not blankness.
+- NOT IntersectionObserver: verified fully functional via webdriver probe — initial callback fires, scroll-triggered callbacks fire with correct isIntersecting transitions (count:2 events:[false,true]). IO-driven data-src lazy-load pattern should work.
+- REMAINING suspects for Mac selective same-page blankness: fetch lifecycle under CMS-specific conditions (batch-182: zero console errors, paint/fetch class), decode pipeline for specific formats, or GPU texture upload path. Linux llvmpipe CANNOT repro — all three sites render fully here. Ownership: Mac/Windows lanes with GPU.
