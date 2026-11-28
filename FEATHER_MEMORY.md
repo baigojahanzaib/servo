@@ -9846,3 +9846,16 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   cache-storage-missing + serviceworker harness gaps, same class.
 - html crash count 18 (semantics/iframe-sandbox 7, browsers 4, syntax 4) —
   navigation/process-isolation fork divergence, pre-existing, uninvestigated.
+
+## sec1zt446 (2026-11-28) — crash-cluster declassified + methodology rule
+- Isolated reruns: multiple-pickers-crash PASSES, sandbox_013 PASSES,
+  websockets constructor/014 PASSES. The html "crash cluster" is full-run
+  parallel-load/contamination artifact, NOT real per-test failures.
+- METHODOLOGY RULE (permanent): never triage servo WPT crash/timeout clusters
+  from full-run attribution — pipeline death contaminates neighboring tests.
+  Isolated rerun is the only valid classification. Full-run unexpected counts
+  are inflated by this effect; treat deltas as upper bounds.
+- Real remaining conformance gaps after declassification: CacheStorage API
+  entirely missing (upstream-merge), canvas 2d.layer filter PASS→FAILs
+  (uninvestigated, low priority), COOP navigation-isolation ERRORs (partly
+  serviceworker harness, partly unexplored).
