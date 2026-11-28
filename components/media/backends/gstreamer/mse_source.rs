@@ -258,6 +258,23 @@ mod imp {
             // resequence state under the lock, then do all pushing unlocked.
             let (appsrc, was_resequence, stream_id_pair) = {
                 let mut tracks = self.tracks.lock().unwrap();
+                // Post-endOfStream appends are legal per the MSE spec - players
+                // rely on them for seeks/rebuffering - but gst appsrc EOS is
+                // terminal: every push after end_of_stream fails Err(Eos)
+                // forever. Measured as the youtube freeze signature: playback
+                // stalls at the first post-EOS rebuffer point while the player
+                // retries appends in an endless Err(Eos) storm. Recreate the
+                // track's appsrc on the first post-EOS append; a fresh appsrc
+                // re-sequences the stream naturally.
+                if tracks.get(&track).is_some_and(|t| t.eos) {
+                    eprintln!("[mse] post-eos append track={} - recreating appsrc", track);
+                    self.reset_track_locked(&mut tracks, track);
+                    if self.pending_resequence.lock().unwrap().is_some() {
+                        if let Some(t) = tracks.get_mut(&track) {
+                            t.needs_resequence = true;
+                        }
+                    }
+                }
                 let Some(t) = tracks.get_mut(&track) else {
                     return Err(gstreamer::FlowError::Error);
                 };
@@ -363,7 +380,10 @@ mod imp {
             // Same lock discipline as push_buffer_inner: EOS pushes can block
             // downstream — clone the appsrcs under the lock, push unlocked.
             let appsrcs: Vec<gstreamer_app::AppSrc> = {
-                let tracks = self.tracks.lock().unwrap();
+                let mut tracks = self.tracks.lock().unwrap();
+                for t in tracks.values_mut() {
+                    t.eos = true;
+                }
                 tracks.values().map(|t| t.appsrc.clone()).collect()
             };
             for a in appsrcs {
