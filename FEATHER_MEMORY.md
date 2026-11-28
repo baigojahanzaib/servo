@@ -6347,3 +6347,16 @@ blocked on its GO. If NO-GO on EGL/llvmpipe, fallback: investigate surfman
 SurfaceTexture/SwapChain chains API (chains::{PreserveBuffer,SwapChain} already
 imported in rendering_context.rs — servo's webgl uses cross-context surface sharing
 TODAY for webgl-in-webrender, so precedent exists in-tree: webrender_external_images.rs).
+
+## sec1zt317b — composite plan CORRECTION: webgl swapchain precedent (2026-11-28)
+IMPORTANT addition to sec1zt317: the spike is substantially de-risked. Servo's WebGL
+path ALREADY does cross-thread/cross-context surface sharing in production TODAY:
+components/paint/webrender_external_images.rs uses surfman::chains::SwapChains —
+webgl contexts render offthread and webrender consumes frames as external images
+via SwapChain lock/unlock. The exact primitive composite-off-UI-thread needs exists
+in-tree with a working usage pattern. The spike should copy the SwapChainsAPI usage
+(lock_swap_chain pattern at webrender_external_images.rs:49) rather than raw
+create_context sharing: SwapChain handles surface presentation sync correctly.
+REVISED MILESTONE 2 SHAPE: paint worker renders into a swapchain surface; UI thread
+locks+blits the front surface texture — same consumption pattern webrender uses
+for webgl. This avoids hand-rolled FBO double-buffering entirely.
