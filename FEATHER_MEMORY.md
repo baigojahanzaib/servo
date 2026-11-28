@@ -6542,3 +6542,8 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 ## sec1zt319: residual error identified — pre-existing, NOT a regression (2026-11-28)
 - The one unexpected ERROR is location_replace_session_history.html ERROR [expected TIMEOUT] at test line 13:17. It appeared identically in the PRE-srcdoc-fix directory run (same count, 1 error) — NOT caused by the srcdoc fix. srcdoc fix is regression-free; leaf fully closed.
 - location_replace_session_history remains the genuine independent leaf: replace-navigation inside load handler — now manifesting as harness ERROR (JS throw at line 13) rather than pure TIMEOUT. Worth a fresh solo investigation next session: run solo with --log-raw, capture the exact exception at :13:17.
+
+## sec1zt320: back-history defect — SHELL-SIDE, servo-core innocent (2026-11-28)
+- Mac discrimination ("link-click navigations never become traversable diffs in session_history.past") was observational but wrong about the layer: servoshell repro + histdbg both prove clicks push correctly and traversal works in servo-core. The defect is feather shell-new's parallel mock history: link clicks mutate in place, cursor moves on back land on stale entries, renav loop commands wv.load() of wrong target — overriding correct engine traversal. Fixed in feather PR #455 (back/forward purely engine-driven for engine-backed tabs).
+- Symptom index: back/forward hijack or phantom navigation → suspect shell renav loop + mock cursor desync, NOT engine session history. Verify engine innocence with servoshell webdriver repro first.
+- LESSON for lanes: two parallel sources of truth for the same state (shell mock history vs engine session history) inevitably desync on paths only one of them sees. Engine is truth for web history.
