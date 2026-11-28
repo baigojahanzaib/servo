@@ -6522,3 +6522,7 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 - IN FLIGHT: post-composite html re-baseline at /tmp/wpt-post-fieldset/ (started 01:37, ~40-70min). Next session: generate report PR from html-raw.log using feather/docs/wiki/wpt/wpt-report-v2.py pattern. NOTE prior /tmp/wpt-post-fieldset data was incomplete — was deleted and relaunched.
 - HARNESS RULE ACTIVE while baseline runs: zero interactive servoshell launches, zero compiles.
 - OPEN LEAVES: (1) location.hash on srcdoc iframe — about:srcdoc#test never applied (small), (2) conflicting cherry-picks e667861e269/9ddfe28a9ec/47ac285d9e8 deferred, (3) composite step-3 backpressure tuning, (4) waitAsync mozjs decision in coordinator's court, (5) gmail needs Windows repro specifics.
+
+## sec1zt315: srcdoc location.hash leaf — fix applied UNCOMMITTED (2026-11-28)
+- Mechanism: navigate_a_location in components/script/dom/window/location.rs blocks ALL navigations from about:srcdoc to urls starting with "about:srcdoc" except exactly "about:srcdoc" — this kills fragment-only same-document navigations (about:srcdoc#test) which must be allowed per spec.
+- FIX APPLIED IN WORKING TREE, NOT COMMITTED, NOT COMPILED (harness rule — baseline running): strip_prefix("about:srcdoc") remainder starting with '#' = fragment-only = allowed. Next session: after baseline completes, compile, verify location_hash.html passes (the "Setting location.hash on srcdoc iframe" subtest), run the-location-interface directory for regressions, commit+push. The working tree survives rotation.
