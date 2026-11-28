@@ -21,6 +21,7 @@ use super::csscontainerrule::CSSContainerRule;
 use super::cssmediarule::CSSMediaRule;
 use super::cssnamespacerule::CSSNamespaceRule;
 use super::cssnesteddeclarations::CSSNestedDeclarations;
+use super::cssstartingstylerule::CSSStartingStyleRule;
 use super::csspropertyrule::CSSPropertyRule;
 use super::cssstylerule::CSSStyleRule;
 use super::cssstylesheet::CSSStyleSheet;
@@ -83,6 +84,8 @@ impl CSSRule {
         } else if let Some(rule) = self.downcast::<CSSNestedDeclarations>() {
             rule as &dyn SpecificCSSRule
         } else if let Some(rule) = self.downcast::<CSSPropertyRule>() {
+            rule as &dyn SpecificCSSRule
+        } else if let Some(rule) = self.downcast::<CSSStartingStyleRule>() {
             rule as &dyn SpecificCSSRule
         } else if let Some(rule) = self.downcast::<CSSFontFeatureValuesRule>() {
             rule as &dyn SpecificCSSRule
@@ -188,7 +191,13 @@ impl CSSRule {
             )),
             StyleCssRule::Margin(_) => unimplemented!(), // TODO
             StyleCssRule::Scope(_) => unimplemented!(),  // TODO
-            StyleCssRule::StartingStyle(_) => unimplemented!(), // TODO
+            StyleCssRule::StartingStyle(st) => DomRoot::upcast(CSSStartingStyleRule::new(
+                cx,
+                window,
+                parent_rule,
+                parent_stylesheet,
+                st,
+            )),
             StyleCssRule::PositionTry(_) => unimplemented!(), // TODO
             StyleCssRule::CustomMedia(_) => unimplemented!(), // TODO
             StyleCssRule::NestedDeclarations(s) => DomRoot::upcast(CSSNestedDeclarations::new(
@@ -298,7 +307,11 @@ impl CSSRule {
             },
             StyleCssRule::Margin(_) => unimplemented!(), // TODO
             StyleCssRule::Scope(_) => unimplemented!(),  // TODO
-            StyleCssRule::StartingStyle(_) => unimplemented!(), // TODO
+            StyleCssRule::StartingStyle(st) => {
+                if let Some(rule) = self.downcast::<CSSStartingStyleRule>() {
+                    rule.update_rule(st.clone(), guard);
+                }
+            },
             StyleCssRule::PositionTry(_) => unimplemented!(), // TODO
             StyleCssRule::CustomMedia(_) => unimplemented!(), // TODO
             StyleCssRule::NestedDeclarations(s) => {

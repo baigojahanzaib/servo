@@ -10,6 +10,7 @@ use style::stylesheets::CssRules;
 
 use super::cssconditionrule::CSSConditionRule;
 use super::csslayerblockrule::CSSLayerBlockRule;
+use super::cssstartingstylerule::CSSStartingStyleRule;
 use super::cssrule::CSSRule;
 use super::cssrulelist::{CSSRuleList, RulesSource};
 use super::cssstylerule::CSSStyleRule;
@@ -44,6 +45,8 @@ impl CSSGroupingRule {
             let rules = if let Some(rule) = self.downcast::<CSSConditionRule>() {
                 rule.clone_rules()
             } else if let Some(rule) = self.downcast::<CSSLayerBlockRule>() {
+                rule.clone_rules()
+            } else if let Some(rule) = self.downcast::<CSSStartingStyleRule>() {
                 rule.clone_rules()
             } else if let Some(rule) = self.downcast::<CSSStyleRule>() {
                 rule.ensure_rules()
