@@ -8162,3 +8162,17 @@ trigger it. Audio-only wedges immediately. Test files on probe box:
 /tmp/hd1080.mp4 (video-only control, plays), /tmp/hd1080av.mp4,
 /tmp/sd480av.mp4, /tmp/tone.m4a; harness /tmp/throughput*.html +
 /audiotest.html via python http.server :8431.
+
+## sec1zt393 — gmail hover-expansion + SPA-nav: generic mechanisms INNOCENT, app-specific trigger
+
+Hover matrix (abs-pos/in-flow/visibility-toggle revealed children, tight
+rows): NO variant expands rows in servo — abs-pos children correctly
+excluded from intrinsic height, visibility toggles stable. Simple
+mechanisms innocent. SPA matrix: click handler + preventDefault +
+pushState + in-place transition all work perfectly (log persisted, url
+changed, no reload). So gmail's row-expansion and new-page-open behaviors
+are triggered by app-specific code paths — most likely gmail JS erroring
+before preventDefault (missing API) or layout interactions in gmail's real
+DOM. Both require live authenticated gmail to discriminate — EVERYTHING
+gmail-specific is now blocked on the credential handoff the user offered.
+Repros: /tmp/hovertest*.html /tmp/spatest.html.
