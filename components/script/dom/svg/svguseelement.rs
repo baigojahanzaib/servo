@@ -8,11 +8,13 @@ use html5ever::{local_name, ns, LocalName, Prefix};
 use js::rust::HandleObject;
 
 use crate::dom::bindings::codegen::Bindings::AttrBinding::AttrMethods;
+use crate::dom::bindings::codegen::Bindings::NodeBinding::NodeMethods;
 use crate::dom::bindings::codegen::Bindings::ShadowRootBinding::{
     ShadowRootMode, SlotAssignmentMode,
 };
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::root::DomRoot;
+use crate::dom::bindings::str::DOMString;
 use crate::dom::document::Document;
 use crate::dom::element::element::Element;
 use crate::dom::element::AttributeMutation;
@@ -110,6 +112,73 @@ impl SVGUseElement {
             CloneChildrenFlag::CloneChildren,
             None,
         );
+
+        // Per SVG2, a referenced `<symbol>` instances as an `<svg>` element:
+        // the clone root is converted — same attributes and children — and
+        // the use element's width/height transfer onto it (they define the
+        // viewport the symbol's viewBox scales into). Without this, sprite
+        // icons render unscaled at their viewBox unit size.
+        let cloned = if cloned
+            .downcast::<Element>()
+            .is_some_and(|e| e.local_name() == &local_name!("symbol"))
+        {
+            let svg = crate::dom::element::create::create_element(
+                cx,
+                html5ever::QualName::new(None, ns!(svg), local_name!("svg")),
+                None,
+                &document,
+                crate::dom::element::ElementCreator::ScriptCreated,
+                crate::dom::element::CustomElementCreationMode::Asynchronous,
+                None,
+            );
+            let cloned_element = cloned.downcast::<Element>().unwrap();
+            let copies: Vec<(DOMString, DOMString)> = cloned_element
+                .attrs()
+                .borrow()
+                .iter()
+                .filter(|attr| *attr.namespace() == ns!())
+                .map(|attr| {
+                    (
+                        DOMString::from(&**attr.local_name()),
+                        attr.to_dom_string(),
+                    )
+                })
+                .collect();
+            for (name, value) in copies {
+                svg.set_attribute_from_parser(
+                    cx,
+                    html5ever::QualName::new(
+                        None,
+                        ns!(),
+                        LocalName::from(&*name.str()),
+                    ),
+                    value,
+                );
+            }
+            // use width/height transfer; explicit use attributes win,
+            // otherwise the instance is viewport-sized (100%).
+            for dim in ["width", "height"] {
+                let use_val = element.get_string_attribute(&LocalName::from(dim));
+                let value = if use_val.str().is_empty() {
+                    DOMString::from("100%")
+                } else {
+                    use_val
+                };
+                svg.set_attribute_from_parser(
+                    cx,
+                    html5ever::QualName::new(None, ns!(), LocalName::from(dim)),
+                    value,
+                );
+            }
+            let kids: Vec<DomRoot<Node>> = cloned.children().collect();
+            for child in kids {
+                child.remove_self(cx);
+                let _ = svg.upcast::<Node>().AppendChild(cx, &child);
+            }
+            DomRoot::from_ref(svg.upcast::<Node>())
+        } else {
+            cloned
+        };
 
         let shadow_root = match element.shadow_root() {
             Some(root) => root,

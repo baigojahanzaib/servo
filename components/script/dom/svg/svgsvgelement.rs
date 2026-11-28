@@ -349,7 +349,11 @@ impl VirtualMethods for SVGSVGElement {
         // targets, so re-resolve every use in the document. Resolution is
         // idempotent: already-resolved uses cheaply reclone, unresolved ones
         // get their first chance at content.
-        if context.tree_connected {
+        // Skip shadow-tree insertions: use-instance clones are svg elements
+        // inserted into the use's shadow root — re-resolving from there is
+        // infinite recursion (clone insertion triggers re-resolution triggers
+        // clone insertion).
+        if context.tree_connected && !self.upcast::<Node>().is_in_a_shadow_tree() {
             let document = self.upcast::<Node>().owner_doc();
             for node in document
                 .upcast::<Node>()
