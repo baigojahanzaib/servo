@@ -9466,3 +9466,16 @@ FIRST READS: how get_media_source registry works today (global static?),
 whether Player is Clone/Send, structuredclone.rs storage plumbing.
 Estimate: 2-3 focused sessions. Everything else in youtube path already
 verified working (sec1zt404 end-to-end MSE proof).
+
+## sec1zt408 — DECISIVE: youtube probes codecs 37x but constructs ZERO MediaSources on main thread
+
+Instrumented constructor probe: youtube watch page fires
+MediaSource.isTypeSupported 37 times (capability probing on main) but
+the MediaSource constructor NEVER runs on the main thread. Combined with
+sec1zt405 (MediaSourceHandle undefined, player stuck state-3), the
+picture is confirmed: youtube's streaming engine constructs MediaSource
+inside a dedicated worker; servo doesn't expose MediaSource in worker
+globals at all (Exposed=Window only), so the worker-side setup dies
+silently — no exception surfaces because youtube feature-detects the
+missing pieces and never starts. THE MSHandle/worker-MSE arc is
+confirmed as the correct and only target. Plan in sec1zt407 stands.
