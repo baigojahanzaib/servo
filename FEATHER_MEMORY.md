@@ -6555,3 +6555,6 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 
 ## sec1zt322: windowproxy parent-active assertion fixed (2026-11-28)
 - 312b590471d: parent_origin_and_internal_ancestor_origin_objects_list asserted parent fully active — cannot hold in async pipeline world (child creation races parent navigation). Reproduced on yahoo scroll (ad-iframe-dense). Fix: return None like the frame-element branch. Verified: html/browsers/windows 55/55 as-expected. UPSTREAMABLE candidate — check if upstream servo still has the assert. Symptom index: panic windowproxy.rs assert currently_active on ad-iframe-dense pages → this fix.
+
+## sec1zt323: select dropdown leak root cause (2026-11-28)
+- Discovery batch-2 "select never opens" is NOT servo-core and mostly wrong: dropdown always opened on Linux. Real defect: shell overlay-click swallow used egui interact_pos() = None before egui processes the press, so the press leaked to the page, re-clicking the select; pick never landed. Fixed shell-side with latest_pos() — feather PR #464. Symptom: clicks on egui overlays (dropdown/context menu) hit page beneath → main.rs swallow must use latest_pos not interact_pos.
