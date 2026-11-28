@@ -9637,3 +9637,8 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — OPEN
 FUNCTION/MECHANISM: debugging/exception-visibility
 
 Uncaught exceptions DO reach servoshell stderr already — verified both main-thread (`[console] Error at url:line:col msg`) and worker exceptions forward correctly. The lofi-bootstrap silent bail is therefore NOT a hidden exception — the player feature-detects a missing capability and bails cleanly. Root-causing requires instrumenting the player's feature-detection path itself (expensive). Deprioritized: mainstream livestreams + VOD verified working; 24/7-stream divergence is a narrow case.
+
+## sec1zt426 — cross-thread seek VERIFIED (2026-11-28)
+FUNCTION/MECHANISM: media/worker-mse-seek — arc complete
+
+Post-seek recovery verified on youtube.com/watch?v=aqz-KE-bpKQ with worker-MSE: seek to 100s → playback recovered, ct advancing past seek point rs=4 paused=false. The mse_handle_seek cross-thread notification path works. **Worker-MSE arc is now feature-complete**: playback, duration, buffered, seek all verified on real YouTube.
