@@ -6538,3 +6538,7 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 
 ## sec1zt318: rotation final note (2026-11-28)
 - Leftover wptserve processes from the completed baseline held ports 8000-9000 breaking re-runs — killed. NEXT SESSION: re-run the-location-interface directory cleanly to identify the one unexpected ERROR (sec1zt317), verify srcdoc fix regression-free, then generate baseline report PR from /tmp/wpt-post-fieldset/html-raw.log.
+
+## sec1zt319: residual error identified — pre-existing, NOT a regression (2026-11-28)
+- The one unexpected ERROR is location_replace_session_history.html ERROR [expected TIMEOUT] at test line 13:17. It appeared identically in the PRE-srcdoc-fix directory run (same count, 1 error) — NOT caused by the srcdoc fix. srcdoc fix is regression-free; leaf fully closed.
+- location_replace_session_history remains the genuine independent leaf: replace-navigation inside load handler — now manifesting as harness ERROR (JS throw at line 13) rather than pure TIMEOUT. Worth a fresh solo investigation next session: run solo with --log-raw, capture the exact exception at :13:17.
