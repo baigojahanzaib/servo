@@ -8014,3 +8014,18 @@ progressive playback long enough. Next measurement: 720p for 40+s — predict
 stall around 15s. Then instrument gst multiqueue/queue2 sizes vs sink
 consumption rate — suspect the video sink isn't consuming at realtime
 (compositor backpressure or clock sync issue).
+
+## sec1zt383 — byte-queue theory DEAD; size-dependent wedge confirmed
+
+720p sustained measurement: ct advances 5.53→36.17 over 40s wall — realtime
+throughout, no wedge. Byte-queue backpressure theory falsified (queues would
+fill ~15s at 4M). The stall IS frame-size/resolution dependent: 1080p
+advances initial ~7.5s burst then freezes at exactly 0x — not degraded
+throughput (would be ~0.4x if pure decode cost), a structural wedge.
+Updated suspects: (1) video-frame channel media→compositor wedges on large
+frames after initial burst; (2) NV12 conversion path allocating per-frame
+and hitting a pool/alignment limit; (3) gst sink clock-sync misbehaving for
+1080p frame timestamps. The initial-burst-then-zero pattern suggests the
+first frames decode during preroll/buffering, then the live decode-present
+loop never sustains. Instrument next: count frames decoded vs presented
+(gst identity probes or servos metrics) at 1080p.
