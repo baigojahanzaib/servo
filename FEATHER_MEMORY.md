@@ -7605,3 +7605,25 @@ dominated by orthogonal writing-mode interactions (vertical-rl/lr items) —
 even the "horiz" tests are orthogonal-mode edge cases. Mainstream horizontal
 baseline alignment PASSES (align-baseline.html). Cost multi-session, real-web
 value LOW. Do not prioritize.
+
+## sec1zt365 — alert-handling harness fix (`eb1c0d3222c`) — MULTIPLICATIVE
+
+**Mechanism**: servo's webdriver server supports the unhandledPromptBehavior
+capability but the wptrunner executor (tests/wpt/tests/tools/wptrunner/
+wptrunner/browsers/servo.py) never sent it — `rv['capabilities'] = {}`.
+Any test calling alert()/confirm()/prompt() wedged: commands rejected with
+UnexpectedAlertOpenException, producing cascading ERROR harness artifacts.
+Fix: `{"unhandledPromptBehavior": "accept"}` — one line.
+
+**Key facts**: servo's alert() is NON-BLOCKING for script execution (script
+continues past alert() immediately); webdriver commands correctly reject
+while prompt open per spec; DismissAlert/AcceptAlert machinery exists.
+The wedge was purely the missing capability, harness-side not engine-side.
+
+**Impact**: forms regen post-fix converts blanket-ERROR expectations into
+granular per-subtest results across customizable-select, click-user-gesture
+etc. — the tests execute end-to-end now. Any future --update-expectations
+run BEFORE this fix would bake in harness noise — always regenerate after.
+
+**Regression-safety**: focus tree 210/210 as-expected post autofocus work;
+dialog 150/150; the capability only affects behavior when a prompt opens.
