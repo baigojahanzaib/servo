@@ -67,6 +67,11 @@ mod imp {
         pub total: u64,
         pub data: Vec<u8>,
         pub generation: u64,
+        /// Ordered end-of-stream marker: endOfStream must not overtake pushes
+        /// already enqueued — the final chunks of the initial append sequence
+        /// would otherwise look like post-EOS re-appends and trigger appsrc
+        /// recreation mid-startup, killing initial playback entirely.
+        pub eos_marker: bool,
     }
 
     impl ServoMse {
@@ -199,7 +204,9 @@ mod imp {
                             let imp = obj.imp();
                             let len = job.data.len() as u64;
                             let cur_gen = imp.push_generation.load(std::sync::atomic::Ordering::SeqCst);
-                            if job.generation == cur_gen {
+                            if job.eos_marker {
+                                imp.end_of_stream_ordered();
+                            } else if job.generation == cur_gen {
                                 let _ = imp.push_buffer_inner(job.track, job.total, job.data);
                             } else {
                                 eprintln!("[mse] drop stale pre-seek job track={} gen={} cur={}", job.track, job.generation, cur_gen);
@@ -217,6 +224,7 @@ mod imp {
                     total: total_tracks,
                     data,
                     generation: self.push_generation.load(std::sync::atomic::Ordering::SeqCst),
+                    eos_marker: false,
                 };
                 if guard.as_ref().unwrap().send(job).is_err() {
                     return Err(gstreamer::FlowError::Error);
@@ -377,6 +385,27 @@ mod imp {
         /// presentation: flush every track.
         pub fn end_of_stream(&self) {
             self.ensure_track(0);
+            // Serialized through the worker queue so EOS cannot overtake
+            // in-flight appends (see PushJob::eos_marker).
+            let mut guard = self.push_tx.lock().unwrap();
+            if guard.is_none() {
+                drop(guard);
+                self.end_of_stream_ordered();
+                return;
+            }
+            let job = PushJob {
+                track: 0,
+                total: 0,
+                data: Vec::new(),
+                generation: self.push_generation.load(std::sync::atomic::Ordering::SeqCst),
+                eos_marker: true,
+            };
+            let _ = guard.as_ref().unwrap().send(job);
+        }
+
+        /// The ordered end-of-stream body, run on the worker thread after
+        /// every previously-enqueued push has landed.
+        fn end_of_stream_ordered(&self) {
             // Same lock discipline as push_buffer_inner: EOS pushes can block
             // downstream — clone the appsrcs under the lock, push unlocked.
             let appsrcs: Vec<gstreamer_app::AppSrc> = {
