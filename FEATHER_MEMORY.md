@@ -9651,3 +9651,8 @@ FUNCTION/MECHANISM: svg/use-element — **the gmail-icons root cause, and much m
 NEGATIVE results ruled out along the way: svg sizing itself is healthy — CSS width/height on svg applies correctly including inside flex (24x24 correct); unp sized svg defaults huge (1008x1008 — wrong per spec which says 300x150, minor separate bug) but NOT zero.
 
 Implementation cost: real arc — same-document shadow-tree instantiation, href resolution, style cascade into shadow, mutation re-resolution. Multi-session. External-use (cross-file) even more. Upstream servo issue likely exists.
+
+## sec1zt428 — vertical centering NEGATIVE result (2026-11-28)
+FUNCTION/MECHANISM: layout/vertical-centering
+
+All four mechanisms verified healthy in servo: flex align-items:center, table-cell vertical-align:middle, line-height centering, flex margin:auto — center offsets exact to the pixel. Gmail's mis-centering is app-specific: prime suspect is constructable stylesheets (fixed by flip, needs dogfood verification) or interaction with some other missing piece. Credential-blocked for live confirmation.
