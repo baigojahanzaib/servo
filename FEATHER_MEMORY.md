@@ -6433,3 +6433,38 @@ Re-evaluate both properly this time. Lesson: verify cherry-pick emptiness with
 - Discovery sweep: 8 new sites tested, results in feather/docs/discovery-sweep.md. Passes: absa, fnb, news24, translate(+interaction), maps(full vector tiles), dailymotion. Defects filed: vimeo thumbnails blank (homepage), vimeo video pages stuck-cloudflare-botwall. Inconclusive: google docs anonymous.
 - Untested remainder for next lane: iol.co.za, saas landing pages, sheets/drive anonymous, twitch re-check, vimeo thumbnail scroll-isolation, turnstile-vs-IP discrimination (needs residential IP).
 - Disk post-scorched-earth: 4.9GB free. CoreSimulator 4.1GB intact pending cross-lane decision. shell-new/target is 9.7GB — the active build, keep.
+## MSE seek starvation — root cause + symptom index (2026-11-28, Windows lane)
+**Root cause (proven with instance-address instrumentation)**: every MSE seek's
+Ready→Playing cycle makes uridecodebin RE-INSTANTIATE the ServoMse source element
+(gstreamer tears down + reconstructs the source on bin state cycles; the player's
+`source-setup` handler then re-points PlayerSource::Mse at the new instance). The
+in-band resequence flags (`needs_resequence`) are marked on the PRE-cycle instance
+inside `seek_reset`, which is then discarded — the injection therefore NEVER fires
+in production (zero `resequence inject` lines in any real repro log, despite the
+logging existing in the tested binary). Post-seek appends land in a virgin instance
+whose stream decodebin3/playsink never reselect: appsrc queues grow unconsumed
+(level climbs past 20MB) and playback starves ~15s to youtube's error screen.
+
+**Symptom index entries**:
+- symptom: post-seek MSE appends accepted (`Ok(Ok)`) but level grows unconsumed, no FLOW
+  → suspect: uridecodebin source re-instantiation across Ready cycles — flags/continuity
+  die with the old instance. Functions: `ServoMse::seek_reset`, player.rs seek worker,
+  the `source-setup` signal handler. Mechanism: instance identity, not data flow.
+- symptom: `[mse] recreated appsrc sync` clusters appearing per seek
+  → NOT appsrc recreation — these are ensure_track creations inside NEW ServoMse
+  instances (one pair per re-instantiated pipeline source).
+- negative result: ServoMSE_RECREATE env-off recreate path is NOT the cause;
+  track ids are stable (0/1) across all pushes — sourcebuffer re-adding is not involved.
+- negative result: the starvation is NOT a regression from the media event-ordering or
+  memory-reclaim merges — reproduces identically on the batch7 engine (bisect null result).
+
+**Harness**: `work/wtest/mseauto*.html` + `python -m http.server 8899` from work dir —
+local dual-track webm MSE with automated seek patterns; instance churn reproduces
+without youtube (youtube botwall-independent iteration). Caveat: arbitrary byte-sliced
+webm appends are NOT valid cluster-aligned MSE — harnesses must feed init+aligned units.
+
+**Open fix direction**: skip the Ready-cycle so the instance survives and injection
+fires in the live pipeline (SERVO_MSE_CYCLE env re-enables cycle for A/B). If live-pipeline
+re-plumbing still fails, the deep options are (a) full pipeline teardown+rebuild per seek
+(expensive but truly initial-state), or (b) WebKit-style custom MSE pipeline without
+playbin3 (parsebin-per-track architecture) — the correct long-term shape.

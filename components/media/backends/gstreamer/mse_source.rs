@@ -55,6 +55,7 @@ mod imp {
             if tracks.contains_key(&id) {
                 return;
             }
+            eprintln!("[mse] CREATE track={} inst={:x} mapkeys={:?}", id, self as *const _ as usize, tracks.keys().collect::<Vec<_>>());
             let appsrc = gstreamer::ElementFactory::make("appsrc")
                 .build()
                 .map(|elem| elem.downcast::<gstreamer_app::AppSrc>().unwrap())
@@ -160,6 +161,7 @@ mod imp {
                 return Err(gstreamer::FlowError::Error);
             };
             if t.needs_resequence {
+                eprintln!("[mse] inject-fire inst={:x} track={}", self as *const _ as usize, track);
                 t.needs_resequence = false;
                 if let Some(srcpad) = t.appsrc.static_pad("src") {
                     let (stream_id, group_id) = t
@@ -272,7 +274,17 @@ mod imp {
             // the post-seek resume-stall race. Blocking pushes until the new
             // appsrcs are in place makes the handover lossless.
             let mut tracks = self.tracks.lock().unwrap();
-            if std::env::var("SERVO_MSE_NOFLUSH").is_err() {
+            // No-flush default (sec-media): bare flush events injected mid-stream
+            // leave downstream in unrecoverable flushing state — appsrc streaming
+            // tasks stall permanently and post-seek data piles up unconsumed
+            // (validated: with flush, position freezes exactly at the seek target;
+            // without, playback advances through repeated seeks end-to-end).
+            // The re-fed data is cluster/keyframe-aligned by the script-side
+            // indexer so the demuxer resyncs without a flush. Residual artifact:
+            // already-decoded pre-seek frames in downstream queues play out
+            // briefly before the jump — strictly better than stream death.
+            // SERVO_MSE_FLUSH re-enables flushing for A/B verification.
+            if std::env::var("SERVO_MSE_FLUSH").is_ok() {
                 for pad in self.obj().src_pads() {
                     let _ = pad.push_event(gstreamer::event::FlushStart::new());
                     let _ = pad.push_event(gstreamer::event::FlushStop::new(true));
@@ -292,10 +304,11 @@ mod imp {
                     self.reset_track_locked(&mut tracks, id);
                 }
             } else {
+                let nmarked = tracks.len();
                 for t in tracks.values_mut() {
                     t.needs_resequence = true;
                 }
-                eprintln!("[mse] seek_reset: tracks marked for in-band resequence");
+                eprintln!("[mse] seek_reset: tracks marked for in-band resequence inst={:x} nmarked={}", self as *const _ as usize, nmarked);
             }
         }
 
