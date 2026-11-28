@@ -9859,3 +9859,18 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   entirely missing (upstream-merge), canvas 2d.layer filter PASS→FAILs
   (uninvestigated, low priority), COOP navigation-isolation ERRORs (partly
   serviceworker harness, partly unexplored).
+
+## sec1zt447 (2026-11-28) — remaining divergence is upstream-feature-gap class
+- Windows lane MSE endOfStream commits verified unregressed on Linux
+  (livestream ct=45 rs=4 healthy, zero panics, integrated build).
+- canvas 2d.layer investigation CLOSED as upstream-gap: beginLayer/endLayer
+  entirely absent from fork (no webidl, no implementation) — 242 unexpected
+  2d.layer tests in html baseline, upstream servo gained the API post-fork.
+  Same class as CacheStorage (caches undefined). NOT fork regressions.
+- STRATEGIC PATTERN: most remaining regression-class WPT divergence decomposes
+  into upstream-features-missing (CacheStorage, canvas layers, serviceworker
+  harness gaps) — the fork is months behind upstream servo in feature surface.
+  The leverage move is an UPSTREAM SYNC, not leaf fixes — coordinator-level
+  decision, large merge effort, but it would close whole failure families at
+  once and re-close them permanently vs leaf whack-a-mole.
+- Windows lane owns MSE/seek path — do not touch (coordinator freeze 17:01).
