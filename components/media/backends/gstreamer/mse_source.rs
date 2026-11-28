@@ -247,19 +247,31 @@ mod imp {
                     self.obj().no_more_pads();
                 }
             }
-            let mut tracks = self.tracks.lock().unwrap();
-            let Some(t) = tracks.get_mut(&track) else {
-                return Err(gstreamer::FlowError::Error);
+            // Lock discipline: the tracks mutex must never be held across a
+            // push_event/push_buffer — those can block on downstream streaming
+            // locks, and any thread touching the tracks map meanwhile (the
+            // script thread's quota pre-check, seek_reset) wedges with it.
+            // The original deadlock survived the worker-thread redesign in
+            // exactly this form: the worker blocked mid-injection holding the
+            // lock, and appendBuffer's quota pre-check died on the same mutex.
+            // gst objects are refcounted — clone the appsrc and snapshot the
+            // resequence state under the lock, then do all pushing unlocked.
+            let (appsrc, was_resequence, stream_id_pair) = {
+                let mut tracks = self.tracks.lock().unwrap();
+                let Some(t) = tracks.get_mut(&track) else {
+                    return Err(gstreamer::FlowError::Error);
+                };
+                let was = t.needs_resequence;
+                if was {
+                    t.needs_resequence = false;
+                }
+                let pair = t.stream_id.lock().unwrap().clone();
+                (t.appsrc.clone(), was, pair)
             };
-            if t.needs_resequence {
+            if was_resequence {
                 eprintln!("[mse] inject-fire inst={:x} track={}", self as *const _ as usize, track);
-                t.needs_resequence = false;
-                if let Some(srcpad) = t.appsrc.static_pad("src") {
-                    let (stream_id, group_id) = t
-                        .stream_id
-                        .lock()
-                        .unwrap()
-                        .clone()
+                if let Some(srcpad) = appsrc.static_pad("src") {
+                    let (stream_id, group_id) = stream_id_pair
                         .map(|(i, g)| (i, g))
                         .unwrap_or_else(|| (format!("servomse-{track}-reseq"), None));
                     // The resequenced stream-start must reproduce the original
@@ -335,12 +347,12 @@ mod imp {
             // respond by evicting buffered ranges. Playing videos drain their
             // queues constantly and never hit this; paused/never-played videos
             // (infinite-feed preloads) hit it exactly as intended.
-            if t.appsrc.current_level_bytes() + size > MAX_SRC_QUEUE_SIZE {
+            if appsrc.current_level_bytes() + size > MAX_SRC_QUEUE_SIZE {
                 return Err(gstreamer::FlowError::Error);
             }
             let buffer = gstreamer::Buffer::from_slice(data);
-            let r = t.appsrc.push_buffer(buffer);
-            eprintln!("[mse] push track={} size={} result={:?} level={}", track, size, r, t.appsrc.current_level_bytes());
+            let r = appsrc.push_buffer(buffer);
+            eprintln!("[mse] push track={} size={} result={:?} level={}", track, size, r, appsrc.current_level_bytes());
             r
         }
 
@@ -348,9 +360,14 @@ mod imp {
         /// presentation: flush every track.
         pub fn end_of_stream(&self) {
             self.ensure_track(0);
-            let tracks = self.tracks.lock().unwrap();
-            for t in tracks.values() {
-                let _ = t.appsrc.end_of_stream();
+            // Same lock discipline as push_buffer_inner: EOS pushes can block
+            // downstream — clone the appsrcs under the lock, push unlocked.
+            let appsrcs: Vec<gstreamer_app::AppSrc> = {
+                let tracks = self.tracks.lock().unwrap();
+                tracks.values().map(|t| t.appsrc.clone()).collect()
+            };
+            for a in appsrcs {
+                let _ = a.end_of_stream();
             }
         }
 
