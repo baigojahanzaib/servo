@@ -144,6 +144,33 @@ impl SourceBuffer {
         if stream.is_empty() {
             return;
         }
+        // Init recovery (sec-media): real players evict behind-playback ranges
+        // aggressively, and the eviction can carry away the fragment that held
+        // the stream init — the concatenated re-feed then starts with raw
+        // cluster bytes and the demuxer dies at byte zero (measured on youtube:
+        // ffprobe 'EBML header parsing failed' on the refed stream). Players
+        // re-append init on quality switches and internal seeks, so a valid
+        // header usually survives in some later fragment — scan for it and
+        // force-prepend.
+        if stream.len() >= 4 && stream[..4] != [0x1A, 0x45, 0xDF, 0xA3] {
+            let magic = [0x1Au8, 0x45, 0xDF, 0xA3];
+            let mut found = None;
+            for i in 0..stream.len().saturating_sub(4) {
+                if stream[i..i + 4] == magic {
+                    found = Some(i);
+                    break;
+                }
+            }
+            if let Some(pos) = found {
+                if let Some(init_end) = webm_init_len(&stream[pos..]) {
+                    let init_bytes = stream[pos..pos + init_end].to_vec();
+                    let mut fixed = init_bytes;
+                    fixed.extend_from_slice(&stream);
+                    stream = fixed;
+                    eprintln!("[mse-refeed] init recovered from offset {} len {}", pos, init_end);
+                }
+            }
+        }
         // Boundary scan: webm clusters first, fmp4 moofs as fallback — the two
         // container families youtube actually uses.
         let full = crate::dom::media::ebml::scan_cluster_full(&stream);
