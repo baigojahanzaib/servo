@@ -6699,3 +6699,9 @@ Three-layer defect, each layer masked by the previous:
 
 ## sec1zt347: alert()-handling gap discovered (2026-11-28)
 - inert-node-is-unfocusable ERRORs consistently: unexpected-alert-open in webdriver — servo's alert() implementation doesn't auto-dismiss/modal-handle per webdriver spec. Any WPT test triggering alert() will ERROR. Small leaf: implement webdriver alert-handling endpoints (accept/dismiss) or auto-dismiss in harness mode. Impact: harness-accuracy mostly, but real-web alert() UX in shell matters too.
+
+## sec1zt348: accurate flexbox failure clusters post-regen (2026-11-28)
+- writing-mode family: 12+3 files — biggest cluster (vertical writing modes; medium real-web impact — CJK/vertical layouts)
+- baseline alignment cluster: baseline-synthesis 4 + align-self-baseline-horiz 4 + multi-line-horiz 3 + justify-wmvert overlap — second cluster, HIGH real-web visibility (form rows, button groups with mixed content)
+- smaller: safe-overflow-position 4, table-as-item-stretch 3, percentage-heights 3, negative-overflow 3, collapsed-item 3
+- attack suggestion: baseline-alignment cluster first (real-web visibility × shared mechanism — one baseline-resolution fix likely kills many)
