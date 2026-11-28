@@ -7769,3 +7769,29 @@ build LoadData (url parse + target snapshot params default) and send
 targeted message instead of calling navigate(); (3) activation/sandbox
 gates must evaluate at the SOURCE in-thread (they only need source state).
 Pieces all exist; the plumbing is the work.
+
+## sec1zt371 — constellation navigation addressing FULLY MAPPED
+
+Completes sec1zt370. The constellation receives script messages as
+`(webview_id, source_pipeline_id, content)` tuples — pipeline-keyed channel
+stamping. `schedule_navigation`/`load_url` navigate THE STAMPED PIPELINE
+itself. Therefore same-thread iframe-nav-top works because
+`window.send_to_constellation` uses the TARGET window's global-scope
+channel, stamping the target's own pipeline. The dissimilar-origin
+forwarding implementation shape is thereby pinned precisely:
+
+**The fix needs a way to send a constellation message stamped with a
+pipeline id the sender doesn't own** — either (a) extend LoadUrl with an
+explicit target pipeline/webview field and have the constellation prefer it,
+or (b) route through the target's thread (requires cross-thread window
+proxy messaging — heavier). Option (a) is smaller: new message variant
+`LoadUrlInPipeline { target_pipeline_id, load_data, history_handling,
+target_snapshot_params }`, handler reuses schedule_navigation with the
+explicit target. Script side: DissimilarOriginWindow location setters parse
+URL, build minimal LoadData + default TargetSnapshotParams, evaluate the
+activation gate in-thread (source state only), send targeted message.
+
+Remaining unknowns for the implementer: whether DissimilarOriginWindow
+exposes the target pipeline id (it wraps a WindowProxy which knows
+browsing_context_id + pipeline — verify); embedder AllowNavigationRequest
+flow expects the webview of the target — check consistency.
