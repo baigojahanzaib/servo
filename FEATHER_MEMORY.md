@@ -7715,3 +7715,31 @@ multi-hour, touches iframe navigable creation in constellation/script.
 helper's success signal is whether the location write THROWS, not whether
 navigation happens. Any engine that throws synchronously fails 'should
 succeed' cases regardless of navigation behavior.
+
+## sec1zt369 — CORRECTION to sec1zt368: top-nav gate is INNOCENT
+
+Live probe with error-message discrimination: the sandbox-inherit test
+failure throws 'Tried to access same origin window on cross-origin object'
+— the cross-origin security wrapper blocking the `window.top.location`
+WRITE itself in dissimilar-origin frames (localhost vs 127.0.0.1 = separate
+script threads, DissimilarOriginWindow). My gate's message is different
+('Cross-origin top-level navigation requires transient activation') and
+never fires on this path. The failure is PRE-EXISTING servo behavior, not
+a regression from edc5ec2e507 — the test would have failed identically
+before the gate. The FAIL expectation is accurate baseline, not regression.
+
+**Mechanism map (important)**: x-origin top-location writes take two paths:
+(1) same-site cross-origin (subdomains, shared script thread) — whitelisted
+write reaches the real target Window in-thread → my activation gate
+evaluates there; (2) dissimilar-origin (separate threads) — the write dies
+in the security wrapper before any navigation logic. The activation gate
+only governs path (1). Whether dissimilar-origin x-origin frames can
+navigate top AT ALL in servo is questionable — wrapper blocks the write
+mechanism itself. Followup arc: implement whitelisted location-write
+forwarding for dissimilar-origin frames if real-web compat needs it.
+
+**The sandbox-permission waiver (committed in 068b210e1d6) remains correct
+in principle for path (1) but is currently untestable** — no probe can reach
+the gate through the wrapper for dissimilar origins, and same-site frames
+share sandbox inheritance differently. Leave inert, revisit with the
+wrapper-forwarding arc.
