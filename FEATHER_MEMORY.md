@@ -6516,3 +6516,9 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 ## sec1zt313: composite async — feather shell verification PASSED (2026-11-28)
 - The exact reproduction passes in feather shell-new (feather-ui binary): YouTube plays + omnibox typing instant WITH live autocomplete dropdown during playback, scroll repaints clean, zero panics/surfman issues/winit crashes in full log, clean teardown navigating away from playing video. Composite-off-UI-thread is shippable.
 - location-interface directory with teardown fix: 68/69 as expected, ZERO crashes (previously 65+2crash+1err) — the teardown panic fix eliminated the cascade crashes. Remaining leaf: location.hash on srcdoc iframe FAILs (about:srcdoc#test not applied — small genuine leaf).
+
+## sec1zt314: rotation handoff — post-composite state (2026-11-28)
+- COMPOSITE-OFF-UI-THREAD: COMPLETE and verified (steps 1+2). feather-engine tip has: paint thread + sync rendezvous (1c6fa6f87e7), async mode + pref gfx_async_paint_composite (0e883853d46), teardown panic fix (269203c8d8a). feather shell-new engine.rs enables the pref unconditionally. Verified headed in servoshell AND in feather shell: YouTube+omnibox exact repro passes, zero panics.
+- IN FLIGHT: post-composite html re-baseline at /tmp/wpt-post-fieldset/ (started 01:37, ~40-70min). Next session: generate report PR from html-raw.log using feather/docs/wiki/wpt/wpt-report-v2.py pattern. NOTE prior /tmp/wpt-post-fieldset data was incomplete — was deleted and relaunched.
+- HARNESS RULE ACTIVE while baseline runs: zero interactive servoshell launches, zero compiles.
+- OPEN LEAVES: (1) location.hash on srcdoc iframe — about:srcdoc#test never applied (small), (2) conflicting cherry-picks e667861e269/9ddfe28a9ec/47ac285d9e8 deferred, (3) composite step-3 backpressure tuning, (4) waitAsync mozjs decision in coordinator's court, (5) gmail needs Windows repro specifics.
