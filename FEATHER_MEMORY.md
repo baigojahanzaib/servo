@@ -7555,3 +7555,29 @@ Final piece: bind-order propagation trap — at a parent's bind-scan time, child
 - htmldialogelement.rs show_modal steps implement autofocus PARTIALLY: step 3 (autofocus attr on subject → control) exists; steps 9-10 are TODO (empty topDocument autofocus candidates, set processed flag).
 - Test requirements (dialog-autofocus.html): opening modal focuses inner autofocus element; layout recreation (display none/block) must NOT re-focus; node reinsertion must NOT re-focus. The re-focus prevention is exactly what the autofocus-processed flag governs — the missing piece.
 - Implementation sketch: complete steps 9-10 in show_modal + verify the document-level autofocus candidates machinery (document.rs autofocus_processed / candidates) exists. Small, focused, upstreamable.
+
+## sec1zt363 — autofocus candidate processing IMPLEMENTED (`519e7d8be1b`)
+
+**Mechanism**: document-level autofocus per spec. Candidates queued on
+insertion (htmlelement bind_to_tree, tree_connected + has autofocus attr),
+flushed when document reaches Interactive readiness. Flush skips
+not-fully-active documents and nested docs cross-origin with container.
+Dialog focusing steps 9-10 empty candidates + set processed flag.
+
+**CRITICAL gotcha — never flush synchronously from readiness updates**:
+`update_the_current_document_readiness` runs mid-mutation; calling focus
+directly panics with "Attempt to use script or layout while DOM not in a
+stable state" (document.rs ensure_safe_to_run_script_or_layout). MUST
+defer via task_manager().dom_manipulation_task_source().queue(task!(...)).
+Symptom index: crash in test harness only, minimal repro often passes —
+timing-dependent re-entrancy.
+
+**Verified**: dialog-autofocus, dialog-autofocus-multiple-times,
+show-modal-focusing-steps now PASS (3 inis deleted); the-autofocus-attribute
+8 inis deleted; dialog dir 150/150 as expected; no crashes. Residual:
+skip-another-top-level-browsing-context (cross-top-level-context edge).
+
+**Pattern — WPT ini archaeology**: the-autofocus-attribute inis were all
+stale-written when feature was entirely absent; implementing the feature
+flips many at once. When a whole directory's inis predate the feature,
+regenerate rather than hand-editing.
