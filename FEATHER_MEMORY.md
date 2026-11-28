@@ -6530,3 +6530,8 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 ## sec1zt316: cherry-pick triage final (2026-11-28)
 - e667861e269 (attr borrow hazard) = already in tree as 185f8f3931b. 47ac285d9e8 (typographic bounds cache) = already in tree as 7e1622eb169. NOTHING TO DO for either.
 - 9ddfe28a9ec (getComputedStyle flat-tree) genuinely conflicts: 6 files auto-merge clean, configuration.py has a 3-way semantic conflict (HEAD diverged — contextForMember restructured). Resolution needs compile-verify cycles. Deferred post-baseline. To redo: git cherry-pick -n 9ddfe28a9ec, resolve configuration.py keeping HEAD's restructure + adding the incoming lengthGetterNeedsCx/implicitNoGCGetters logic, compile, verify.
+
+## sec1zt317: rotation state — srcdoc leaf closed, one residual error unidentified (2026-11-28)
+- srcdoc fragment fix COMMITTED+PUSHED to feather-engine (location.rs fragment-only same-document navigations in about:srcdoc now allowed). location_hash.html passes 6/6.
+- Directory regression: 68/69 as expected, but ONE test now errors unexpectedly (previously the hash subtest FAILed; now a different test errors — POSSIBLY a regression from the srcdoc fix or flake). IN-FLIGHT: background shell e6aadb was re-running the directory to identify which test — check its output. If regression: the fragment navigation may now reach a codepath that errors for replace-with-nested-iframe or scripted_click/scripted_form tests (they run srcdoc iframes). Investigate which test, solo it, fix or refine the fragment check.
+- Post-composite html baseline COMPLETE: /tmp/wpt-post-fieldset/html-raw.log (10982 tests, 2043s). NEXT: generate report PR with feather/docs/wiki/wpt/wpt-report-v2.py — compare vs wpt-2026-11-27-evening baseline.
