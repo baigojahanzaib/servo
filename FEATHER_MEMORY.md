@@ -8176,3 +8176,20 @@ before preventDefault (missing API) or layout interactions in gmail's real
 DOM. Both require live authenticated gmail to discriminate — EVERYTHING
 gmail-specific is now blocked on the credential handoff the user offered.
 Repros: /tmp/hovertest*.html /tmp/spatest.html.
+
+## sec1zt394 — youtube-live CSP sidebar: spec analysis says frames should NOT block; repro limited
+
+Header analysis: youtube watch CSP has NO frame-src/child-src/default-src —
+per spec frame navigation is unrestricted; live_chat CSP has no
+frame-ancestors. X-Frame-Options SAMEORIGIN present on live_chat — legal
+embedding is same-origin www.youtube.com->www.youtube.com. So a CSP block
+of live_chat inside youtube is per-spec WRONG wherever it happens.
+Candidate defect locations: (1) servo navigation check uses
+Destination::None (TODO at csp.rs line ~156) — directive-family mapping may
+fall back wrong; (2) XFO www-vs-nonwww mismatch producing wrong error text;
+(3) frame-ancestors ancestor-chain logic (custom opaque-origin handling at
+csp.rs ~200). Repro limitation: on the probe VM youtube's live-chat
+insertion machinery never even inserts ytd-live-chat-frame (polymer boots,
+ytd-app present, 1534 ytd elements — but chat frame never inserted; the one
+iframe is a 0x0 utility). User's real build reaches insertion and THEN hits
+the CSP neterror — deeper pipeline difference. Needs live reproduction.
