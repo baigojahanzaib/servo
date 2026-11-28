@@ -6655,3 +6655,8 @@ Three-layer defect, each layer masked by the previous:
 ## sec1zt337: unified engine build GREEN + smoke-verified (2026-11-28)
 - Merged tree 61ffdceafe4+ builds clean (rebuild2.log "Succeeded"). YouTube watch page smoke test on unified binary: renders fully — player chrome, title, related sidebar with thumbnails, search. Zero panics/assertions. MSE machinery active in logs (37 lines). Composite + Windows MSE fixes coexist healthy on Linux.
 - NOTE: coordinator clarified — gmail boot was PRE-AUTHENTICATED profile (servoshell persists cookies), fresh Google sign-in UNTESTED, TLS-JA3 floor assessment unaffected.
+
+## sec1zt338: unified-linux YouTube playback STALL — currentTime frozen mid-playback (2026-11-28)
+- Probe on unified binary (composite + Windows MSE fixes): video element present, play() resolves, paused:false — but currentTime FROZEN at exactly 19.006541667 across 4s of wall time. After seek to 10: lands at 10 but paused:true. Playback pipeline stalls mid-stream on Linux llvmpipe despite playing state.
+- Interpretation caution: evals returned fine (not the eval-starvation artifact). Either (a) MSE append/starvation similar to Windows chain but manifesting without seeks, or (b) Linux-specific gstreamer pipeline wedge — Windows fixes were validated on Windows only. REPRO command: servoshell webdriver youtube watch, eval v.muted=true;v.play(), poll currentTime.
+- NEXT SESSION: check SERVO_MSE_SYNC=1 A/B (Windows lane left the env switch in #14), check gst pipeline state logs, compare vs pre-merge engine binary if cached anywhere.
