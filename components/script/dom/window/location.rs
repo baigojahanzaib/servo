@@ -71,6 +71,30 @@ pub(crate) struct Location {
     empty_dom_string_list: MutNullableDom<DOMStringList>,
 }
 
+/// Cross-origin top-level navigation user-activation gate.
+///
+/// A nested navigable that is not same-origin with the top-level traversable
+/// may not navigate that top-level traversable unless the source window has
+/// transient activation. This is a browser intervention against tabnabbing
+/// encoded in the WPT cross-origin-top-navigation-* tests; the sandboxing
+/// flags in the specification's "allowed by sandboxing to navigate" algorithm
+/// only cover the sandboxed cases.
+fn check_top_navigation_activation_gate(source_window: &Window, target_window: &Window) -> ErrorResult {
+    let target_proxy = target_window.window_proxy();
+    let source_proxy = source_window.window_proxy();
+    if target_proxy.parent().is_none() &&
+        source_proxy.parent().is_some() &&
+        source_proxy.browsing_context_id() != target_proxy.browsing_context_id() &&
+        !source_window.origin().same_origin_domain(&target_window.origin()) &&
+        !source_window.has_transient_activation()
+    {
+        return Err(Error::Security(Some(
+            "Cross-origin top-level navigation requires transient activation".into(),
+        )));
+    }
+    Ok(())
+}
+
 impl Location {
     #[cfg_attr(crown, expect(crown::unrooted_must_root))]
     fn new_inherited(window: LocationWindow) -> Self {
@@ -169,11 +193,12 @@ impl Location {
         navigable: &Window,
         url: ServoUrl,
         history_handling: NavigationHistoryBehavior,
-    ) {
+    ) -> ErrorResult {
         // Step 1. Let navigable be location's relevant global object's navigable.
         let navigable_document = navigable.Document();
         // Step 2. Let sourceDocument be the incumbent global object's associated Document.
         let incumbent_global = GlobalScope::incumbent().expect("no incumbent global object");
+        check_top_navigation_activation_gate(incumbent_global.as_window(), navigable)?;
         // https://html.spec.whatwg.org/multipage/#the-navigate-algorithm
         // Navigations within an about:srcdoc document to any URL other than
         // exactly "about:srcdoc" (no query or fragment) must be blocked.
@@ -188,7 +213,7 @@ impl Location {
                 .strip_prefix("about:srcdoc")
                 .is_some_and(|remainder| remainder.starts_with('#'));
             if !is_fragment_only {
-                return;
+                return Ok(());
             }
         }
         let mut load_data = incumbent_global
@@ -206,6 +231,7 @@ impl Location {
         };
         // Step 4. Navigate navigable to url using sourceDocument, with exceptionsEnabled set to true and historyHandling set to historyHandling.
         navigate(cx, navigable, history_handling, false, load_data);
+        Ok(())
     }
 
     /// Navigate the relevant `Document`'s browsing context.
@@ -220,7 +246,7 @@ impl Location {
         url: ServoUrl,
         history_handling: NavigationHistoryBehavior,
         navigation_type: NavigationType,
-    ) {
+    ) -> ErrorResult {
         fn incumbent_window() -> DomRoot<Window> {
             let incumbent_global = GlobalScope::incumbent().expect("no incumbent global object");
             DomRoot::downcast(incumbent_global).expect("global object is not a Window")
@@ -241,6 +267,10 @@ impl Location {
             },
         };
         let source_document = source_window.Document();
+
+        if navigation_type == NavigationType::Normal {
+            check_top_navigation_activation_gate(&source_window, window)?;
+        }
 
         let referrer = Referrer::ReferrerUrl(source_document.url());
         let referrer_policy = source_document.get_referrer_policy();
@@ -283,6 +313,7 @@ impl Location {
             source_document.creation_sandboxing_flag_set_considering_parent_iframe(),
         );
         navigate(cx, window, history_handling, reload_triggered, load_data);
+        Ok(())
     }
 
     /// Get if this `Location`'s [relevant `Document`][1] is non-null.
@@ -392,7 +423,7 @@ impl Location {
                     copy_url,
                     NavigationHistoryBehavior::Push,
                     NavigationType::Normal,
-                );
+                )?;
             }
         }
         Ok(())
@@ -408,7 +439,7 @@ impl Location {
         // > navigate the browsing context to the same resource as that
         // > `Document`, with `historyHandling` set to "reload".
         let url = window.get_url();
-        self.navigate(
+        let _ = self.navigate(
             cx,
             window,
             url,
@@ -443,7 +474,7 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
             url,
             NavigationHistoryBehavior::Replace,
             NavigationType::ReloadByScript,
-        );
+        )?;
         Ok(())
     }
 
@@ -461,7 +492,7 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
                 Err(e) => return Err(Error::Syntax(Some(format!("Couldn't parse URL: {}", e)))),
             };
             // Step 4. Location-object navigate this to urlRecord given "replace".
-            self.navigate_a_location(cx, window, url, NavigationHistoryBehavior::Replace);
+            self.navigate_a_location(cx, window, url, NavigationHistoryBehavior::Replace)?;
         }
         Ok(())
     }
@@ -498,7 +529,7 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
             // Step 8. If copyURL's fragment is thisURLFragment, then return.
             if copy_url.fragment() != Some(&this_url_fragment) {
                 // Step 9. Location-object navigate this to copyURL.
-                self.navigate_a_location(cx, window, copy_url, NavigationHistoryBehavior::Auto);
+                self.navigate_a_location(cx, window, copy_url, NavigationHistoryBehavior::Auto)?;
             }
         }
         Ok(())
@@ -570,7 +601,7 @@ impl LocationMethods<crate::DomTypeHolder> for Location {
                 Err(e) => return Err(Error::Syntax(Some(format!("Couldn't parse URL: {}", e)))),
             };
             // Step 4: Location-object navigate this to url.
-            self.navigate_a_location(cx, window, url, NavigationHistoryBehavior::Auto);
+            self.navigate_a_location(cx, window, url, NavigationHistoryBehavior::Auto)?;
         }
         Ok(())
     }
