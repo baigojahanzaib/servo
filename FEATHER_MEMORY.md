@@ -9681,3 +9681,8 @@ Post-use-implementation sweep: github.com and en.wikipedia.org both render well 
 FUNCTION/MECHANISM: validation/youtube-rendering
 
 Screenshot-verified post-use-implementation YouTube homepage: sidebar sprite icons (home/shorts/subscriptions/you) ALL RENDER — direct validation of the use implementation on real sprite systems. Logo correct (red+black wordmark in light mode). Search/mic icons visible, category chips, thumbnails, ads all render. Page is close-to-correct overall. Remaining nits: some emoji missing in titles (font coverage, separate known area). This is the transformation evidence for the dogfood build.
+
+## sec1zt434 — symbol→svg conversion + recursion fix (2026-11-28)
+FUNCTION/MECHANISM: svg/use-symbol-scaling
+
+`d06d48a55d6`: symbol use-instances now convert to svg elements with width/height transfer — sprites scale correctly into their viewport (pixel-verified 24x24-viewBox filling 100px). CRITICAL BUG CLASS documented: use-instance clones are svg elements inserted into shadow roots — any document-wide re-resolution hook on SVGSVGElement::bind_to_tree MUST skip shadow-tree insertions (`is_in_a_shadow_tree()` guard) or clone-insertion recurses infinitely (stack overflow). Known remaining edge: use-in-use chaining inside clones unguarded beyond direct containment — rare in practice.
