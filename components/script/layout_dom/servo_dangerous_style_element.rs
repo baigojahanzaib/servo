@@ -860,7 +860,10 @@ impl<'dom> ::selectors::Element for ServoDangerousStyleElement<'dom> {
                             _ => {},
                         }
                     }
-                    current = el.parent_element();
+                    // Directionality inherits through the flattened tree (shadow-dom
+                    // slot assignment), not the light-DOM parent chain — use the same
+                    // traversal the style system's inheritance uses.
+                    current = el.as_node().traversal_parent();
                 }
                 resolved == want_rtl
             },
