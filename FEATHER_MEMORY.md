@@ -9392,3 +9392,15 @@ unrelated reasons (missing API) or a youtube-specific negotiation path.
 NEXT: test appendBuffer data flow with real media bytes (the
 push_media_source_data path) — if append works, youtube investigation
 shifts to JS-error hunting in its player bootstrap.
+
+## sec1zt404 — MSE WORKS END-TO-END: appendBuffer -> decode -> realtime playback all pass
+
+Full pipeline test (/tmp/mseappend.html + /tmp/frag.mp4 fmp4): fetched,
+appended, buffered=31.99, PLAYING event, ct advancing realtime, video
+samples flowing. Servo's MSE machinery is FUNCTIONAL — attach, append,
+decode, present. YouTube's failure is therefore NOT MSE at all: their
+player JS never even sets video.src, meaning it errors or aborts BEFORE
+MSE setup — a JS/API-compatibility problem, not media. Next step: capture
+JS console exceptions on the youtube watch page bootstrap (servo logs
+console errors to stderr or the webdriver console?) and classify the
+first failing API. Test harness files all in /tmp.
