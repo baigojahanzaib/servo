@@ -9691,3 +9691,8 @@ FUNCTION/MECHANISM: svg/use-symbol-scaling
 FUNCTION/MECHANISM: validation/livestream-visual
 
 Screenshot-verified the user's exact reported stream (1OoZJoHCCyk) post-fixes: live video PLAYING with real frames, correct logo, correct sidebar, channel bar, title/metadata, LIVE badges — night-and-day vs the user's broken-dogfood screenshot. Google login page also renders at full fidelity. Remaining visual nits: action-pill row slightly washed (some icons may still be missing — possible remaining use edge or mask-image gap); chat panel not visible in this capture (unverified whether closed-by-default or missing). This is the dogfood-ready evidence set.
+
+## sec1zt436 — YouTube zero-shadow-roots + pill-icon layout nit (2026-11-28)
+FUNCTION/MECHANISM: custom-elements/youtube-boot — OPEN, deprioritized
+
+YouTube probe: custom elements ARE defined (customElements.get('yt-icon') resolves) but ZERO of 34 sampled component elements have shadow roots. Servo's upgrade+attachShadow machinery itself verified healthy (minimal repro: pre/post-definition upgrades both attach correctly). No JS exceptions in boot. So YouTube's component initialization diverges silently somewhere OR modern YouTube genuinely uses light-DOM for these (uncertain). SEPARATE concrete nit: action-pill yt-icons compute correct 24x24 CSS but lay out 0x0 — minimal inline-flex+svg repro healthy, so it's interaction-specific (possibly flex-shrink in a constrained container or display:contents interaction). Both bounded-impact vs the transformed page; documented for later. Do not rabbit-hole without stronger user signal.
