@@ -569,6 +569,9 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
                 }
             }
         }
+        if let Some(ref ms) = *self.media_source.borrow() {
+            ms.mirror_buffered_to_core();
+        }
         let this = Trusted::new(self);
         self.global()
             .task_manager()

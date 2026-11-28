@@ -3861,6 +3861,13 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
             // MSE: the duration is whatever the page set on the MediaSource.
             return ms.duration_value();
         }
+        if let Some(ref core) = *self.mse_core.borrow() {
+            // Worker-MSE: duration mirrored cross-thread into the shared core.
+            let d = core.duration();
+            if !d.is_nan() {
+                return d;
+            }
+        }
         self.duration.get()
     }
 
@@ -3920,6 +3927,14 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
         // MSE: buffered is the union of the active source buffers' ranges.
         if let Some(ref ms) = *self.media_source.borrow() {
             return TimeRanges::new(cx, &self.global(), ms.buffered_value());
+        }
+        if let Some(ref core) = *self.mse_core.borrow() {
+            // Worker-MSE: ranges mirrored cross-thread into the shared core.
+            let mut mirrored = TimeRangesContainer::default();
+            for (start, end) in core.buffered_ranges() {
+                let _ = mirrored.add(start, end);
+            }
+            return TimeRanges::new(cx, &self.global(), mirrored);
         }
         let mut buffered = TimeRangesContainer::default();
         if let Some(ref player) = *self.player.borrow() {
