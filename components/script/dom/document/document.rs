@@ -2748,19 +2748,6 @@ impl Document {
                 // This must happen even if the load was stopped.
                 document.update_the_current_document_readiness(cx, DocumentReadyState::Complete);
 
-                // Mark the document as completely loaded before the load event
-                // dispatches, so that navigations initiated from load event
-                // handlers (e.g. assigning to `location.href`) create a new
-                // session history entry instead of replacing the current one.
-                // Other engines expose this ordering to web content: a document
-                // inside its own load event already behaves as completely loaded
-                // for history-handling purposes (wpt
-                // location_replace_session_history.html). Setting the flag only
-                // in `completely_finish_loading` after the event made every
-                // in-load-handler navigation a replacement, erasing the page
-                // itself from session history.
-                document.completely_loaded.set(true);
-
                 // The document may have been stopped after this task was queued.
                 //
                 // The HTML specification doesn't say which events should be fired when
