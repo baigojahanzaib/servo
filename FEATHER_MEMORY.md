@@ -7980,3 +7980,21 @@ starvation at live edge, not EOS logic. Needs throughput measurement on
 demanding content. Windows lane doing hardware repro in parallel.
 **GOTCHA**: never run regen sweeps while probe-killing servoshell — the kill
 loops destroy harness instances and contaminate results (winobj sweep lost).
+
+## sec1zt381 — VIDEO STALL BISECTED: 1080p progressive playback total-stall defect
+
+Hard measurement (testsrc2-generated ladder, same codec/bitrate-family):
+- 480p (854x480@2M): 1.043x realtime — fine
+- 720p (1280x720@4M): 1.043x realtime — fine
+- 1080p (1920x1080@8M): **0.000x realtime — TOTAL STALL** — currentTime frozen
+  (7.65s over 10s wall), paused=false, readyState=4 (buffer FULL), zero media
+  errors in logs. Initial ~7.5s advance happens during load then freezes.
+Cliff shape (not linear degradation) → structural wedge, not decode-
+throughput. Suspects: frame-presentation/sink path above a size threshold,
+NV12 conversion, texture allocation, or compositor video-frame channel
+backpressure deadlock when frames are large. Repro: /tmp/throughput.html +
+hd1080.mp4/md720.mp4/sd480.mp4 (ffmpeg testsrc2 ladder). THIS EXPLAINS THE
+USER DOGFOOD: YouTube serves 1080p on large screens — videos freeze after a
+few seconds; livestreams fall behind and die. HIGHEST-PRIORITY engine defect.
+Next: gst pipeline dot-dump or frame-sink instrumentation at 1080p; check
+whether frames reach the compositor (paint probe) vs die in decodebin.
