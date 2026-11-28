@@ -9874,3 +9874,28 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   decision, large merge effort, but it would close whole failure families at
   once and re-close them permanently vs leaf whack-a-mole.
 - Windows lane owns MSE/seek path — do not touch (coordinator freeze 17:01).
+
+## sec1zt448 (2026-11-28) — CORRECTIONS to sec1zt447 upstream-gap claims
+- WRONG in sec1zt447: "CacheStorage entirely unimplemented in the fork". REAL:
+  fork HAS full CacheStorage (script/dom/serviceworker/cachestorage.rs,
+  CacheStorage.webidl, window.caches field) — but it's exposed only under
+  Pref="dom_serviceworker_enabled" which defaults FALSE in BOTH fork and
+  upstream. Not fork divergence — upstream ships serviceworker off too.
+  Whether to enable SW for feather is a PRODUCT decision with real risk
+  (half-implemented SW vs sites that feature-detect — gmail/youtube both use
+  SWs; the fallback no-SW paths are well-tested). Needs empirical evaluation,
+  not a blind flip. Do not repeat the adoptedStyleSheets flip casually here.
+- WRONG in sec1zt447: "upstream servo gained canvas layers post-fork". REAL:
+  upstream has NO beginLayer implementation either (grep count 0), and NO .ini
+  exists for the failing layer tests in either tree — "expected PASS" was the
+  harness default for expectation-less tests, so PASS→FAIL there is phantom,
+  not regression. Tests for unimplemented features without .ini entries
+  inflate the unexpected count as pure noise.
+- CONFIRMED-TRUE from sec1zt447: fork tracks upstream closely — merge-base
+  2026-11-23 (5 days), upstream only 87 commits ahead, fork carries 795 own
+  commits (rebased lineage). The "fork months behind" framing is DEAD — an
+  upstream sync is a small merge, not a big one. but ALSO less leverage than
+  claimed: the feature gaps are mostly upstream's own gaps too.
+- METHODOLOGY: when attributing WPT unexpecteds, check FIRST whether an .ini
+  expectation file exists at all — absence means expected=default-PASS and
+  any failure is expectation-noise, not signal.
