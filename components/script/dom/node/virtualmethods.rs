@@ -452,6 +452,13 @@ pub(crate) fn vtable_for(node: &Node) -> &dyn VirtualMethods {
         NodeTypeId::Element(ElementTypeId::SVGElement(SVGElementTypeId::SVGElement)) => {
             node.downcast::<SVGElement>().unwrap() as &dyn VirtualMethods
         },
+        // Every SVG element type inherits SVGElement, so any variant not
+        // enumerated above can safely use the SVGElement virtual methods.
+        // Without this fallback a missing arm falls into the HTMLElement
+        // catch-all below and panics on the failed downcast.
+        NodeTypeId::Element(ElementTypeId::SVGElement(_)) => {
+            node.downcast::<SVGElement>().unwrap() as &dyn VirtualMethods
+        },
         NodeTypeId::Element(ElementTypeId::Element) => {
             node.downcast::<Element>().unwrap() as &dyn VirtualMethods
         },
