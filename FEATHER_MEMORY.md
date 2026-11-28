@@ -6584,3 +6584,6 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 
 ## sec1zt328: vimeo thumbs CONFIRMED FIXED — blank-grid family fully closed (2026-11-28)
 - Headed servoshell vimeo.com: full thumbnail grid renders (staff picks etc). Blank-grid family dead on all three reproductions: amazon tiles, behance grid, vimeo thumbs. Family was killed collaterally by this session's image-lifecycle/compositing work + getRegistrations for behance's crash path.
+
+## sec1zt329: windowproxy fix verified live — yahoo loads clean (2026-11-28)
+- Headed servoshell yahoo.com (ad-iframe-dense, batch-68 repro): zero assertion panics, zero crashes, page renders with full chrome. Fix 312b590471d confirmed against the original repro site.
