@@ -7823,3 +7823,20 @@ Verified x-origin pair (127.0.0.1 iframe in localhost parent):
   cross-thread x-origin nav in servo.
 - unsandboxed child no activation: correct SecurityError gate message.
 - same-origin iframe-nav-parent: unaffected.
+
+## sec1zt373 — child-navigates-parent-cross-origin WPT assessment
+
+Test EXPECTS SecurityError for grandchild navigating its non-top cross-origin
+parent (topology: top → same-origin child iframe → dissimilar grandchild).
+With forwarding live: location/href/replace subtests fail because the
+navigation now PROCEEDS (gate correctly doesn't apply to non-top targets),
+so no SecurityError fires. hash/host/etc pass because those setters are not
+whitelisted cross-origin. Ini expected FAIL before AND after — zero harness
+regression.
+
+Followup mechanism (documented, unimplemented): the spec's 'allowed to
+navigate' rules restrict cross-origin navigation of non-top nested frames —
+an additional gate layer beyond the activation intervention. Real-web impact
+of the gap is LOW (legit x-origin embeds overwhelmingly target top, which is
+the whitelisted + gate-guarded path); over-permissiveness matches pre-forward
+Chrome-compat less precisely but enables strictly more real content.
