@@ -8228,3 +8228,26 @@ warnings benign. faad audio decode active. NEXT investigative step: read
 source.rs feed logic — why does pushing stop mid-file (need-data callback
 never re-armed? refetch completion not resuming pushes? appsrc
 enough-data deadlock with the EOS-blocking wrapper?).
+
+## sec1zt397 — media A+V wedge: download-flag innocent; full state consolidated
+
+Ruled out: progressive-download flag (was never active — default false;
+with it force-disabled playback still frozen), muting, resolution/bitrate,
+decode throughput, drain consumption. Established facts: (1) entire gst
+pipeline goes silent 0.23s after start — all activity in one burst;
+multiqueue's last action is mid-push on queue 0 at 1.2s of content;
+(2) stall position varies per run — sometimes samples flow to 19-29s,
+sometimes zero; nondeterministic timing-dependent wedge; (3) video-only
+files never wedge; (4) servosrc appsrc: push-mode only, BANDWIDTH_LIMITED
+flag declared, 50MB queue, nonblocking. Hot suspect remaining: preroll/
+state-transition deadlock — pipeline stuck in PAUSED because preroll never
+completes on all sinks; the initial burst fills multiqueue queues, and
+since PLAYING never arrives nothing consumes — qtdemux backpressured after
+first buffers. The varying stall positions = how much data squeezes through
+before all queues fill. TEST for next session: query pipeline state in the
+frozen state (gst pipeline get-state) — if PAUSED-not-PLAYING confirmed,
+the fix is in preroll completion (probably video appsink preroll — servo
+returns Ok for new_preroll but appsink preroll semantics need the first
+sample consumed?? or the audio/video sink linkage). GST wrapper harness at
+/tmp/gstwrap.sh; GST_DEBUG env propagates fine when exported inside a
+wrapper script (inline env-in-nohup-subshell silently fails).
