@@ -6259,3 +6259,33 @@ waitAsync (coordinator decision pending). Fieldset leaf closed at 85/88 as-expec
 - amazon hydration-layout defect CLOSED: cold-profile repro correct, 4/4 non-reproducing on latest engine (#409). The 20-site sweep is fully clean — no open sweep items remain.
 - Open items definitive list at handoff: (1) authenticated dogfood — needs credentials from the user; (2) DRM/EME — engine lane; (3) hardware checklist with user: middle-click, mouse back/forward, cross-app file drops; (4) Windows file-picker verification — windows lane; (5) file-drop #352 functional verification now that file:// loads work.
 - Everything else ever filed is either merged-fixed, verified-green, or documented-as-not-a-defect in docs/defect-queue.md.
+
+## sec1zt316 — location_replace leaf CLOSED: completely-loaded-before-load-event (2026-11-28)
+ROOT CAUSE: servo set document completely_loaded only in completely_finish_loading
+(AFTER the load event dispatches, spec step 9.12). Per the location-href setter rule,
+navigations from not-completely-loaded documents are Replace — so every location.href
+assignment inside an onload handler REPLACED the page itself in session history,
+erasing it. history.back() then skipped the page entirely. Cross-browser truth:
+inside the load event the document already counts as completely loaded for
+history-handling (the wpt location_replace_session_history chain depends on it).
+FIX (20206bb466c): completely_loaded.set(true) in the fire_load_event task right
+after readiness flips to Complete, BEFORE the load event dispatches.
+VERIFIED: minimal repro A2-onload-nav→B2-then-history.back(): before fix nothing
+happened (B2 replaced A2, back() landed on initial about:blank); after fix A2
+pageshow refires and browser lands back on A2. WPT: location_replace_session_history
+PASSES (was upstream-expected TIMEOUT — ini REMOVED, feather ahead of upstream).
+Full the-location-interface directory: zero regressions (same-hash ERROR,
+create-script-set-location ERROR, location-replace-cross-site TIMEOUT all match
+upstreams ini expectations).
+MECHANISM NOTE: constellation-side pipeline.completely_loaded still set by the
+load-finished notification in step 9.12 — do NOT move it earlier: webdriver
+load-status depends on it. The iframe override (constellation.rs:3735) is safe
+because script→constellation FIFO guarantees load-finished is processed before
+any in-load-handler navigation message from the same pipeline.
+SYMPTOM INDEX: location.href in onload replaces history entry / history.back()
+skips pages that self-navigated during load → check completely_loaded SET TIMING
+in document.rs fire_load_event task. Negative: traversal machinery itself was
+never broken (queue/diff/activation all correct) — the past entries simply never
+existed because the navigations were replacement.
+REAL-WEB IMPACT: any redirect-via-onload or SPA-ish navigation pattern now
+leaves correct session history — back button works across redirect chains.
