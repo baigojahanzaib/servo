@@ -8091,3 +8091,17 @@ optimizations possible (allocation reuse, native NV12) but the user-facing
 defect is dead. Decoder-selection theory never needed — the copy cost alone
 was the wedge at any bitrate where NV12 frames flow; low bitrates likely
 took a non-NV12 path or the cost fit in decode slack.
+
+## sec1zt388 — YouTube MSE wedge is SEPARATE: append-chain starvation, not rendering
+
+Post-fix measurement on real YouTube (Big Buck Bunny, MSE): ct frozen at
+6.996 over 12s, paused=false — BUT only 9 video samples flowed through the
+entire pipeline in 30+ seconds. The frame-renderer fix can't help because
+frames never reach rendering — starvation is UPSTREAM in the MSE
+append/demux/decode chain (the sec1zt84/220 resequencing machinery).
+Burst-then-freeze signature matches progressive but the mechanism differs:
+initial append burst decodes, then the chain starves. Progressive mp4
+playback IS fixed (sec1zt387) — direct-video files play; YouTube/MSE needs
+its own arc: instrument append latency, decodebin stream selection, and
+the live-pipeline resequencing for where samples die. 9-samples-total is
+the key quantitative clue — not slow, nearly-zero.
