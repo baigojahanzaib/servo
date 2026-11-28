@@ -7543,3 +7543,10 @@ Final piece: bind-order propagation trap — at a parent's bind-scan time, child
 - Verified via webdriver probes: activation (click anywhere) registers hasBeenActive+isActive even when a modal dialog is open; after activation ESC cancel event IS cancelable per spec. Engine fully spec-correct on the cancel chain — no engine leaf here.
 - Open detail (unverified, low value): whether element-targeted testdriver clicks land on buttons inside modal dialogs (hit-testing through top layer) — if broken it's a webdriver-harness/top-layer issue, not engine. dialog-cancel-events etc. remain expected-fail for harness reasons.
 - PROBE GOTCHA: one webdriver session per servoshell process — attempting /session twice yields HTTP 500 with no useful error. Reuse the session id or kill+relaunch.
+
+## sec1zt361 — dialog leaf remainder inventory (final)
+- dialog-autofocus.html TIMEOUT: autofocus processing when modal dialog opens — plausible small leaf in focus machinery, unexamined. FIRST candidate if dialog leaf resumes.
+- dialog-cancel-preventDefault: cancel_action correctly returns fire() canceled-status in code — failure likely bless/activation-path again, unverified.
+- ::backdrop cluster (6 inis): layout/pseudo rendering — separate layout-level work.
+- Light-dismiss (closedby) cluster: harness-sensitive (pointer events through top layer).
+- LEAF-LIST STATE: exhausted of leaf-priced items. Remaining M-arcs ranked: (1) flexbox baseline alignment ~41 inis highest real-web value, (2) dialog backdrop rendering, (3) window popup lifecycle (constellation webview close plumbing, crashes in open-features tests), (4) document.open/write semantics.
