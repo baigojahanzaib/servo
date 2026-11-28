@@ -7627,3 +7627,29 @@ run BEFORE this fix would bake in harness noise — always regenerate after.
 
 **Regression-safety**: focus tree 210/210 as-expected post autofocus work;
 dialog 150/150; the capability only affects behavior when a prompt opens.
+
+## sec1zt366 — dir-assorted.window.js CRASH — OPEN DEFECT, repro-elusive
+
+**Symptom**: deterministic CRASH in WPT harness (solo run), panic
+`Option::unwrap() on None` at virtualmethods.rs:454 — the
+`NodeTypeId::Element(_) => downcast::<HTMLElement>().unwrap()` catch-all in
+vtable_for, called from Node::insert children_changed dispatch
+(node.rs:3119). Means: insertion into an element whose type id expects
+HTMLElement but whose DOM object isn't one.
+
+**Suspected trigger**: dir-assorted creates SVG-namespace elements with HTML
+tag names (`createElementNS(svg-ns, 'input'/'textarea'/'style'/'script')`)
+and inserts text/subtrees — suspect factory mistypes some of these by tag
+name ignoring namespace.
+
+**Repro-elusiveness** (important negative result): minimal probes do NOT
+crash — neither unknown-ns→unknown-ns append, svg-ns input+text append,
+nor a full mirror of the test's style/script/input/textarea sequence with
+dir=auto + matches(). Harness context (wptrunner wrapper page, webdriver
+injection, or cross-test element typeid state) is required. NOT yet
+determined whether feather regression or latent upstream defect exposed
+by test ordering — virtualmethods.rs is untouched by feather commits.
+
+**State**: CRASH expectation written by update-expectations (accurate but
+unacceptable long-term). Priority: HIGH — a crash in type-dispatch can
+theoretically hit real sites mixing SVG/HTML tag names.
