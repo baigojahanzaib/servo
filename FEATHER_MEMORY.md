@@ -8105,3 +8105,17 @@ playback IS fixed (sec1zt387) — direct-video files play; YouTube/MSE needs
 its own arc: instrument append latency, decodebin stream selection, and
 the live-pipeline resequencing for where samples die. 9-samples-total is
 the key quantitative clue — not slow, nearly-zero.
+
+## sec1zt389 — MSE wedge mechanism clues: pts OUT-OF-ORDER + zero audio samples
+
+Post-seek log analysis: video sample pts go BACKWARDS (n=180 pts=6.0s then
+n=210 pts=4.033s) — the in-band resequence machinery emits out-of-order pts
+after a seek, which a decoder cannot consume. AND zero audio samples in the
+entire session (grep count 0) — YouTube's split audio track never produced
+a single sample; A/V sync waiting on nonexistent audio would freeze ct
+exactly at the seek target (observed: frozen at 6.996 = seek target).
+Note the seek itself was unsolicited (no user action) — probably YouTube
+player's start-position logic. Two independent failure lines to pursue:
+(1) why no audio samples ever flow (track never fed? decodebin stream
+selection dropping audio?), (2) resequence ordering violation after seeks.
+The no-cycle in-band resequence path is suspect for both.
