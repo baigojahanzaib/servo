@@ -6468,3 +6468,36 @@ fires in the live pipeline (SERVO_MSE_CYCLE env re-enables cycle for A/B). If li
 re-plumbing still fails, the deep options are (a) full pipeline teardown+rebuild per seek
 (expensive but truly initial-state), or (b) WebKit-style custom MSE pipeline without
 playbin3 (parsebin-per-track architecture) — the correct long-term shape.
+
+## sec1zt320 — composite-off-UI-thread IMPLEMENTED: paint thread + async consumption (2026-11-28)
+STATUS: steps 1+2 live on feather-engine (1c6fa6f87e7 paint thread restructure,
+0e883853d46 async consumption). feather shell-new enables gfx_async_paint_composite.
+ARCHITECTURE (as designed in sec1zt317c/d): paint thread owns GL context+webrender
+Renderer, renders into surfman surface backed by attached SwapChain; UI consumes
+front surface via create_texture/blit into embedder FBO (behavioral no-op).
+KEY IMPLEMENTATION FACTS (verified, do not rediscover):
+* surfman Connection+Adapter are Send cross-thread in production TODAY
+  (PainterSurfmanDetailsMap shares them with webgl threads). Surfaces Send everywhere.
+* SwapChain is internally Arc<Mutex> thread-safe; consumer take_surface/recycle_surface.
+* HEADLESS GOTCHA: SoftwareRenderingContext present() swaps the chain — a blitted
+  frame vanishes from the back buffer after present. Fixed by parking the imported
+  texture + re-blitting when no new frame completed. OffscreenRenderingContext
+  (headed) has no-op present — no issue there.
+* webdriver screenshot validated async mode pixel-exact vs sync (902 colors,
+  center (30,120,200) identical). rAF/nav/JS all healthy, no deadlocks.
+* Completion loop: paint thread sends PaintThreadFrameReady via paint_proxy (which
+  wakes the event loop); painter sets a dedicated repaint reason that CONSUMES but
+  never KICKS — otherwise infinite render loop. Kick condition: needs_repaint has
+  bits other than PaintThreadFrameReady AND requested==completed generation.
+* External image handlers (webgl/webgpu/media) constructed on paint thread with
+  paint-thread context — they run inside renderer.render.
+* Fallback: custom rendering contexts without surfman connection/adapter use the
+  old inline path (webrender_renderer stays on UI thread).
+* SPEC CORRECTION (08c2c7c4040): reverted completely_loaded-before-load-event —
+  spec order is load-event THEN completely_finish_loading, so in-onload location
+  assignment correctly REPLACES (assign_before_load passes). The
+  location_replace_session_history TIMEOUT is a genuine independent defect:
+  REPLACE navigation initiated inside the load event handler wedges servo.
+  THAT is the real leaf — the early-set was masking it. ini restored.
+REMAINING: step 3 backpressure tuning + feather shell youtube verification
+(shell rebuilding). windows lane: verify composite works on wgl/angle.
