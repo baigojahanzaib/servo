@@ -9722,3 +9722,19 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   svg-use arc complete (84b8f2014bd+089898ec37b+d06d48a55d6). Everything
   pixel/behavior-verified. Dogfood build recommended.
 - early css/CSS2 snapshot at relaunch: 5654 PASS / 464 FAIL — baseline collection healthy.
+
+## sec1zt439 (2026-11-28) — post-fix WPT baseline first signal
+- Fresh baseline running (css/CSS2 css/cssom html websockets fetch workers).
+  Runs are FAST: css/CSS2 finished in 4min (parallel reftest execution).
+- css/CSS2: 2 unexpected results. margin-border-padding-003.xht flipped
+  FAIL->PASS (improvement, plausibly from recent engine work).
+  replaced-intrinsic-002.xht flipped PASS->FAIL — BUT: no .ini expectation
+  exists for it (expected=PASS is the harness default), so this is not
+  necessarily a today-regression: css/CSS2 was NEVER baselined before
+  (the stale css/html path), so it may be long-standing fork divergence.
+- The failing test: object-embedded svg with NO width/height attrs and no
+  viewBox (implied 100%x100% intrinsic). SAME mechanism family as the
+  documented unsized-svg-default defect (sec1zt427): svg natural-size
+  resolution in components/layout/replaced.rs svg_kind_size (width/height
+  None, ratio None -> should fall to spec default sizing). Leaf queued for
+  the svg-sizing leaf sweep.
