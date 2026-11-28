@@ -9666,3 +9666,8 @@ FUNCTION/MECHANISM: svg/use-element — **the big web-compat fix**
 FUNCTION/MECHANISM: svg/use-late-binding
 
 `089898ec37b`: SVGSVGElement::bind_to_tree re-resolves all document uses — covers dynamically-injected sprite sheets (the gmail/YouTube pattern). Pixel-verified both injection patterns. NOTE: the setTimeout(300ms) variant of the injection test failed to render in one probe while synchronous injection passed — either timer flakiness or a real gap in timer-driven injection; unverified, low priority since sync patterns dominate. Verification tooling note: PIL/pillow needed reinstalling after environment refresh (`python3 -m pip install pillow`); pixel-readback harness: webdriver screenshot endpoint + PIL getpixel — reliable once the one-session-per-process rule is respected.
+
+## sec1zt431 — scroll-lag scoping (2026-11-28)
+FUNCTION/MECHANISM: perf/scrolling — documented, long arc
+
+Servo's input-side scroll latency mitigation EXISTS: `components/paint/webview_renderer.rs` pends wheel events and the paint thread eagerly scrolls without waiting for script round-trips (paint.rs:115 comment). So scroll lag on heavy pages is NOT an input-routing defect — it's composite throughput: the UI-thread-blocking composite path already documented in feather docs/wiki/COMPOSITE-OFF-UI-THREAD.md (the biggest queued perf fix, multi-day, design complete). On YouTube-class pages the heavy raster+present starves both scroll updates and input. No separate scroll arc needed — the composite-off-UI-thread work IS the scroll fix. Do not duplicate-scope.
