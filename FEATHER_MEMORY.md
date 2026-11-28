@@ -9620,3 +9620,8 @@ Post-`e2869198687` probe on the user's exact livestream: `ytd-live-chat-frame` g
 FUNCTION/MECHANISM: media/worker-mse-element-state
 
 `43149eb954c`: element-side Duration()/Buffered() now fall back to the cross-thread core when no same-thread MediaSource is attached (previously NaN/empty always for worker-MSE — plausibly driving YouTube's "constantly reloading" since players use these for health/live-edge logic). SourceBuffer append completion now actually calls mirror_buffered_to_core (was defined-but-never-called). Verification partial: compiles clean, sample flow unaffected; full end-to-end verification blocked by heavy-page webdriver flakiness. ALSO: servo reports `prefers-color-scheme: light` always in servoshell — dark-mode reproduction of youtube styling defects needs the feather shell or manual cookie setup.
+
+## sec1zt423 — mirroring VERIFIED on live YouTube (2026-11-28)
+FUNCTION/MECHANISM: media/worker-mse-verification
+
+`43149eb954c` verified end-to-end on youtube.com/watch?v=aqz-KE-bpKQ: `dur=634.601` (correct full duration, was NaN pre-fix), 3 buffered ranges extending to end=62.3s, ct=5.6 rs=4. Player health/live-edge logic now receives correct cross-thread state. Probe reliability trick: retry the same stored session 3x with 4s gaps — heavy-page execute/sync usually lands within 3 tries.
