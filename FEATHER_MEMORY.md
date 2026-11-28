@@ -6581,3 +6581,6 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 - behance.net landing also renders hero images + category pills post-getRegistrations fix; explore-grid deep scroll retest belongs to Mac sweep lane.
 - REMAINING in blank-grid family: vimeo thumbs — untested.
 - NOTE for probes: servoshell -o screenshot mode captures too early for JS-heavy pages (blank white even when fine) — must use headed+wmctrl+import for visual verification. servoshell needs explicit --pref dom_serviceworker_enabled=true dom_indexeddb_enabled=true to match feather shell.
+
+## sec1zt328: vimeo thumbs CONFIRMED FIXED — blank-grid family fully closed (2026-11-28)
+- Headed servoshell vimeo.com: full thumbnail grid renders (staff picks etc). Blank-grid family dead on all three reproductions: amazon tiles, behance grid, vimeo thumbs. Family was killed collaterally by this session's image-lifecycle/compositing work + getRegistrations for behance's crash path.
