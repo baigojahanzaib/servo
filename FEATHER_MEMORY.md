@@ -7581,3 +7581,27 @@ skip-another-top-level-browsing-context (cross-top-level-context edge).
 stale-written when feature was entirely absent; implementing the feature
 flips many at once. When a whole directory's inis predate the feature,
 regenerate rather than hand-editing.
+
+## sec1zt364 — fieldset/legend residual investigation (no fix — documented)
+
+**State**: directory 85/88 as-expected post feather fieldset work. Committed
+expectation refresh: border-gap-position-relative ini dropped (stale), two
+genuine residuals documented in new inis.
+
+**Mechanism hypothesis for legend-position-relative* failures** (unverified):
+the straddle-shift in same_formatting_context_block.rs adjusts the legend
+fragment rect, but position:relative fragments get their final position from
+the positioning-context pass — interaction between straddle adjustment and
+relative-positioning offset application is broken. NOT overflow-specific:
+legend-position-relative.html fails without overflow:hidden. Both
+legend-position-relative tests fail; the non-positioned straddle path works.
+
+**Cost assessment**: M — requires understanding servo's PositioningContext
+hoisting for in-flow positioned fragments. Real-web value moderate-high
+(fieldset forms) but position:relative legends are rarer than plain ones.
+
+**flexbox baseline cluster value correction**: the ~40 baseline inis are
+dominated by orthogonal writing-mode interactions (vertical-rl/lr items) —
+even the "horiz" tests are orthogonal-mode edge cases. Mainstream horizontal
+baseline alignment PASSES (align-baseline.html). Cost multi-session, real-web
+value LOW. Do not prioritize.
