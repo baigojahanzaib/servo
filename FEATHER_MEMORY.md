@@ -7550,3 +7550,8 @@ Final piece: bind-order propagation trap — at a parent's bind-scan time, child
 - ::backdrop cluster (6 inis): layout/pseudo rendering — separate layout-level work.
 - Light-dismiss (closedby) cluster: harness-sensitive (pointer events through top layer).
 - LEAF-LIST STATE: exhausted of leaf-priced items. Remaining M-arcs ranked: (1) flexbox baseline alignment ~41 inis highest real-web value, (2) dialog backdrop rendering, (3) window popup lifecycle (constellation webview close plumbing, crashes in open-features tests), (4) document.open/write semantics.
+
+## sec1zt362 — dialog-autofocus leaf scoped (implementable, ~S)
+- htmldialogelement.rs show_modal steps implement autofocus PARTIALLY: step 3 (autofocus attr on subject → control) exists; steps 9-10 are TODO (empty topDocument autofocus candidates, set processed flag).
+- Test requirements (dialog-autofocus.html): opening modal focuses inner autofocus element; layout recreation (display none/block) must NOT re-focus; node reinsertion must NOT re-focus. The re-focus prevention is exactly what the autofocus-processed flag governs — the missing piece.
+- Implementation sketch: complete steps 9-10 in show_modal + verify the document-level autofocus candidates machinery (document.rs autofocus_processed / candidates) exists. Small, focused, upstreamable.
