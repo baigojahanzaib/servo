@@ -6733,3 +6733,9 @@ Three-layer defect, each layer masked by the previous:
 **getComputedStyle residual**: dir-shadow-39 fails because getComputedStyle must return "" for non-rendered slotted-away fallback content — same infra as aborted cherry-pick 9ddfe28a9ec. dir-shadow-39.ini kept.
 
 Verification: full global-attributes dir — 13+ subtests newly pass incl. all dynamic slot-reassignment tests; 3 initial regressions (host-proxy rule missing) fixed by correct scan. Negative results: textarea exclusion was missing from scan (added); scan must not fall through to light children when assigned nodes exist but yield nothing.
+
+## sec1zt352 — dir=auto slot resolution SHIPPED ba4fbe79f69 (2026-11-28)
+
+Final state: scan + inheritance + invalidation all spec-correct per the three algorithms in sec1zt351. Verification: zero FAIL[expected PASS] across the whole directionality family; dir-assorted fully green (ini deleted); 15+ subtests positive delta. Residuals documented: dir-shadow-39 (getComputedStyle-not-rendered infra = 9ddfe28a9ec dependency), dir_auto-textarea-script-N-between-Rs (pixel mismatch with verified-correct DOM state — plaintext bidi rendering detail or capture timing, ini restored with note), "slot provides its directionality (from host) to a dir=auto container" genuine remaining failure in dir-slots-directionality.
+
+**Lesson**: mach test-wpt paths for `.window.js` tests use `.window.js` NOT `.window.html` (the earlier memory note was wrong for this mach version). `--update-expectations` silently no-ops on wrong paths — always check the "Ran N tests" count matches what you asked for.
