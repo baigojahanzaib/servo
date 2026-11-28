@@ -9551,3 +9551,22 @@ Interfaces needing Exposed widening for worker-MSE: MediaSource,
 SourceBuffer, SourceBufferList, TimeRanges (all currently
 [Exposed=Window]). MediaSourceHandle webidl does not exist yet — new
 file needed. Dependency depth is shallow (4 interfaces + 1 new).
+
+## sec1zt416 — MSE-IN-WORKERS SHIPPED: youtube plays in servo (4a554248ff0)
+
+Full architecture implemented and verified end-to-end: MediaSourceCore
+cross-thread shared state + process registry, MediaSourceHandle
+serializable shell (structured clone carries uuid), worker exposure of
+MS/SB/SBL/TimeRanges, srcObject=handle attach path, cross-thread
+attach/seek/detach task posting via SendableTaskSource. DECISIVE BUG
+during bringup: stream-type detection — player created as Seekable in
+the Resource::Object branch before attach ran; progressive players
+silently swallow pushed bytes. Fixed: MediaSourceHandle maps to
+StreamType::MediaSource and mse_core is visible before player creation.
+VERIFIED: youtube watch ct=5.1 rs=4 playing, worker pushes on tracks 0+1,
+video samples flowing. Test harness: /tmp/mseworker.html + mseworker.js.
+KNOWN GAPS (followups): duration/buffered not yet mirrored into core for
+element-side reads (live streams mostly unaffected); same-thread blob-url
+path untouched and still works; cross-process (multiprocess mode) handle
+passing unsupported — cores are in-process only. Seek-refeed cross-thread
+path implemented but NOT yet verified with real seeks.
