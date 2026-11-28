@@ -9404,3 +9404,21 @@ MSE setup — a JS/API-compatibility problem, not media. Next step: capture
 JS console exceptions on the youtube watch page bootstrap (servo logs
 console errors to stderr or the webdriver console?) and classify the
 first failing API. Test harness files all in /tmp.
+
+## sec1zt405 — YouTube root cause FOUND: MediaSourceHandle + WebCodecs missing — player silent-bails at worker-MSE setup
+
+Console-logging fix (eb8362038fd, headless servoshell now eprints page
+console) enabled direct probing. YouTube watch page live facts:
+- customElements/ShadowRoot/template all present; movie_player exists,
+  getPlayerState()=3 (buffering) forever; zero JS exceptions thrown.
+- video element NEVER gets src set — player waits at stream-attach.
+- All codec isTypeSupported checks pass (avc1/vp9/av1/mp4a/opus all Y).
+- MISSING: MediaSourceHandle (undefined) and VideoDecoder/WebCodecs
+  (undefined). Modern youtube main player transfers the MediaSource into
+  a worker via the transferable MediaSourceHandle API (MSE-in-workers);
+  without it the player's streaming engine never starts — silent bail.
+FIX TARGET: implement MediaSourceHandle (thin transferable wrapper +
+worker-side MediaSource exposure, spec: MSE in workers). Moderate-cost
+engine arc, high user value. WebCodecs is separate/larger, probably not
+needed for the basic path. Probe method for verification: webdriver
+execute on live watch page, compare typeof MediaSourceHandle.
