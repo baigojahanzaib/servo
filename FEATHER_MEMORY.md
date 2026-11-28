@@ -9594,3 +9594,19 @@ FUNCTION/MECHANISM: svg/fill-css, youtube-logo
 **Open suspect**: YouTube's actual dark-mode fill rule uses some feature servo fails — prime candidates: adoptedStyleSheets/constructable stylesheets (YouTube uses them heavily), shadow-scoped `:host` rules, or a stylesheet that fails to parse/load. Next probe: in servo on live youtube dark mode (needs PREF cookie or prefers-color-scheme support — check if servo even reports dark), enumerate document.styleSheets for rules mentioning fill and check which fail. ALSO check: does servo support adoptedStyleSheets at all — grep for it; if unsupported that's likely the root for MANY youtube styling defects including chat placement.
 
 **Note**: servo renders youtube in LIGHT mode (dark-attr null) — user's feather build shows dark, so feather/servo does propagate dark preference somehow; investigate how.
+
+## sec1zt419 — ROOT CAUSE + FIX: adoptedStyleSheets pref-gated off (2026-11-28)
+FUNCTION/MECHANISM: css/constructable-stylesheets — **the big one**
+
+**ROOT CAUSE of YouTube logo black-on-black (and likely a large family of modern-web styling defects)**: servo's adoptedStyleSheets implementation is COMPLETE (constructor, replaceSync, ObservableArray set/delete plumbing, stylesheet-set reconciliation) but `dom_adoptedstylesheet_enabled` defaults to **false** in components/config/prefs.rs — `add_stylesheet` silently returns early for every constructed sheet. YouTube/Polymer/Lit/gmail rely on constructable stylesheets for component styling.
+
+**Evidence chain**: (1) minimal repro — adopted sheet fill rule never reached computed style; (2) generic CSS fill machinery all healthy; (3) the pref gate found at documentorshadowroot.rs add_stylesheet; (4) **fix `e2869198687`**: flipped default to true — repro now computes correctly, YouTube watch page verified still healthy post-flip (ct=8.6 rs=4, pushes flowing, no crash).
+
+**Expected impact**: YouTube component styling broadly (logo fills, chat panel layout possibly, icon colors), gmail (heavy Lit/constructable user), any Polymer/Lit/shadow-dom-component site. HIGH-VALUE followup: re-examine ALL previously-filed styling defects (gmail icons 0x0, vertical centering, chat placement) post-flip — several may be casualties of this single root cause.
+
+**Caution**: upstream disabled this pref for some reason — watch for WPT regressions or crashes on sites using replace() async or sheet reuse edge cases. If instability appears, the gate is a single-line revert.
+
+## sec1zt420 — bfcache EXISTS and works in servo (2026-11-28)
+FUNCTION/MECHANISM: navigation/bfcache
+
+Minimal repro: history.back() restored the page with identical JS state (same window.__stamp, scripts did not re-run). Back-nav slowness is NOT missing bfcache in the simple case — suspect restoration/re-render cost or real-site ineligibility. Webdriver `back` command does NOT work in servoshell (unimplemented?) — use JS history.back() for probes.
