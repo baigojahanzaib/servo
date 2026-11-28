@@ -6428,3 +6428,8 @@ tree via merge overlap, but git log HEAD..upstream/main still lists both — the
 empty-diff check must have been flawed (probably compared against wrong base).
 Re-evaluate both properly this time. Lesson: verify cherry-pick emptiness with
 `git log HEAD..upstream` listing, not just patch diff.
+
+## Discovery-lane final state (2026-11-28)
+- Discovery sweep: 8 new sites tested, results in feather/docs/discovery-sweep.md. Passes: absa, fnb, news24, translate(+interaction), maps(full vector tiles), dailymotion. Defects filed: vimeo thumbnails blank (homepage), vimeo video pages stuck-cloudflare-botwall. Inconclusive: google docs anonymous.
+- Untested remainder for next lane: iol.co.za, saas landing pages, sheets/drive anonymous, twitch re-check, vimeo thumbnail scroll-isolation, turnstile-vs-IP discrimination (needs residential IP).
+- Disk post-scorched-earth: 4.9GB free. CoreSimulator 4.1GB intact pending cross-lane decision. shell-new/target is 9.7GB — the active build, keep.
