@@ -6254,3 +6254,8 @@ waitAsync (coordinator decision pending). Fieldset leaf closed at 85/88 as-expec
 ## Post-handoff additions (2026-11-28, same lane)
 - data: URLs fully working everywhere post-#408: omnibox in-session AND boot-path both render. The boot-path about:blank was the same normalize() mangling, not a separate seam. Non-http scheme support is substantively complete: file: renders+persists+reopens (#403/#405), data: renders boot+omnibox (#408).
 - Verification trick that worked well: data:text/html;base64 fixtures typed into the omnibox — but any literal '#' in the payload truncates at the fragment (correct URL-spec behavior, cost one debugging round). base64-encode everything.
+
+## Final closure additions (2026-11-28)
+- amazon hydration-layout defect CLOSED: cold-profile repro correct, 4/4 non-reproducing on latest engine (#409). The 20-site sweep is fully clean — no open sweep items remain.
+- Open items definitive list at handoff: (1) authenticated dogfood — needs credentials from the user; (2) DRM/EME — engine lane; (3) hardware checklist with user: middle-click, mouse back/forward, cross-app file drops; (4) Windows file-picker verification — windows lane; (5) file-drop #352 functional verification now that file:// loads work.
+- Everything else ever filed is either merged-fixed, verified-green, or documented-as-not-a-defect in docs/defect-queue.md.
