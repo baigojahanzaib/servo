@@ -9738,3 +9738,21 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   resolution in components/layout/replaced.rs svg_kind_size (width/height
   None, ratio None -> should fall to spec default sizing). Leaf queued for
   the svg-sizing leaf sweep.
+
+## sec1zt440 (2026-11-28) — object-svg sizing leaf mechanism cornered
+- Probes (webdriver :4445 harness): inline unsized `<svg>` = 300x150 CORRECT
+  (the earlier "huge default" note sec1zt427 was a mismeasurement — inline
+  svg sizing is healthy). `<img src=svg>` with no intrinsic dims = 300x200
+  (vector rasterizer falls back to content bbox — the test rect is 300x200).
+  `<object data=svg type="image/svg+xml">` with no intrinsic dims = **0x0** —
+  THE defect behind replaced-intrinsic-002.xht.
+- Mechanism: layout/replaced.rs line ~181 — object-with-data-attribute is
+  funneled through the image pipeline (as_typeless_object_with_data_attribute
+  -> from_image_url). The svg's natural size resolves empty, and unlike the
+  img path no bbox fallback applies -> zero-sized object.
+- Fix direction: natural-size resolution for vector images with no intrinsic
+  dims should agree between img and object paths (both should per spec use
+  default object size 300x150 when fully indefinite). Impact: LOW for real
+  sites (object-embedded svg rare) — CSS2 conformance leaf, sweep-tier.
+- Infra note: webdriver port 4444 was still held by the stale YouTube probe
+  servoshell — use fresh ports (4445+) per probe, kill probes after use.
