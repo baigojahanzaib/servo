@@ -7653,3 +7653,25 @@ by test ordering — virtualmethods.rs is untouched by feather commits.
 **State**: CRASH expectation written by update-expectations (accurate but
 unacceptable long-term). Priority: HIGH — a crash in type-dispatch can
 theoretically hit real sites mixing SVG/HTML tag names.
+
+## sec1zt367 — vtable_for SVGScriptElement crash FIXED
+
+**Defect**: `SVGElementTypeId::SVGScriptElement` had no arm in
+components/script/dom/node/virtualmethods.rs vtable_for — insertion into
+SVG script elements hit the HTMLElement catch-all → downcast panic →
+script thread crash. Reachable from real content (SVGs w/ embedded
+scripts mutated by page JS).
+
+**Rule for the fleet**: when adding a new SVG/MathML element type, the
+vtable_for arm is mandatory — the catch-all assumes every non-enumerated
+element is HTMLElement. Audit pattern: any webidl interface inheriting
+directly from SVGElement needs its own arm.
+
+**Diagnostic method that worked**: harness-only crashes (not reproducible
+in servoshell probes) — bisect the TEST FILE in the harness itself
+(split at test() boundaries into zz-*.window.js files, run each, narrow
+to the exact subtest/tag). 3 rounds pinpointed svg-ns script in minutes.
+Minimal probes were a waste of time — test-ordering/state dependence
+means only in-harness bisect converges.
+
+**Result**: dir-assorted 41/41, global-attributes dir 146/146.
