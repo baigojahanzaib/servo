@@ -499,7 +499,12 @@ pub(crate) trait PlatformWindow {
     }
 
     fn notify_crashed(&self, _: WebView, _reason: String, _backtrace: Option<String>) {}
-    fn show_console_message(&self, _level: ConsoleLogLevel, _message: &str) {}
+    fn show_console_message(&self, _level: ConsoleLogLevel, message: &str) {
+        // stderr, not stdout: println! is block-buffered through pipes and page
+        // JS errors vanish entirely when the process is killed (harness-driven
+        // debugging loses exactly the signal it was looking for).
+        eprintln!("[console] {message}");
+    }
 
     #[cfg(not(any(target_os = "android", target_env = "ohos")))]
     /// If this window is a headed window, access the concrete type.
