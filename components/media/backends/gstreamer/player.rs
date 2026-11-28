@@ -864,15 +864,6 @@ impl GStreamerPlayer {
                             let chunk = Box::new(GStreamerAudioChunk(map));
                             let channel = position.to_mask() as u32;
 
-                            {
-                                use std::sync::atomic::{AtomicUsize, Ordering};
-                                static AUDIO_SAMPLES: AtomicUsize = AtomicUsize::new(0);
-                                let n = AUDIO_SAMPLES.fetch_add(1, Ordering::Relaxed);
-                                if n % 100 == 0 {
-                                    eprintln!("[mse] audio sample n={}", n);
-                                }
-                            }
-
                             audio_renderer.lock().unwrap().render(chunk, channel);
                         }
                         Ok(gstreamer::FlowSuccess::Ok)
