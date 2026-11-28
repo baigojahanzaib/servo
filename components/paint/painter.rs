@@ -165,6 +165,22 @@ pub(crate) struct Painter {
 
 impl Drop for Painter {
     fn drop(&mut self) {
+        // Destroy the parked frame texture and return its surface to the swap
+        // chain before the paint thread is shut down, so that the surface is
+        // properly destroyed with the paint thread's device and context rather
+        // than panicking in the surfman renderbuffers drop handler.
+        if let Some((surface_texture, _, _)) = self.parked_frame_texture.borrow_mut().take() {
+            if let Err(error) = self.rendering_context.make_current() {
+                error!("Failed to make the rendering context current: {error:?}");
+            }
+            if let Some(surface) = self.rendering_context.destroy_texture(surface_texture) {
+                if let Some(paint_thread) = self.paint_thread.borrow().as_ref() {
+                    use surfman::chains::SwapChainAPI;
+                    paint_thread.swap_chain().recycle_surface(surface);
+                }
+            }
+        }
+
         self.webrender_api.stop_render_backend();
         self.webrender_api.shut_down(true);
 
