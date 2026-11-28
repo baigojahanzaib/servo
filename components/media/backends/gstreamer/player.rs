@@ -389,10 +389,25 @@ impl PlayerInner {
                             std::thread::sleep(std::time::Duration::from_millis(50));
                         }
                         source.seek_reset(time, 0);
-                        let r = pipeline.set_state(gstreamer::State::Ready);
-                        eprintln!("[mse] seek pipeline->ready {:?}", r);
-                        let r = pipeline.set_state(restore);
-                        eprintln!("[mse] seek pipeline->restore {:?}", r);
+                        // No-cycle experiment (sec-media): the Ready->restore cycle makes
+                        // uridecodebin RE-INSTANTIATE the ServoMse source element — the
+                        // resequence flags marked pre-cycle die with the detached instance,
+                        // and the virgin post-cycle instance never triggers downstream
+                        // stream reselection (proven: per-seek instance addresses differ in
+                        // production logs, injection never fires). The hardened in-band
+                        // resequence (original stream-id/group-id, TIME segment, live base)
+                        // was never tested WITHOUT the cycle — the two landed together.
+                        // Skipping the cycle keeps the source instance alive so injection
+                        // can actually fire in the live pipeline. SERVO_MSE_CYCLE re-enables
+                        // the old behavior for A/B verification.
+                        if std::env::var("SERVO_MSE_CYCLE").is_ok() {
+                            let r = pipeline.set_state(gstreamer::State::Ready);
+                            eprintln!("[mse] seek pipeline->ready {:?}", r);
+                            let r = pipeline.set_state(restore);
+                            eprintln!("[mse] seek pipeline->restore {:?}", r);
+                        } else {
+                            eprintln!("[mse] seek no-cycle: resequencing in live pipeline");
+                        }
                     });
                 }
             }
