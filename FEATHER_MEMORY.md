@@ -9899,3 +9899,25 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
 - METHODOLOGY: when attributing WPT unexpecteds, check FIRST whether an .ini
   expectation file exists at all — absence means expected=default-PASS and
   any failure is expectation-noise, not signal.
+
+## sec1zt449 (2026-11-28) — CRITICAL CORRECTION: feather shell pref picture
+- feather shell-new engine.rs ALREADY ENABLES at bootstrap: indexeddb,
+  serviceworker, adoptedstylesheet, webgl2, container-queries, masking,
+  has-selector, visual-viewport, cookiestore + ~30 more. The dogfood browser
+  has all of these ON regardless of engine defaults.
+- CONSEQUENCE 1: the adoptedStyleSheets engine-default flip (e2869198687) is
+  a NO-OP for feather users — it only affected servoshell probes. The user's
+  logo/chat styling complaints were never caused by the pref in feather;
+  the probe-side fixes I attributed to the flip need re-attribution in
+  feather. Real dogfood-changing fixes from the svg/media arcs: worker-MSE,
+  mirroring, starvation bridging, svg-use implementation, dynamic-svg-repaint.
+  NOT the pref flip.
+- CONSEQUENCE 2: serviceworker is ALREADY LIVE in feather. VERIFIED WORKING:
+  registration succeeds when indexeddb+sw prefs on (test: SW-REGISTERED
+  scope correct). The servoshell registration failure was pref-cascade
+  (storage key needs indexeddb which is default-off) — not an implementation
+  gap. No product decision needed; it's already enabled.
+- servoshell default flips should NOT be casually shipped: engine defaults
+  upstream-divergent and mostly irrelevant to feather (shell overrides).
+  Reverted the test-only serviceworker flip; adoptedstylesheet flip stays
+  (harmless, correct-on-merits for servoshell testing).
