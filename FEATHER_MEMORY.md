@@ -7959,3 +7959,24 @@ unsafe block. RECOMMENDATION: skip item10 until upstream reconciles, or fix
 SVGScriptElement binding generation as its own small task. Branch
 cherry-pick/element-weakref has the WIP state locally (not pushed).
 >>>>>>> Stashed changes
+
+## sec1zt380 — dogfood P1/P2 first results + media analysis
+
+**P1 SVG icons**: matrix probe — inline svg, inline use (symbol+path),
+img-svg, css-background, css-mask ALL RENDER. Only broken mechanism:
+EXTERNAL `<use href="file.svg#id">` — SVGUseElement dom impl is a bare shell
+(svguseelement.rs — no shadow-tree instantiation machinery, upstream-
+incomplete). BUT gmail likely uses inline sprites — LIVE INSPECTION BLOCKED
+on gmail auth (servoshell redirected to signin; user offered credentials —
+needs credential handoff). image_cache 'SVG has an invalid size' errors seen
+on CSS-path SVG loads even with width/height attrs — secondary clue.
+**P2 vertical centering**: simple flex align-items:center + line-height
+centering measure CORRECT in 60px rows — complaint must involve gmail-
+specific layout config. Also blocked on live gmail.
+**Media live-edge**: player.rs has is_live awareness + live-pipeline
+resequencing (sec1zt84 lineage). User symptom cluster (laggy + delayed +
+ends early) most consistent with decode/render throughput below realtime —
+starvation at live edge, not EOS logic. Needs throughput measurement on
+demanding content. Windows lane doing hardware repro in parallel.
+**GOTCHA**: never run regen sweeps while probe-killing servoshell — the kill
+loops destroy harness instances and contaminate results (winobj sweep lost).
