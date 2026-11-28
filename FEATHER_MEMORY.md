@@ -9579,3 +9579,18 @@ FUNCTION/MECHANISM: media/MSE-live, svg/fill-inheritance
 **SVG fill inheritance probe NEGATIVE RESULT** (/tmp/svgcolor.html): `fill="currentColor"` on svg text/circle computes correctly (rgb(255,255,255) from color:white parent, red inherited correctly), CSS var() fills compute correctly. So generic SVG currentColor/variable fill resolution is NOT broken — the YouTube-logo-black-on-black symptom is either a paint-time defect or youtube-specific mechanism (not computed-style). Next probe must inspect the actual yt logo elements on live youtube: get computed fill of `#logo svg path`/`yt-logo` shadow content + whether the fill paints.
 
 **Measurement artifact reminder**: webdriver execute/sync often returns EMPTY value on heavy pages (youtube) even when the page is functional — engine-level log instrumentation (grep push/sample counts) is more reliable evidence than JS probes there.
+
+## sec1zt418 — YouTube logo black-on-black investigation (2026-11-28)
+FUNCTION/MECHANISM: svg/fill-css, youtube-logo
+
+**Cornered mechanism**: YouTube wordmark letter paths (p2-p8 of the logo svg) have NO fill attribute — initial black — and depend on a CSS fill rule for correct coloring (white in dark mode). User sees black-on-black in dark mode → that CSS rule is NOT applying in servo.
+
+**NEGATIVE RESULTS (machinery proven healthy in servo)**:
+- `fill="none"` presentation attr computes correctly to `none` (minimal repro /tmp/fillnone.html) — earlier rgb(0,0,0) readings on youtube were paths with NO fill attr at all, correct initial black.
+- `fill="currentColor"` inheritance correct; var() fills correct (/tmp/svgcolor.html).
+- CSS `fill` rules DO apply to svg elements including `html[dark] .x{fill:white}` attribute-selector rules (/tmp/fillcss.html, verified white+blue correct).
+- On live youtube: `dark-attr=null` in servo (light mode here); p1 fill-attr=white computes white.
+
+**Open suspect**: YouTube's actual dark-mode fill rule uses some feature servo fails — prime candidates: adoptedStyleSheets/constructable stylesheets (YouTube uses them heavily), shadow-scoped `:host` rules, or a stylesheet that fails to parse/load. Next probe: in servo on live youtube dark mode (needs PREF cookie or prefers-color-scheme support — check if servo even reports dark), enumerate document.styleSheets for rules mentioning fill and check which fail. ALSO check: does servo support adoptedStyleSheets at all — grep for it; if unsupported that's likely the root for MANY youtube styling defects including chat placement.
+
+**Note**: servo renders youtube in LIGHT mode (dark-attr null) — user's feather build shows dark, so feather/servo does propagate dark preference somehow; investigate how.
