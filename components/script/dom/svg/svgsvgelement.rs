@@ -260,7 +260,10 @@ impl SVGSVGElement {
         let _ = root_node.AppendChild(cx, &cloned_node);
     }
 
-    fn invalidate_cached_serialized_subtree_and_rasterization_result(&self, no_gc: &NoGC) {
+    pub(crate) fn invalidate_cached_serialized_subtree_and_rasterization_result(
+        &self,
+        no_gc: &NoGC,
+    ) {
         let owner_window = self.owner_window();
         owner_window
             .image_cache()
@@ -355,12 +358,25 @@ impl VirtualMethods for SVGSVGElement {
         // clone insertion).
         if context.tree_connected && !self.upcast::<Node>().is_in_a_shadow_tree() {
             let document = self.upcast::<Node>().owner_doc();
+            let this_node = self.upcast::<Node>();
             for node in document
                 .upcast::<Node>()
                 .traverse_preorder(ShadowIncluding::No)
             {
                 if let Some(use_element) = node.downcast::<crate::dom::svg::svguseelement::SVGUseElement>() {
                     use_element.resolve_instance(cx);
+                }
+                // Rasterization reads the live document at serialization
+                // time, so freshly-injected sprite content only needs every
+                // OTHER svg's cached serialization dropped — re-resolution at
+                // bind time can't work anyway since the injected subtree's ids
+                // register after this hook runs.
+                if !std::ptr::eq(&*node as &crate::dom::node::Node, this_node) &&
+                    let Some(svg) = node.downcast::<SVGSVGElement>()
+                {
+                    svg.invalidate_cached_serialized_subtree_and_rasterization_result(
+                        cx.no_gc(),
+                    );
                 }
             }
         }

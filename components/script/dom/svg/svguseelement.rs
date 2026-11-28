@@ -202,6 +202,21 @@ impl SVGUseElement {
         }
         if Node::pre_insert(cx, &cloned, shadow_node, None).is_ok() {
             node.dirty(cx.no_gc(), crate::dom::node::NodeDamage::Other);
+            // The use renders through the nearest light-dom svg ancestor's
+            // cached serialization raster — a (re)resolution long after that
+            // serialization happened (late-injected sprites, href retargets)
+            // must invalidate the cache or the new instance never repaints.
+            if let Some(svg) = node
+                .inclusive_ancestors_unrooted(cx.no_gc(), ShadowIncluding::No)
+                .filter_map(|ancestor| {
+                    ancestor
+                        .downcast::<crate::dom::svg::svgsvgelement::SVGSVGElement>()
+                        .map(DomRoot::from_ref)
+                })
+                .next()
+            {
+                svg.invalidate_cached_serialized_subtree_and_rasterization_result(cx.no_gc());
+            }
         }
     }
 }

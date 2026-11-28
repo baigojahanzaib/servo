@@ -32,7 +32,8 @@ use crate::dom::element::attributes::storage::AttrRef;
 use crate::dom::element::{AttributeMutation, Element};
 use crate::dom::node::focus::FocusTrigger;
 use crate::dom::node::virtualmethods::VirtualMethods;
-use crate::dom::node::{Node, NodeTraits};
+use crate::dom::iterators::ShadowIncluding;
+use crate::dom::node::{ChildrenMutation, Node, NodeTraits};
 use crate::dom::svg::svgcircleelement::SVGCircleElement;
 use crate::dom::svg::svgellipseelement::SVGEllipseElement;
 use crate::dom::svg::svgimageelement::SVGImageElement;
@@ -90,6 +91,24 @@ impl SVGElement {
     }
 }
 
+
+impl SVGElement {
+    /// Inline svg content is rasterized from a serialization cached on the
+    /// outermost `<svg>` element, so ANY mutation inside the subtree — not
+    /// just on the root — must invalidate that cache, otherwise dynamic svg
+    /// (fill changes, script-driven icons) never repaints.
+    pub(crate) fn invalidate_nearest_svg_serialization_cache(&self, no_gc: &js::context::NoGC) {
+        let node = self.as_element().upcast::<Node>();
+        if let Some(svg) = node
+            .inclusive_ancestors_unrooted(no_gc, ShadowIncluding::No)
+            .filter_map(|ancestor| ancestor.downcast::<SVGSVGElement>().map(DomRoot::from_ref))
+            .next()
+        {
+            svg.invalidate_cached_serialized_subtree_and_rasterization_result(no_gc);
+        }
+    }
+}
+
 impl VirtualMethods for SVGElement {
     fn super_type(&self) -> Option<&dyn VirtualMethods> {
         Some(self.as_element() as &dyn VirtualMethods)
@@ -116,6 +135,14 @@ impl VirtualMethods for SVGElement {
                 },
             }
         }
+        self.invalidate_nearest_svg_serialization_cache(cx.no_gc());
+    }
+
+    fn children_changed(&self, cx: &mut JSContext, mutation: &ChildrenMutation) {
+        if let Some(s) = self.super_type() {
+            s.children_changed(cx, mutation);
+        }
+        self.invalidate_nearest_svg_serialization_cache(cx.no_gc());
     }
 
     fn attribute_affects_presentational_hints(&self, attr: AttrRef<'_>) -> bool {
