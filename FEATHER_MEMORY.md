@@ -6289,3 +6289,61 @@ never broken (queue/diff/activation all correct) — the past entries simply nev
 existed because the navigations were replacement.
 REAL-WEB IMPACT: any redirect-via-onload or SPA-ish navigation pattern now
 leaves correct session history — back button works across redirect chains.
+
+## sec1zt317 — composite-off-UI-thread: code-level implementation plan + canvas WIP (2026-11-28)
+CANVAS LAYERS WIP: `git stash list` — stash@{0} "canvas-layers-wip" has webidl
+mixin+dictionary ONLY (CanvasRenderingContext2D.webidl + Offscreen includes;
+restore() gained [Throws]). Full semantics design: layer rendering attrs reset
+inside layer = alpha/composite/shadow*/filter ONLY (NOT transform/fillStyle —
+proven by 2d.layer.ctm.getTransform + restore-style tests). Stack entries must
+distinguish Saved vs Layer: restore() with layer on top throws InvalidState;
+endLayer with save on top throws; reset() kills layers. Composition params
+captured AT beginLayer (outer state can't mutate while inside) → pass in
+CanvasCommand::BeginLayer(CompositionOptions). Backend: vello_cpu 0.2.0
+push_layer(clip, blend, opacity, mask, filter) exists; multithreading feature
+PANICS with filter — disable mt or skip filter. Backend must drain per-layer
+clips before popping canvas layer (vello dispatcher is strict LIFO).
+Filter validation minimal: throw TypeError only when filter obj has string-typed
+`values` (passes exceptions-are-no-op test). Explainer: /tmp/l.md (fserb/canvas2d).
+
+COMPOSITE-OFF-UI-THREAD — ground truth established this session (corrects #335):
+* TODAY'S SHELL USES ONE GL CONTEXT FOR EVERYTHING: servo's surfman WindowRenderingContext
+  is created in engine.rs:420-ish, egui paints into the SAME context. Sharing is NOT
+  proven anywhere in production — the render_to_parent blit is intra-context FBO→default.
+* paint() cost decomposition (components/paint/painter.rs render()): make_current →
+  prepare_for_rendering → webrender renderer.update()+renderer.render(size,0) — THE
+  expensive part is renderer.render() itself (synchronous rasterization/present-wait),
+  NOT the shell-side blit (render_to_parent is a cheap textured blit).
+* Painter is deeply non-Send: gleam Rc<dyn Gl>, RefCell everywhere, refresh driver,
+  screenshot taker, webview_renderers. There is NO way to move renderer.render()
+  off the UI thread without moving the GL-context+Renderer ownership wholesale.
+* surfman 0.14 supports sharing natively: device.create_context(&descriptor,
+  Some(&other_context)) — sharing across threads is API-supported (device.rs:53).
+
+IMPLEMENTATION PLAN (sized multi-day, slice per rotation):
+1. SPIKE (hours): /tmp/spike-shared-gl crate — create ctx1+shared ctx2, worker
+   thread makes ctx2 current, renders into texture, UI reads it in ctx1. GO/NO-GO.
+   Pattern to copy: components/shared/paint/rendering_context.rs SurfmanRenderingContext::new
+   (flags ALPHA|DEPTH|STENCIL, GL3.2/GLES3.0). NOTE: spike file is half-written —
+   the surface creation part is wrong (transmute hack), fix using servo's pattern:
+   offscreen surfaces suffice since servo composites into FBOs not widget surfaces.
+2. ENGINE RESTRUCTURE (the core): create paint/render thread inside servo paint
+   component. Renderer+rendering_context move to it. Painter stays as the message
+   hub on the compositor side. render() becomes: post to render thread, which does
+   make_current+update+render. Synchronization: paint() must still be synchronous-
+   enough for screenshots/reftests — use a rendezvous channel for completion.
+   WATCH: webrender Renderer::update() consumes transaction messages — the
+   WebRenderApi is already channel-based (render backend runs on its own thread!);
+   what actually runs in render() is the renderer's draw execution + llvmpipe flush-wait.
+3. DOUBLE-BUFFER the offscreen FBO: worker renders into back buffer, swaps on
+   completion; UI blits front — no tearing. Generation counter discards stale
+   frames on resize (MSE seek serialization pattern).
+4. BACKPRESSURE: shell skips paint requests while one is in flight (video self-limits).
+5. VERIFY: youtube playing + simultaneous omnibox input — the exact reproduction.
+   Metrics: UI stalls p50 should drop from ~370ms to single-digit ms.
+
+FIRST SLICE FOR NEXT SESSION: finish+compile+run the spike — everything else is
+blocked on its GO. If NO-GO on EGL/llvmpipe, fallback: investigate surfman
+SurfaceTexture/SwapChain chains API (chains::{PreserveBuffer,SwapChain} already
+imported in rendering_context.rs — servo's webgl uses cross-context surface sharing
+TODAY for webgl-in-webrender, so precedent exists in-tree: webrender_external_images.rs).
