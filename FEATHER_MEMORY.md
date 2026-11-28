@@ -9721,3 +9721,4 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   (4a554248ff0+43149eb954c+c432cf83c2f), adoptedStyleSheets flip (e2869198687),
   svg-use arc complete (84b8f2014bd+089898ec37b+d06d48a55d6). Everything
   pixel/behavior-verified. Dogfood build recommended.
+- early css/CSS2 snapshot at relaunch: 5654 PASS / 464 FAIL — baseline collection healthy.
