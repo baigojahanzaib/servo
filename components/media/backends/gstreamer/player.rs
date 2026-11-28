@@ -822,6 +822,15 @@ impl GStreamerPlayer {
 
             let audio_sink = audio_sink.dynamic_cast::<gstreamer_app::AppSink>().unwrap();
 
+            // The audio appsink must not clock-synchronize: with sync=true
+            // basesink waits on the pipeline clock before releasing samples,
+            // and when no audio sink clock provider exists (or the clock is
+            // marginal) that wait starves — backpressuring the demuxer through
+            // the interleaved streams and freezing video playback entirely.
+            // Servo's AudioRenderer manages output timing itself, so the
+            // gst-side sync wait is redundant as well as harmful here.
+            audio_sink.set_sync(false);
+
             let weak_audio_renderer = self
                 .audio_renderer
                 .as_ref()
