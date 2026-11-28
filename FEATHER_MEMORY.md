@@ -6558,3 +6558,6 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 
 ## sec1zt323: select dropdown leak root cause (2026-11-28)
 - Discovery batch-2 "select never opens" is NOT servo-core and mostly wrong: dropdown always opened on Linux. Real defect: shell overlay-click swallow used egui interact_pos() = None before egui processes the press, so the press leaked to the page, re-clicking the select; pick never landed. Fixed shell-side with latest_pos() — feather PR #464. Symptom: clicks on egui overlays (dropdown/context menu) hit page beneath → main.rs swallow must use latest_pos not interact_pos.
+
+## sec1zt324: location_replace_session_history — NEGATIVE RESULT, close leaf (2026-11-28)
+- The directory ERROR was cascade artifact + fixed by revert 08c2c7c4040. Solo: runs as-expected TIMEOUT (ini expects TIMEOUT, upstream-shared defect). Mechanism: iframe onload location.href assignment then history.back() pageshow counting never completes — deep session-history replace/traversal semantics shared with upstream servo. NOT feather-specific, multi-hour for one test — shelved. Do not re-investigate unless upstream fixes land.
