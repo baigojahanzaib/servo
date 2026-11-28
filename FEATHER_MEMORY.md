@@ -9338,3 +9338,15 @@ understanding why sync-wait deadlocks ONLY when an audio stream exists
 sync=true works perfectly for video-only but deadlocks with audio present —
 investigate avsync clock-provider selection when both sinks are appsinks.
 Test files + harness all in /tmp per sec1zt396/398.
+
+## sec1zt400 — MEDIA WEDGE FIXED: audio appsink sync=false shipped — 1.008x realtime A+V
+
+The final mechanism: the AUDIO sink's sync-wait deadlocks (no clock
+provider on VMs; marginal everywhere), backpressuring qtdemux via
+multiqueue interleaving, freezing video. Fix: audio_sink.set_sync(false) —
+correct by design since servo's AudioRenderer owns output timing.
+Verified matrix: both-sync-true frozen 0.007x / video-only-nosync 2.6x
+fast-forward / audio-only-nosync 1.003x / shipped config 1.008x on 1080p
+A+V. Residual: video presentation still relies on video sink sync=true —
+fine since the system clock works. EOF/end-of-stream behavior still flaky
+(ct jumps backwards at file end — EOS handling issue, separate).
