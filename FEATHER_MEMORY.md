@@ -7882,3 +7882,16 @@ both gates (or navigates silently). Next investigator: instrument navigate()
 run the WPT test — trace which path the write takes. Both restrictions
 (dissimilar + in-thread) are correct-by-spec regardless; the WPT gap is an
 untraced path, not evidence against them.
+
+## sec1zt377 — same-site restriction VERIFIED working; WPT gap narrowed
+
+Definitive probe: same-site x-origin pair (localhost + sub.localhost — both
+resolve to loopback, same site, different origins) in exact WPT topology —
+the restriction FIRES correctly in-thread. Combined with the dissimilar-site
+probe, servo's 'allowed to navigate' behavior is now spec-correct in BOTH
+thread topologies. The real-WPT 'success' anomaly is therefore NOT a thread-
+topology issue — remaining variables: harness/webdriver environment, relative
+URL 'foo' parse behavior, or wptserve port/host specifics. Lowest-priority
+open item now — engine behavior is verified correct outside the harness.
+Probe infrastructure note: *.localhost subdomains resolve to 127.0.0.1 —
+same-site x-origin pairs available locally without /etc/hosts edits.
