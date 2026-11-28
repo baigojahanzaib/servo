@@ -7998,3 +7998,19 @@ USER DOGFOOD: YouTube serves 1080p on large screens — videos freeze after a
 few seconds; livestreams fall behind and die. HIGHEST-PRIORITY engine defect.
 Next: gst pipeline dot-dump or frame-sink instrumentation at 1080p; check
 whether frames reach the compositor (paint probe) vs die in decodebin.
+
+## sec1zt382 — CORRECTION: stall is a byte-queue backpressure wedge, not resolution
+
+Screenshot evidence: 1080p video PAINTS — full testsrc2 frame visible with
+timestamp overlay reading 00:00:07 == the frozen currentTime. Decode +
+presentation work initially, then the pipeline wedges at ~7.5s.
+7.5s × 8Mbps ≈ 7.5MB — smells like a gstreamer queue byte-limit: once a
+downstream queue fills, backpressure deadlocks the pipeline. CRITICAL
+IMPLICATION: 720p/480p fill the same byte queues PROPORTIONALLY SLOWER —
+the wedge time scales inverse-with-bitrate (480p@2M would wedge ~30s) — my
+10-18s measurements were too short to see it. The defect is probably NOT
+resolution-specific at all — it's a TIME-IN-FLIGHT wedge affecting all
+progressive playback long enough. Next measurement: 720p for 40+s — predict
+stall around 15s. Then instrument gst multiqueue/queue2 sizes vs sink
+consumption rate — suspect the video sink isn't consuming at realtime
+(compositor backpressure or clock sync issue).
