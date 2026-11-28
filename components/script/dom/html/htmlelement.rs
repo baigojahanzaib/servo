@@ -2212,14 +2212,19 @@ impl HTMLElement {
         }
 
         fn node_or_slot_host_direction(node: &crate::dom::node::Node) -> Option<bool> {
-            let slot = node.downcast::<HTMLSlotElement>()?;
-            // Only slots inside a shadow tree participate; a slot in the light
-            // document is scan-transparent for its light children (it has no
-            // shadow-root host relationship that redirects directionality).
-            let shadow = slot
-                .upcast::<crate::dom::node::Node>()
-                .containing_shadow_root()?;
-            host_directionality(Some(shadow.Host()))
+            let _slot = node.downcast::<HTMLSlotElement>()?;
+            // Walk to the tree root directly instead of using the cached
+            // containing_shadow_root: during bind-order scans the child's
+            // cached shadow root is not yet propagated, but the parent chain
+            // is always complete.
+            let mut current = node.GetParentNode();
+            while let Some(parent) = current.clone() {
+                if let Some(shadow) = parent.downcast::<crate::dom::shadowroot::ShadowRoot>() {
+                    return host_directionality(Some(shadow.Host()));
+                }
+                current = parent.GetParentNode();
+            }
+            None
         }
 
         fn host_directionality(host: Option<DomRoot<Element>>) -> Option<bool> {
