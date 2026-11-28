@@ -7840,3 +7840,15 @@ an additional gate layer beyond the activation intervention. Real-web impact
 of the gap is LOW (legit x-origin embeds overwhelmingly target top, which is
 the whitelisted + gate-guarded path); over-permissiveness matches pre-forward
 Chrome-compat less precisely but enables strictly more real content.
+
+## sec1zt374 — post-forwarding regression + whitelist facts
+
+navigating-across-documents directory post-forwarding: zero regressions.
+3 positive flips observed: 006 (flake — failed solo, ini kept),
+javascript-url-security-check-failure (STABLE positive — ini deleted),
+window-open-204 (noise — solo TIMEOUT matches, ini kept).
+**Whitelist fact**: cross-origin Location exposes ONLY href-setter and
+replace() per spec — assign/reload/component setters die in the wrapper
+before reaching Location methods. The assign wiring (shipped) is therefore
+unreachable cross-origin — harmless defense-in-depth; the real forwarding
+coverage is exactly href+replace, which is spec-complete.
