@@ -9789,3 +9789,30 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   presence in ytInitialPlayerResponse is the quick discriminator for future
   "stream won't start" reports — check playabilityStatus first before any
   engine investigation.
+
+## sec1zt443 (2026-11-28) — dynamic-svg-repaint arc FIXED (9f225c756a7)
+- ROOT CAUSE (general servo defect, user-facing for all dynamic svg): inline
+  svg rasterizes from a serialization cached on the outer svg element; cache
+  invalidation only fired for the svg ROOT's own mutations. Descendant
+  mutations (rect fill changes, script-driven icons) NEVER repainted.
+  Verified with a minimal probe: rect fill blue->green post-load stayed blue.
+- This also fully explained the svg-use late-injection gap (sec1zt438 nit):
+  sprite injection never invalidated the consuming svg's raster.
+- FIX (3 parts): SVGElement base invalidates nearest svg ancestor cache on
+  any descendant attribute/children mutation; svg-subtree connection drops
+  all other svgs' caches (bind-time id-registration ordering makes sync
+  re-resolution impossible — serialization reads live document anyway);
+  use re-resolution invalidates its light-dom svg ancestor.
+- PIXEL-VERIFIED: fill-mutation green, setTimeout-injected sprite teal,
+  href-retarget green; regression probes (sync-inject purple, parser-late
+  orange) unchanged.
+- KEY MECHANISM NOTE: inline svg in servo is NOT laid out as DOM — it's
+  serialized to a data-url and rasterized as a vector image (see
+  replaced.rs svg_kind_size + svgsvgelement serialize_and_cache_subtree).
+  Use-element rendering happens through serialization-time
+  process_use_elements (resolves against live document), NOT through the
+  shadow-tree clones — the shadow instantiation is spec-compliance cosmetic
+  in the raster model. ALL dynamic-svg repainting funnels through the
+  serialization-cache invalidation path.
+- Build note: std::ptr::eq for DomRoot-vs-&Node identity; traverse_preorder
+  yields DomRoot, single deref reaches Node.
