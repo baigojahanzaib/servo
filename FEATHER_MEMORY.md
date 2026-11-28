@@ -6713,3 +6713,23 @@ Three-layer defect, each layer masked by the previous:
 - a7eaf8d6282: :dir() ancestor walk now uses traversal_parent() (flattened tree — slot/host aware). dir-shadow-15/16/32 pass, zero regressions. UPSTREAMABLE — clean spec-compliance fix with WPT evidence.
 - Remaining 4 dir-shadow failures all need dir=auto resolution in slot context — the script-side directionality cache doesn't account for slot assignment. Deeper leaf: cache computation lives in script (search directionality cache writer); must evaluate slotted text per flattened tree. Deferred with exact scope.
 - KEY PATTERN for future fixes: when a tree-walk semantic is wrong in shadow context, check traversal_parent() first — servo already has correct flattened-tree machinery; most bugs are consumers using raw DOM parents.
+
+## sec1zt351 — dir=auto slot resolution COMPLETE — spec-corrected scan + inheritance (2026-11-28)
+
+**Correction to sec1zt350**: the `:dir()` flattened-tree matching fix (a7eaf8d6282, traversal_parent) was WRONG per spec. Actual spec (html/elements.html #the-dir-attribute): **parent directionality** = light-DOM parent node, crossing shadow-root→host, NOT through slot assignment. Servo's `composed_parent_node_ref` (layout_dom.rs) implements exactly this — use it, not traversal_parent. Proof: dir-shadow-06 ref expects slotted paragraph html_direction **ltr**/css rtl — directionality light-chain, CSS direction flat-tree.
+
+**The three spec algorithms** (verbatim from spec, don't re-derive):
+1. auto directionality of element: if slot in shadow root with non-empty assigned nodes → scan assigned slottables (text nodes direct, elements → contained scan with canExcludeRoot); return null if nothing strong (NO fallback to light children scan).
+2. contained text auto directionality (descendant scan): skip subtrees of bdi/script/style/textarea/dir-bearing elements; **if descendant is a slot in a shadow root → return the directionality of that shadow root's HOST** (host-directionality proxy — do NOT scan through the slot!); text nodes → first strong char.
+3. parent directionality: parent node; shadow root → host; else ltr.
+
+**CSS direction mechanism in servo**: UA stylesheet rules `[dir=auto i]:dir(ltr/rtl) { direction: ... }` — direction property depends on `:dir()` matching, which reads the script-side directionality cache for dir=auto elements. So cache correctness IS css direction correctness.
+
+**Cache invalidation hooks needed** (all three required):
+- children_changed (element.rs): walk BOTH light-DOM ancestors AND flat-tree ancestors (assigned slot chain) updating caches — slotted content mutations must reach the slot.
+- assign_slottables (htmlslotelement.rs): after assignment change, walk flat-tree chain from slot updating caches — assignment at shadow-attach time is not a child mutation.
+- helper: `update_directionality_cache_and_dirty_if_changed(no_gc)` on HTMLElement.
+
+**getComputedStyle residual**: dir-shadow-39 fails because getComputedStyle must return "" for non-rendered slotted-away fallback content — same infra as aborted cherry-pick 9ddfe28a9ec. dir-shadow-39.ini kept.
+
+Verification: full global-attributes dir — 13+ subtests newly pass incl. all dynamic slot-reassignment tests; 3 initial regressions (host-proxy rule missing) fixed by correct scan. Negative results: textarea exclusion was missing from scan (added); scan must not fall through to light children when assigned nodes exist but yield nothing.
