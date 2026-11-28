@@ -106,12 +106,19 @@ impl GStreamerRegistryScanner {
                 self.supported_codecs.insert("vp8");
                 self.supported_codecs.insert("x-vp8");
                 self.supported_codecs.insert("vp8.0");
+                self.supported_codecs.insert("vp08*");
             }
 
             if is_vp9_decoder_available {
                 self.supported_codecs.insert("vp9");
                 self.supported_codecs.insert("x-vp9");
                 self.supported_codecs.insert("vp9.0");
+                // RFC 6381 VP9 codec strings are "vp09.PP.LL.DD[.CC]"-shaped
+                // (e.g. vp09.00.51.08) — note the leading zero. Without this
+                // wildcard every real-world VP9 codec string fails
+                // isTypeSupported, and sites whose streams are VP9-only
+                // (many YouTube live streams) find zero playable formats.
+                self.supported_codecs.insert("vp09*");
             }
 
             if is_opus_supported {
