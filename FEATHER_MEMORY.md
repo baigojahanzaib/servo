@@ -9537,3 +9537,10 @@ What the user should see improved in the next build (Linux lane fixes):
 6. Console errors now visible in servoshell stderr — debugging aid only.
 Items NOT addressed (other lanes/blocked): cookies reset, google default,
 downloads dropdown (shell lane); gmail specifics (credential-blocked).
+
+## sec1zt414 — release build running in background for WPT regen infrastructure
+
+./mach build --release compiling in background (log /tmp/releasebuild.log)
+— started end of sec1zt4xx rotation so the next rotation has a release
+binary for WPT expectation regen sweeps (debug binary unusable for timing
+-sensitive WPT). If process died with VM snapshot, restart it.
