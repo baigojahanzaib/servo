@@ -9937,3 +9937,53 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   approximates feather's pref environment for verification probes (but NOT
   exactly — feather enables more than the experimental list; check engine.rs
   pref block when probe/behavior mismatches appear).
+
+## sec1zt451 (2026-11-28) — inline-svg CSS-styling rasterization root cause
+- SYMPTOM INDEX / svg-css-rasterization: "white text rendered in black" (user
+  youtube report) root-caused and PIXEL-PROVEN: inline svg rasterizes from a
+  raw XML clone of the DOM subtree (svgsvgelement serialize_and_cache_subtree);
+  the clone carries ATTRIBUTES ONLY — all CSS-computed styling (fill, stroke,
+  opacity, fonts from document stylesheets) is discarded before rasterization.
+  Control probe: attribute-fill rect renders correct color; CSS-fill rect
+  renders BLACK despite correct computed style. Modern svg iconography (youtube
+  logo wordmark, material icons) carries no fill attributes — color is pure CSS.
+  => every CSS-styled inline svg on the web rasterizes wrong. This is a BROAD
+  fidelity defect, mechanism class: serialization-loses-computed-style.
+- Correction ledger: the sec1zt417-era "CSS fill rules healthy in servo" ruling
+  was based on DOM computed-style probes, NOT pixel verification — computed
+  style correctness says nothing about what reaches the rasterizer. PIXEL
+  verification is the only valid test for rasterization-path defects.
+- KEY API ergonomics for script-crate work: window.GetComputedStyle(cx, el, None)
+  + decl.GetPropertyValue(DOMString::from(prop)) gives resolved values lazily;
+  serialize_and_cache_subtree runs in script task context (not inside layout)
+  so sync layout flushes from there are safe-ish.
+- Webdriver ergonomics correction: servoshell accepts ONLY one webdriver
+  session per process AND POST /session fails with connection-refused if a
+  session already exists — when curl-testing first, reuse the created session
+  id rather than re-POSTing. Host header must be 127.0.0.1 not localhost.
+
+## sec1zt452 (2026-11-28) — svg CSS-inlining + restyle-repaint arc SHIPPED
+- SHIPPED 862d70e02f5: (1) serialize_and_cache_subtree inlines computed values
+  of ~27 svg presentation properties into the clone as inline style — the
+  rasterization now carries CSS-driven paint. display deliberately EXCLUDED:
+  svg-internal elements compute display:none in servo (no box layout), copying
+  it blanks everything. (2) attribute_mutated on any element now invalidates
+  serialization caches of svg roots in its subtree — theme flips (html[dark],
+  class state) repaint svg. Pixel-verified: cssfill parity, darkflip black->
+  white, svgmutate/usetimer regressions clean, youtube ct=40 rs=4 zero panics.
+- MECHANISM LEDGER (hard-won, do not rediscover):
+  - GetComputedStyle flushes layout SYNCHRONOUSLY; calling it during
+    serialization re-enters serialization -> stack overflow. Guarded with
+    serialization_in_progress flag on SVGSVGElement.
+  - Invalidate-during-restyle-drain is UNSAFE twice over: RefCell borrows
+    (layout held by caller) AND self-sustaining loops (invalidation dirties ->
+    dirty produces restyle entries -> re-invalidate forever). Solution:
+    mutation-driven hooking, never restyle-driven — mutations don't arise from
+    dirty/invalidation, so no loop is possible.
+  - Deferred-invalidation machinery was built and REMOVED as unneeded; the
+    mutation hook invalidates directly (proven safe by the earlier arc).
+  - document.inline_svg_count gates the ancestor-scan cost for svg-less pages;
+    incremented in SVGSVGElement bind/unbind (tree_connected only).
+- v1 limitations documented: pseudo-class (:hover) and media-query driven
+  svg restyles still don't repaint (no attribute mutation involved); use-shadow
+  instance content doesn't get CSS inlining. Both bounded followups.
