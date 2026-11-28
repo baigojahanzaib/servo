@@ -58,7 +58,7 @@ impl DataTransfer {
         DataTransfer {
             reflector_: Reflector::new(),
             drop_effect: DomRefCell::new(DOMString::from_static("none").traced()),
-            effect_allowed: DomRefCell::new(DOMString::from_static("none").traced()),
+            effect_allowed: DomRefCell::new(DOMString::from_static("uninitialized").traced()),
             items: Dom::from_ref(item_list),
             data_store,
         }
