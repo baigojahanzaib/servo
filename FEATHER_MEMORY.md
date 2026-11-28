@@ -6646,3 +6646,8 @@ Three-layer defect, each layer masked by the previous:
 - MAJOR: signed-in gmail fully booted in headed servoshell (Linux, current feather-engine pre-merge binary): complete inbox UI — email list, compose, nav, search, avatars. readyState reached complete, 122/122 images complete.
 - First run same setup stuck at splash with readyState interactive → the freeze is a RACE CONDITION not a deterministic wedge. Two runs, two outcomes. The gmail defect class changes: not "broken" but "flaky boot timing" — likely a resource-completion race during boot (comet iframes etc per sec1zt334). Repro: rerun servoshell gmail several times, count boot-vs-stall ratio; the stall state has readyState stuck interactive.
 - CORRECTION IMPLICATION: the Windows report "gmail rendering/boot freeze" may itself be the flaky race — retests needed there before deep investment.
+
+## sec1zt336: rotation handoff — merged-tree build state (2026-11-28)
+- BUILD: first merged-tree rebuild FAILED spuriously — cause: concurrent mach invocations (timeout-killed wrapper left cargo children running; nohup restart raced it). No actual rustc errors in log. Clean rebuild restarted, output /tmp/rebuild2.log, ETA 20-50min.
+- NEXT SESSION FIRST TASK: verify /tmp/rebuild2.log completes green; if it fails with REAL errors, suspect the Windows-lane media commits (#14/#15) on Linux — bisect there. When green: YouTube verification on unified engine (composite + MSE fixes first time together), then gmail boot-race repro-rate measurement (run servoshell gmail 5x, count boot vs stall — per sec1zt335).
+- pkills: ALWAYS use bracket trick — the kill loop pattern `for p in $(pgrep -f servoshell)` self-kills even inside for-loops. Cost 4 sessions this rotation.
