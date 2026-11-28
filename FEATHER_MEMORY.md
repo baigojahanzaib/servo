@@ -9379,3 +9379,16 @@ never completes the script either by deadlock or silent abort; YouTube
 consequently never initializes MSE. Next step for the followup session:
 printf-instrument attach_media_source + create_media_player stages to find
 exactly where execution stops (cheap, decisive — rebuilds are 9s).
+
+## sec1zt403 — CORRECTION: MSE attach chain works PERFECTLY — earlier wedge was measurement artifact
+
+Minimal MSE test (/tmp/msetest.html) passes end-to-end: ms-created,
+src-attached blob, sourceopen fired, sourcebuffer-added, readyState=open.
+Attach instrumentation shows all stages complete (enter/linked/creating/
+ret-true). The 5/5 empty-title repro runs were artifact (likely title-query
+timing or session handling). So YouTube's no-src failure is NOT servo's
+MSE foundation — it's either youtube's JS erroring before attach for
+unrelated reasons (missing API) or a youtube-specific negotiation path.
+NEXT: test appendBuffer data flow with real media bytes (the
+push_media_source_data path) — if append works, youtube investigation
+shifts to JS-error hunting in its player bootstrap.
