@@ -9570,3 +9570,12 @@ element-side reads (live streams mostly unaffected); same-thread blob-url
 path untouched and still works; cross-process (multiprocess mode) handle
 passing unsupported — cores are in-process only. Seek-refeed cross-thread
 path implemented but NOT yet verified with real seeks.
+
+## sec1zt417 — livestream verification + SVG fill probe (session rotation 3, 2026-11-28)
+FUNCTION/MECHANISM: media/MSE-live, svg/fill-inheritance
+
+**YouTube livestream post-worker-MSE verification**: user's exact reported stream `youtube.com/watch?v=1OoZJoHCCyk` — MSE pushes flowing (29+ worker pushes), video samples decoding and advancing (pts=14.5s+). Livestreams work through the worker-MSE path. NEGATIVE: lofi 24/7 stream `jfKfPfyJRdk` showed ZERO pushes / pstate=-1 — its player bootstrap diverges earlier (possibly low-latency livestream feature path, dash-ump/SABR streaming, or a missing API). Uninvestigated followup; mainstream livestreams confirmed working.
+
+**SVG fill inheritance probe NEGATIVE RESULT** (/tmp/svgcolor.html): `fill="currentColor"` on svg text/circle computes correctly (rgb(255,255,255) from color:white parent, red inherited correctly), CSS var() fills compute correctly. So generic SVG currentColor/variable fill resolution is NOT broken — the YouTube-logo-black-on-black symptom is either a paint-time defect or youtube-specific mechanism (not computed-style). Next probe must inspect the actual yt logo elements on live youtube: get computed fill of `#logo svg path`/`yt-logo` shadow content + whether the fill paints.
+
+**Measurement artifact reminder**: webdriver execute/sync often returns EMPTY value on heavy pages (youtube) even when the page is functional — engine-level log instrumentation (grep push/sample counts) is more reliable evidence than JS probes there.
