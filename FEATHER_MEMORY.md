@@ -7675,3 +7675,13 @@ Minimal probes were a waste of time — test-ordering/state dependence
 means only in-harness bisect converges.
 
 **Result**: dir-assorted 41/41, global-attributes dir 146/146.
+
+## sec1zt367b — vtable_for SVG wildcard arm (defense-in-depth)
+
+Audit after the SVGScriptElement fix: added
+`ElementTypeId::SVGElement(_) => downcast::<SVGElement>()` fallback arm
+in vtable_for BEFORE the catch-all. Crash class now impossible for SVG:
+every SVG type inherits SVGElement so the downcast always succeeds.
+Same class remains theoretically open for any future non-SVG non-HTML
+element type — the real fix would be making the catch-all impossible
+to reach, but HTML/SVG/MathML/generic now cover all namespaces.
