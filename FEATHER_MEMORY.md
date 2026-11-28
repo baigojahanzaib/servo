@@ -6651,3 +6651,7 @@ Three-layer defect, each layer masked by the previous:
 - BUILD: first merged-tree rebuild FAILED spuriously — cause: concurrent mach invocations (timeout-killed wrapper left cargo children running; nohup restart raced it). No actual rustc errors in log. Clean rebuild restarted, output /tmp/rebuild2.log, ETA 20-50min.
 - NEXT SESSION FIRST TASK: verify /tmp/rebuild2.log completes green; if it fails with REAL errors, suspect the Windows-lane media commits (#14/#15) on Linux — bisect there. When green: YouTube verification on unified engine (composite + MSE fixes first time together), then gmail boot-race repro-rate measurement (run servoshell gmail 5x, count boot vs stall — per sec1zt335).
 - pkills: ALWAYS use bracket trick — the kill loop pattern `for p in $(pgrep -f servoshell)` self-kills even inside for-loops. Cost 4 sessions this rotation.
+
+## sec1zt337: unified engine build GREEN + smoke-verified (2026-11-28)
+- Merged tree 61ffdceafe4+ builds clean (rebuild2.log "Succeeded"). YouTube watch page smoke test on unified binary: renders fully — player chrome, title, related sidebar with thumbnails, search. Zero panics/assertions. MSE machinery active in logs (37 lines). Composite + Windows MSE fixes coexist healthy on Linux.
+- NOTE: coordinator clarified — gmail boot was PRE-AUTHENTICATED profile (servoshell persists cookies), fresh Google sign-in UNTESTED, TLS-JA3 floor assessment unaffected.
