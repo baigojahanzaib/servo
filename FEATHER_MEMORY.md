@@ -8061,3 +8061,23 @@ bounded and the compositor doesn't consume at realtime at large frame sizes,
 the appsink blocks and the whole gst pipeline stalls — matches every
 observation (burst-then-freeze, bitrate dependence, paints-then-stops).
 Check components/media frame forwarding + webrender video frame path.
+
+## sec1zt386 — frame-path smoking gun: per-byte NV12 deinterleave in render()
+
+media_frame_renderer.rs render(): NV12 frames are deinterleaved with a
+SCALAR byte loop (`for pair in uv.chunks_exact(2) { u.push(pair[0]);
+v.push(pair[1]) }`) plus two fresh Vec allocations PER FRAME, plus full
+plane copies into GenericSharedMemory. At 1080p30 the UV plane alone is
+~1MB/frame — >30MB/s of byte-at-a-time copying. Runs inside the gst
+streaming thread under the renderer mutex — any cost here backpressures
+the entire pipeline (matches burst-then-freeze exactly).
+Unexplained residual: copy cost is resolution-fixed, yet 1080p@1M plays
+while 1080p@8M stalls — leading theory: bitrate-dependent DECODER SELECTION
+— high bitrates trigger hardware decode producing NV12 frames (expensive
+path), low bitrates software decode producing I420/BGRA (cheap/zero-copy
+path). Verify by logging frame.is_nv12() at both bitrates. FIX DIRECTIONS:
+(1) SIMD/chunk-based deinterleave instead of scalar loop; (2) reuse
+allocations across frames; (3) best — keep NV12 interleaved as RG8-ish or
+use WebRender's native NV12 support if present. File:
+components/script/dom/html/embedded_content/media_elements/
+media_frame_renderer.rs render().
