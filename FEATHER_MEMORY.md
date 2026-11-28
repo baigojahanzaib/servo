@@ -6575,3 +6575,9 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 - Verified: WPT getregistrations.https.html — Register-then-getRegistrations PASS, array resolution end-to-end; getregistration.https.html fully passes too (stale upstream FAIL expectations dropped). Controlled-frame subtests still TIMEOUT — pre-existing infra gap, not this change.
 - Motivation: behance blank-grid root cause (batch 131/132) — sites gating bundle loads on SW probing. UPSTREAMABLE. Mac lane should retest behance explore grid.
 - Note: http(non-localhost) pages reject all SW calls with "Failed to obtain a storage key" — pre-existing environmental, affects getRegistration identically.
+
+## sec1zt327: blank-grid family — amazon CONFIRMED FIXED visually (2026-11-28)
+- Headed servoshell on live amazon.com (current feather-engine): tile images FULLY render — product cards, hero images, deal grid all visible. Batch-133/134 blank-tile defect is fixed on current engine (collateral of session image-lifecycle/compositing work). DOM probe: complete:true, naturalWidth>0, opacity 1, visibility visible — was always healthy DOM-side; the paint path now delivers.
+- behance.net landing also renders hero images + category pills post-getRegistrations fix; explore-grid deep scroll retest belongs to Mac sweep lane.
+- REMAINING in blank-grid family: vimeo thumbs — untested.
+- NOTE for probes: servoshell -o screenshot mode captures too early for JS-heavy pages (blank white even when fine) — must use headed+wmctrl+import for visual verification. servoshell needs explicit --pref dom_serviceworker_enabled=true dom_indexeddb_enabled=true to match feather shell.
