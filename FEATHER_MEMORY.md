@@ -9671,3 +9671,8 @@ FUNCTION/MECHANISM: svg/use-late-binding
 FUNCTION/MECHANISM: perf/scrolling — documented, long arc
 
 Servo's input-side scroll latency mitigation EXISTS: `components/paint/webview_renderer.rs` pends wheel events and the paint thread eagerly scrolls without waiting for script round-trips (paint.rs:115 comment). So scroll lag on heavy pages is NOT an input-routing defect — it's composite throughput: the UI-thread-blocking composite path already documented in feather docs/wiki/COMPOSITE-OFF-UI-THREAD.md (the biggest queued perf fix, multi-day, design complete). On YouTube-class pages the heavy raster+present starves both scroll updates and input. No separate scroll arc needed — the composite-off-UI-thread work IS the scroll fix. Do not duplicate-scope.
+
+## sec1zt432 — post-change stability sweep + theme plumbing (2026-11-28)
+FUNCTION/MECHANISM: stability, embedder/theme
+
+Post-use-implementation sweep: github.com and en.wikipedia.org both render well (typography/layout/images correct), zero panics. Minor observations: some icon slots render as black blocks on wikipedia (possibly remaining svg gaps — CSS-mask icons or sprite edge cases; low priority vs dogfood). THEME PLUMBING: servo's prefers-color-scheme is NOT hardcoded light — it resolves from `webview_theme()` with precedence devtools-override > document-theme > webview-theme (window.rs:3673 region). servoshell just defaults to light. **Dark mode is an embedder setting — the feather shell can set the webview theme; no engine work needed.** Shell-lane note, not engine.
