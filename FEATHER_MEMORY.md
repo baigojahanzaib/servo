@@ -9615,3 +9615,8 @@ Minimal repro: history.back() restored the page with identical JS state (same wi
 FUNCTION/MECHANISM: youtube/chat-layout — **first casualty confirmed**
 
 Post-`e2869198687` probe on the user's exact livestream: `ytd-live-chat-frame` geometry x=854 y=68 w=330 h=596 on a 1200-wide viewport with inner iframe correctly sized (fw=328) — the correct right-side panel layout. The user's "chat in the wrong place" complaint was a casualty of the dropped constructable stylesheets. Confirms the root-cause theory end-to-end: one pref flip fixes whole families of component-layout defects.
+
+## sec1zt422 — worker-MSE duration/buffered mirroring shipped (2026-11-28)
+FUNCTION/MECHANISM: media/worker-mse-element-state
+
+`43149eb954c`: element-side Duration()/Buffered() now fall back to the cross-thread core when no same-thread MediaSource is attached (previously NaN/empty always for worker-MSE — plausibly driving YouTube's "constantly reloading" since players use these for health/live-edge logic). SourceBuffer append completion now actually calls mirror_buffered_to_core (was defined-but-never-called). Verification partial: compiles clean, sample flow unaffected; full end-to-end verification blocked by heavy-page webdriver flakiness. ALSO: servo reports `prefers-color-scheme: light` always in servoshell — dark-mode reproduction of youtube styling defects needs the feather shell or manual cookie setup.
