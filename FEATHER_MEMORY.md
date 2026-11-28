@@ -9831,3 +9831,18 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   after 1.5s+ load delay; webdriver ports leak across probes (use fresh port
   per servoshell, kill after); pkill patterns matching "webdriver=44" can hit
   WPT workers on random ports — kill by exact port only.
+
+## sec1zt445 (2026-11-28) — WPT baseline complete + flake classification
+- Full baseline done (15:47-17:08): html 10982t/88.1%/87unexp (was 167 —
+  big improvement), css/CSS2 first-ever 6353t/94.0%/2unexp, css/cssom 99.0%/0,
+  websockets 95.2%/8, fetch 81.8%/1, workers 93.5%/1. Report: feather PR
+  (wpt-2026-11-28-media-svg-delta.md).
+- FLAKE CLASSIFICATION: websockets constructor timeouts = FLAKE (0 unexpected
+  in isolated rerun — debug-parallel-load slowness). COEP cache-storage
+  failures = REAL but not regression: `ReferenceError: caches is not defined`
+  — CacheStorage API is entirely UNIMPLEMENTED in the fork (no webidl, no
+  pref). Upstream servo gained it after the fork point -> upstream-merge
+  territory, not a leaf. The COEP/COOP regression-cluster decomposes into
+  cache-storage-missing + serviceworker harness gaps, same class.
+- html crash count 18 (semantics/iframe-sandbox 7, browsers 4, syntax 4) —
+  navigation/process-isolation fork divergence, pre-existing, uninvestigated.
