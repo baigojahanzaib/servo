@@ -706,7 +706,9 @@ impl Element {
     ) -> Fallible<DomRoot<ShadowRoot>> {
         // Step 1. If element’s namespace is not the HTML namespace,
         // then throw a "NotSupportedError" DOMException.
-        if self.namespace != ns!(html) {
+        // UA widget shadow roots (e.g. SVG <use> instance trees) may attach
+        // to elements in any namespace.
+        if self.namespace != ns!(html) && is_ua_widget != IsUserAgentWidget::Yes {
             return Err(Error::NotSupported(Some(
                 "Cannot attach shadow roots to elements with non-HTML namespaces".to_owned(),
             )));
