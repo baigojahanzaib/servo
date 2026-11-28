@@ -7743,3 +7743,29 @@ in principle for path (1) but is currently untestable** — no probe can reach
 the gate through the wrapper for dissimilar origins, and same-site frames
 share sandbox inheritance differently. Leave inert, revisit with the
 wrapper-forwarding arc.
+
+## sec1zt370 — dissimilar-origin location-write forwarding SCOPED (not leaf)
+
+**Goal**: x-origin frames in separate script threads (dissimilar origins)
+cannot write top.location at all — the security wrapper throws before any
+navigation logic. Real-web impact HIGH (third-party embeds redirecting top:
+payment widgets, OAuth redirects, ad iframes).
+
+**Architecture findings**:
+- LocationWindow::DissimilarOrigin variant exists; every setter starts with
+  same_origin_window()? which throws for it (location.rs:311 etc).
+- Navigation itself is already cross-thread: ScriptToConstellationMessage::LoadUrl
+  carries load_data+history_handling+target_snapshot_params to the
+  constellation, which schedules it (constellation.rs:1828).
+- THE BLOCKER: the constellation infers the target webview/pipeline from the
+  SENDER's channel routing metadata — messages carry webview_id +
+  source_pipeline_id of the sending script thread. Forwarding to a window in
+  ANOTHER thread needs explicit target addressing that doesn't exist.
+
+**Implementation shape** (multi-hour, M): (1) new message variant or extend
+LoadUrl with explicit target webview/pipeline ids obtainable from the
+DissimilarOriginWindow's proxy; (2) location setters for the dissimilar case
+build LoadData (url parse + target snapshot params default) and send
+targeted message instead of calling navigate(); (3) activation/sandbox
+gates must evaluate at the SOURCE in-thread (they only need source state).
+Pieces all exist; the plumbing is the work.
