@@ -57,7 +57,7 @@ def browser_kwargs(logger, test_type, run_info_data, config, subsuite, **kwargs)
 
 def executor_kwargs(logger, test_type, test_environment, run_info_data, **kwargs):
     rv = base_executor_kwargs(test_type, test_environment, run_info_data, **kwargs)
-    rv['capabilities'] = {}
+    rv["capabilities"] = {"unhandledPromptBehavior": "accept"}
     return rv
 
 
