@@ -22,6 +22,7 @@ pub use crate::paint::{Paint, WebRenderDebugOption};
 mod tracing;
 
 mod paint;
+mod paint_thread;
 mod painter;
 mod pinch_zoom;
 mod pipeline_details;

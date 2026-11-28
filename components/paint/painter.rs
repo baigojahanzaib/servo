@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use std::cell::{Cell, LazyCell};
+use std::cell::{Cell, LazyCell, RefCell};
 use std::collections::hash_map::Entry;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -59,6 +59,7 @@ use wr_malloc_size_of::MallocSizeOfOps;
 
 use crate::Paint;
 use crate::paint::{RepaintReason, WebRenderDebugOption};
+use crate::paint_thread::{ExternalImageHandlerInputs, PaintThreadHandle};
 use crate::refresh_driver::{AnimationRefreshDriverObserver, BaseRefreshDriver};
 use crate::render_notifier::RenderNotifier;
 use crate::screenshot::ScreenshotTaker;
@@ -107,6 +108,16 @@ pub(crate) struct Painter {
     /// The webrender renderer.
     pub(crate) webrender_renderer: Option<webrender::Renderer>,
 
+    /// A handle to the paint thread that owns the WebRender [`Renderer`] and
+    /// GL context, when rendering happens off the UI thread. When this is
+    /// `Some`, `webrender_renderer` is `None` and all GL operations are
+    /// performed on the paint thread.
+    pub(crate) paint_thread: RefCell<Option<PaintThreadHandle>>,
+
+    /// The WebRender epochs of all pipelines as of the last completed frame
+    /// rendered on the paint thread.
+    pub(crate) last_frame_epochs: RefCell<FxHashMap<WebRenderPipelineId, WebRenderEpoch>>,
+
     /// The GL bindings for webrender
     webrender_gl: Rc<dyn gleam::gl::Gl>,
 
@@ -139,14 +150,17 @@ pub(crate) struct Painter {
 
 impl Drop for Painter {
     fn drop(&mut self) {
-        if let Err(error) = self.rendering_context.make_current() {
-            error!("Failed to make the rendering context current: {error:?}");
-        }
-
         self.webrender_api.stop_render_backend();
         self.webrender_api.shut_down(true);
 
+        if let Some(mut paint_thread) = self.paint_thread.borrow_mut().take() {
+            paint_thread.shutdown();
+        }
+
         if let Some(renderer) = self.webrender_renderer.take() {
+            if let Err(error) = self.rendering_context.make_current() {
+                error!("Failed to make the rendering context current: {error:?}");
+            }
             renderer.deinit();
         }
     }
@@ -154,38 +168,7 @@ impl Drop for Painter {
 
 impl Painter {
     pub(crate) fn new(rendering_context: Rc<dyn RenderingContext>, paint: &Paint) -> Self {
-        let webrender_gl = rendering_context.gleam_gl_api();
-
-        // Make sure the gl context is made current.
-        if let Err(err) = rendering_context.make_current() {
-            warn!("Failed to make the rendering context current: {:?}", err);
-        }
-        debug_assert_eq!(webrender_gl.get_error(), gleam::gl::NO_ERROR,);
-
-        let id_manager = paint.webrender_external_image_id_manager();
-        let mut external_image_handlers = Box::new(WebRenderExternalImageHandlers::new(id_manager));
-
-        // Set WebRender external image handler for WebGL textures.
-        #[cfg(feature = "webgl")]
-        {
-            let image_handler = Box::new(WebGLExternalImages::new(
-                paint.webgl_threads(),
-                rendering_context.clone(),
-                paint.webgl_paint.swap_chains.clone(),
-                paint.webgl_paint.busy_webgl_contexts_map.clone(),
-                paint.webgl_paint.readback_map.clone(),
-            ));
-            external_image_handlers.set_handler(image_handler, WebRenderImageHandlerType::WebGl);
-        }
-
-        #[cfg(feature = "webgpu")]
-        external_image_handlers.set_handler(
-            Box::new(webgpu::WebGpuExternalImages::new(paint.webgpu_image_map())),
-            WebRenderImageHandlerType::WebGpu,
-        );
-
-        WindowGLContext::initialize_image_handler(&mut external_image_handlers);
-
+        let painter_id = PainterId::next();
         let embedder_to_constellation_sender = paint.embedder_to_constellation_sender.clone();
         let timer_refresh_driver = LazyCell::default();
         let refresh_driver = Rc::new(BaseRefreshDriver::new(
@@ -197,87 +180,173 @@ impl Painter {
             embedder_to_constellation_sender.clone(),
         ));
 
-        rendering_context.prepare_for_rendering();
-        let clear_color = servo_config::pref!(shell_background_color_rgba);
-        let clear_color = ColorF::new(
-            clear_color[0] as f32,
-            clear_color[1] as f32,
-            clear_color[2] as f32,
-            clear_color[3] as f32,
-        );
-
-        // Use same texture upload method as Gecko with ANGLE:
-        // https://searchfox.org/mozilla-central/source/gfx/webrender_bindings/src/bindings.rs#1215-1219
-        let is_software_webrender = webrender_gl.get_string(RENDERER).starts_with("Software WebRender");
-        let upload_method = if webrender_gl.get_string(RENDERER).starts_with("ANGLE") || is_software_webrender {
-            UploadMethod::Immediate
-        } else {
-            UploadMethod::PixelBuffer(ONE_TIME_USAGE_HINT)
-        };
-        let worker_threads = std::thread::available_parallelism()
-            .map(|i| i.get())
-            .unwrap_or(pref!(thread_pool_fallback_workers) as usize)
-            .min(pref!(thread_pool_webrender_workers_max).max(1) as usize);
-        let workers = Some(Arc::new(
-            rayon::ThreadPoolBuilder::new()
-                .num_threads(worker_threads)
-                .thread_name(|idx| format!("WRWorker#{}", idx))
-                .start_handler(|_| {
-                    servo_base::threadboost::boost_thread(
-                        ThreadPriority::Elevated,
-                        BoostAffinity::Boost,
-                    )
-                })
-                .build()
-                .expect("Unable to initialize WebRender worker pool."),
-        ));
-
-        let painter_id = PainterId::next();
-        let (mut webrender_renderer, webrender_api_sender) = webrender::create_webrender_instance(
-            webrender_gl.clone(),
-            Box::new(RenderNotifier::new(painter_id, paint.paint_proxy.clone())),
-            webrender::WebRenderOptions {
-                // We force the use of optimized shaders here because rendering is broken
-                // on Android emulators with unoptimized shaders. This is due to a known
-                // issue in the emulator's OpenGL emulation layer.
-                // See: https://github.com/servo/servo/issues/31726
-                use_optimized_shaders: true,
-                resource_override_path: opts::get().shaders_path.clone(),
-                debug_flags: webrender::DebugFlags::empty(),
-                precache_flags: if pref!(gfx_precache_shaders) {
-                    ShaderPrecacheFlags::FULL_COMPILE
-                } else {
-                    ShaderPrecacheFlags::empty()
-                },
-                enable_aa: pref!(gfx_text_antialiasing_enabled),
-                enable_subpixel_aa: pref!(gfx_subpixel_text_antialiasing_enabled),
-                allow_texture_swizzling: pref!(gfx_texture_swizzling_enabled),
-                // swgl has no runtime shader compilation: only the variants
-                // transpiled at build time exist, and webrender's build strips
-                // DITHERING everywhere — requesting it aborts inside swgl
-                // (unknown shader ps_quad_gradient DITHERING, real-world hit:
-                // youtube.com gradients).
-                enable_dithering: !is_software_webrender,
-                clear_color,
-                // swgl does not implement the depth function this path requires
-                // (verified: assertion in DepthFunc for GL_ALWAYS).
-                clear_caches_with_quads: !is_software_webrender,
-                upload_method,
-                workers,
-                size_of_op: Some(servo_allocator::usable_size),
-                // This ensures that we can use the `PainterId` as the `IdNamespace`, which allows mapping
-                // from `FontKey`, `FontInstanceKey`, and `ImageKey` back to `PainterId`.
-                namespace_alloc_by_client: true,
-                render_backend_hooks: Some(Box::new(BoostWebRenderThread)),
-                scene_builder_hooks: Some(Box::new(BoostWebRenderThread)),
-                shared_font_namespace: Some(painter_id.into()),
-                ..Default::default()
+        // When the rendering context exposes its surfman connection and adapter, spawn a
+        // dedicated paint thread that owns the WebRender renderer and its own GL context,
+        // so that rasterization does not block the UI thread. The paint thread shares no
+        // GL objects with the embedder context; frames cross the thread boundary as
+        // surfman surfaces (the same mechanism WebGL uses). When the embedder uses a
+        // custom rendering context without surfman details, fall back to rendering
+        // inline on this thread.
+        let paint_thread_startup = match (
+            rendering_context.connection(),
+            rendering_context.adapter(),
+        ) {
+            (Some(connection), Some(adapter)) => {
+                let inputs = ExternalImageHandlerInputs {
+                    id_manager: paint.webrender_external_image_id_manager(),
+                    #[cfg(feature = "webgl")]
+                    webgl_threads: paint.webgl_threads(),
+                    #[cfg(feature = "webgl")]
+                    swap_chains: paint.webgl_paint.swap_chains.clone(),
+                    #[cfg(feature = "webgl")]
+                    busy_webgl_contexts_map: paint.webgl_paint.busy_webgl_contexts_map.clone(),
+                    #[cfg(feature = "webgl")]
+                    readback_map: paint.webgl_paint.readback_map.clone(),
+                    #[cfg(feature = "webgpu")]
+                    webgpu_image_map: paint.webgpu_image_map(),
+                };
+                match PaintThreadHandle::spawn(
+                    connection,
+                    adapter,
+                    rendering_context.size(),
+                    painter_id,
+                    paint.paint_proxy.clone(),
+                    inputs,
+                ) {
+                    Ok(result) => Some(result),
+                    Err(error) => {
+                        warn!("Failed to start paint thread, falling back to inline rendering: {error}");
+                        None
+                    },
+                }
             },
-            None,
-        )
-        .expect("Unable to initialize WebRender.");
+            _ => None,
+        };
 
-        webrender_renderer.set_external_image_handler(external_image_handlers);
+        let webrender_gl = rendering_context.gleam_gl_api();
+        let (webrender_renderer, paint_thread, webrender_api_sender) =
+            match paint_thread_startup {
+                Some((handle, render_api_sender)) => (None, Some(handle), render_api_sender),
+                None => {
+                    // Inline fallback: create the WebRender renderer on this thread,
+                    // rendering directly into the embedder's rendering context.
+                    if let Err(err) = rendering_context.make_current() {
+                        warn!("Failed to make the rendering context current: {:?}", err);
+                    }
+                    debug_assert_eq!(webrender_gl.get_error(), gleam::gl::NO_ERROR,);
+
+                    let id_manager = paint.webrender_external_image_id_manager();
+                    let mut external_image_handlers =
+                        Box::new(WebRenderExternalImageHandlers::new(id_manager));
+
+                    #[cfg(feature = "webgl")]
+                    {
+                        let image_handler = Box::new(WebGLExternalImages::new(
+                            paint.webgl_threads(),
+                            rendering_context.clone(),
+                            paint.webgl_paint.swap_chains.clone(),
+                            paint.webgl_paint.busy_webgl_contexts_map.clone(),
+                            paint.webgl_paint.readback_map.clone(),
+                        ));
+                        external_image_handlers
+                            .set_handler(image_handler, WebRenderImageHandlerType::WebGl);
+                    }
+
+                    #[cfg(feature = "webgpu")]
+                    external_image_handlers.set_handler(
+                        Box::new(webgpu::WebGpuExternalImages::new(paint.webgpu_image_map())),
+                        WebRenderImageHandlerType::WebGpu,
+                    );
+
+                    WindowGLContext::initialize_image_handler(&mut external_image_handlers);
+
+                    rendering_context.prepare_for_rendering();
+                    let clear_color = servo_config::pref!(shell_background_color_rgba);
+                    let clear_color = ColorF::new(
+                        clear_color[0] as f32,
+                        clear_color[1] as f32,
+                        clear_color[2] as f32,
+                        clear_color[3] as f32,
+                    );
+
+                    // Use same texture upload method as Gecko with ANGLE:
+                    // https://searchfox.org/mozilla-central/source/gfx/webrender_bindings/src/bindings.rs#1215-1219
+                    let is_software_webrender =
+                        webrender_gl.get_string(RENDERER).starts_with("Software WebRender");
+                    let upload_method = if webrender_gl.get_string(RENDERER).starts_with("ANGLE") ||
+                        is_software_webrender
+                    {
+                        UploadMethod::Immediate
+                    } else {
+                        UploadMethod::PixelBuffer(ONE_TIME_USAGE_HINT)
+                    };
+                    let worker_threads = std::thread::available_parallelism()
+                        .map(|i| i.get())
+                        .unwrap_or(pref!(thread_pool_fallback_workers) as usize)
+                        .min(pref!(thread_pool_webrender_workers_max).max(1) as usize);
+                    let workers = Some(Arc::new(
+                        rayon::ThreadPoolBuilder::new()
+                            .num_threads(worker_threads)
+                            .thread_name(|idx| format!("WRWorker#{}", idx))
+                            .start_handler(|_| {
+                                servo_base::threadboost::boost_thread(
+                                    ThreadPriority::Elevated,
+                                    BoostAffinity::Boost,
+                                )
+                            })
+                            .build()
+                            .expect("Unable to initialize WebRender worker pool."),
+                    ));
+
+                    let (mut webrender_renderer, webrender_api_sender) =
+                        webrender::create_webrender_instance(
+                            webrender_gl.clone(),
+                            Box::new(RenderNotifier::new(painter_id, paint.paint_proxy.clone())),
+                            webrender::WebRenderOptions {
+                                // We force the use of optimized shaders here because rendering is broken
+                                // on Android emulators with unoptimized shaders. This is due to a known
+                                // issue in the emulator's OpenGL emulation layer.
+                                // See: https://github.com/servo/servo/issues/31726
+                                use_optimized_shaders: true,
+                                resource_override_path: opts::get().shaders_path.clone(),
+                                debug_flags: webrender::DebugFlags::empty(),
+                                precache_flags: if pref!(gfx_precache_shaders) {
+                                    ShaderPrecacheFlags::FULL_COMPILE
+                                } else {
+                                    ShaderPrecacheFlags::empty()
+                                },
+                                enable_aa: pref!(gfx_text_antialiasing_enabled),
+                                enable_subpixel_aa: pref!(gfx_subpixel_text_antialiasing_enabled),
+                                allow_texture_swizzling: pref!(gfx_texture_swizzling_enabled),
+                                // swgl has no runtime shader compilation: only the variants
+                                // transpiled at build time exist, and webrender's build strips
+                                // DITHERING everywhere — requesting it aborts inside swgl
+                                // (unknown shader ps_quad_gradient DITHERING, real-world hit:
+                                // youtube.com gradients).
+                                enable_dithering: !is_software_webrender,
+                                clear_color,
+                                // swgl does not implement the depth function this path requires
+                                // (verified: assertion in DepthFunc for GL_ALWAYS).
+                                clear_caches_with_quads: !is_software_webrender,
+                                upload_method,
+                                workers,
+                                size_of_op: Some(servo_allocator::usable_size),
+                                // This ensures that we can use the `PainterId` as the `IdNamespace`, which allows mapping
+                                // from `FontKey`, `FontInstanceKey`, and `ImageKey` back to `PainterId`.
+                                namespace_alloc_by_client: true,
+                                render_backend_hooks: Some(Box::new(BoostWebRenderThread)),
+                                scene_builder_hooks: Some(Box::new(BoostWebRenderThread)),
+                                shared_font_namespace: Some(painter_id.into()),
+                                ..Default::default()
+                            },
+                            None,
+                        )
+                        .expect("Unable to initialize WebRender.");
+
+                    webrender_renderer.set_external_image_handler(external_image_handlers);
+                    (Some(webrender_renderer), None, webrender_api_sender)
+                },
+            };
 
         let webrender_api = webrender_api_sender.create_api_by_client(painter_id.into());
         let webrender_document = webrender_api.add_document(rendering_context.size2d().to_i32());
@@ -296,7 +365,9 @@ impl Painter {
             screenshot_taker: Default::default(),
             refresh_driver,
             animation_refresh_driver_observer,
-            webrender_renderer: Some(webrender_renderer),
+            webrender_renderer,
+            paint_thread: RefCell::new(paint_thread),
+            last_frame_epochs: RefCell::new(FxHashMap::default()),
             webrender_api,
             webrender_document,
             webrender_gl,
@@ -309,8 +380,10 @@ impl Painter {
             ),
             property_binding_key_counter: Default::default(),
         };
-        painter.assert_gl_framebuffer_complete();
-        painter.clear_background();
+        if painter.paint_thread.borrow().is_none() {
+            painter.assert_gl_framebuffer_complete();
+            painter.clear_background();
+        }
         painter
     }
 
@@ -423,31 +496,35 @@ impl Painter {
         let refresh_driver = self.refresh_driver.clone();
         let notified_refresh_driver_observers = refresh_driver.notify_will_paint(self);
 
-        if let Err(error) = self.rendering_context.make_current() {
-            error!("Failed to make the rendering context current: {error:?}");
-        }
-        self.assert_no_gl_error();
-
-        self.rendering_context.prepare_for_rendering();
-
-        time_profile!(
-            ProfilerCategory::Painting,
-            None,
-            time_profiler_channel.clone(),
-            || {
-                if let Some(renderer) = self.webrender_renderer.as_mut() {
-                    renderer.update();
-                }
-
-                // Paint the scene.
-                // TODO(gw): Take notice of any errors the renderer returns!
-                self.clear_background();
-                if let Some(renderer) = self.webrender_renderer.as_mut() {
-                    let size = self.rendering_context.size2d().to_i32();
-                    renderer.render(size, 0 /* buffer_age */).ok();
-                }
+        if self.paint_thread.borrow().is_some() {
+            self.render_on_paint_thread(time_profiler_channel);
+        } else {
+            if let Err(error) = self.rendering_context.make_current() {
+                error!("Failed to make the rendering context current: {error:?}");
             }
-        );
+            self.assert_no_gl_error();
+
+            self.rendering_context.prepare_for_rendering();
+
+            time_profile!(
+                ProfilerCategory::Painting,
+                None,
+                time_profiler_channel.clone(),
+                || {
+                    if let Some(renderer) = self.webrender_renderer.as_mut() {
+                        renderer.update();
+                    }
+
+                    // Paint the scene.
+                    // TODO(gw): Take notice of any errors the renderer returns!
+                    self.clear_background();
+                    if let Some(renderer) = self.webrender_renderer.as_mut() {
+                        let size = self.rendering_context.size2d().to_i32();
+                        renderer.render(size, 0 /* buffer_age */).ok();
+                    }
+                }
+            );
+        }
 
         // We've painted the default target, which means that from the embedder's perspective,
         // the scene no longer needs to be repainted.
@@ -459,6 +536,69 @@ impl Painter {
 
         self.screenshot_taker.maybe_take_screenshots(self);
         self.send_pending_paint_metrics_messages_after_composite();
+    }
+
+    /// Render a frame on the paint thread, blocking until it is complete, then
+    /// import the resulting surface into the embedder's rendering context and
+    /// blit it into the embedder framebuffer. This preserves the exact
+    /// externally visible behavior of direct rendering: after this method
+    /// returns, the embedder framebuffer contains the latest frame.
+    fn render_on_paint_thread(&mut self, time_profiler_channel: &ProfilerChan) {
+        let size = self.rendering_context.size2d().to_i32();
+        let epoch_pipelines: Vec<_> = self
+            .webview_renderers
+            .values()
+            .flat_map(|webview_renderer| webview_renderer.pipelines.keys().copied())
+            .map(Into::into)
+            .collect();
+
+        let reply = time_profile!(
+            ProfilerCategory::Painting,
+            None,
+            time_profiler_channel.clone(),
+            || {
+                self.paint_thread.borrow().as_ref().and_then(|paint_thread| {
+                    paint_thread.render(self.webrender_document, size, epoch_pipelines)
+                })
+            }
+        );
+
+        if let Some(reply) = reply {
+            *self.last_frame_epochs.borrow_mut() = reply.epochs;
+        }
+
+        self.consume_paint_thread_frame();
+    }
+
+    /// Take the front surface of the paint thread's swap chain, import it as a
+    /// texture into the embedder's rendering context, blit it into the embedder
+    /// framebuffer, and recycle the surface for reuse by the paint thread.
+    fn consume_paint_thread_frame(&self) {
+        use surfman::chains::SwapChainAPI;
+
+        let paint_thread = self.paint_thread.borrow();
+        let Some(paint_thread) = paint_thread.as_ref() else {
+            return;
+        };
+        let swap_chain = paint_thread.swap_chain();
+        let Some(surface) = swap_chain.take_surface() else {
+            return;
+        };
+
+        if let Err(error) = self.rendering_context.make_current() {
+            error!("Failed to make the rendering context current: {error:?}");
+        }
+        let Some((surface_texture, texture_id, texture_size)) =
+            self.rendering_context.create_texture(surface)
+        else {
+            warn!("Failed to import paint thread surface as texture");
+            return;
+        };
+        self.rendering_context
+            .blit_texture_to_frame(texture_id, texture_size);
+        if let Some(surface) = self.rendering_context.destroy_texture(surface_texture) {
+            swap_chain.recycle_surface(surface);
+        }
     }
 
     fn clear_background(&self) {
@@ -498,11 +638,17 @@ impl Painter {
 
         for webview_renderer in self.webview_renderers.values_mut() {
             for (pipeline_id, pipeline) in webview_renderer.pipelines.iter_mut() {
-                let Some(current_epoch) = self
-                    .webrender_renderer
-                    .as_ref()
-                    .and_then(|wr| wr.current_epoch(self.webrender_document, pipeline_id.into()))
-                else {
+                let current_epoch = if self.paint_thread.borrow().is_some() {
+                    self.last_frame_epochs
+                        .borrow()
+                        .get(&pipeline_id.into())
+                        .copied()
+                } else {
+                    self.webrender_renderer
+                        .as_ref()
+                        .and_then(|wr| wr.current_epoch(self.webrender_document, pipeline_id.into()))
+                };
+                let Some(current_epoch) = current_epoch else {
                     continue;
                 };
 
@@ -825,7 +971,15 @@ impl Painter {
     }
 
     pub(crate) fn toggle_webrender_debug(&mut self, option: WebRenderDebugOption) {
+        if let Some(paint_thread) = self.paint_thread.borrow().as_ref() {
+            paint_thread.toggle_debug_flags(option);
+        }
         let Some(renderer) = self.webrender_renderer.as_mut() else {
+            if self.paint_thread.borrow().is_some() {
+                let mut txn = Transaction::new();
+                self.generate_frame(&mut txn, RenderReasons::TESTING);
+                self.send_transaction(txn);
+            }
             return;
         };
         let mut flags = renderer.get_debug_flags();
@@ -1410,6 +1564,9 @@ impl Painter {
             error!("Failed to make the rendering context current: {error:?}");
         }
         self.rendering_context.resize(new_size);
+        if let Some(paint_thread) = self.paint_thread.borrow().as_ref() {
+            paint_thread.resize(new_size);
+        }
 
         let new_size = Size2D::new(new_size.width as f32, new_size.height as f32);
         let new_viewport_rect = Rect::from(new_size).to_box2d();

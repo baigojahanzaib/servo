@@ -88,6 +88,54 @@ pub trait RenderingContext {
     fn adapter(&self) -> Option<Adapter> {
         None
     }
+
+    /// Blit the contents of a texture that was imported into this context via
+    /// [`RenderingContext::create_texture`] into the frame target of this context
+    /// (the framebuffer that [`RenderingContext::prepare_for_rendering`] binds).
+    /// This is used to copy frames composited on a separate paint thread back
+    /// into this context. Returns `true` if the blit was performed.
+    fn blit_texture_to_frame(&self, _texture_id: u32, _texture_size: UntypedSize2D<i32>) -> bool {
+        false
+    }
+}
+
+/// Blit a texture into a target framebuffer using a temporary framebuffer
+/// as the read source. Shared implementation for the `blit_texture_to_frame`
+/// implementations of the surfman-backed rendering contexts.
+fn blit_texture_into_framebuffer(
+    gl: &Rc<dyn Gl>,
+    texture_id: u32,
+    texture_size: UntypedSize2D<i32>,
+    target_framebuffer_id: u32,
+) {
+    let framebuffers = gl.gen_framebuffers(1);
+    let source_framebuffer = framebuffers[0];
+    gl.bind_framebuffer(gl::READ_FRAMEBUFFER, source_framebuffer);
+    gl.framebuffer_texture_2d(
+        gl::READ_FRAMEBUFFER,
+        gl::COLOR_ATTACHMENT0,
+        gl::TEXTURE_2D,
+        texture_id,
+        0,
+    );
+    gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, target_framebuffer_id);
+    gl.disable(gl::SCISSOR_TEST);
+    gl.blit_framebuffer(
+        0,
+        0,
+        texture_size.width,
+        texture_size.height,
+        0,
+        0,
+        texture_size.width,
+        texture_size.height,
+        gl::COLOR_BUFFER_BIT,
+        gl::NEAREST,
+    );
+    gl.bind_framebuffer(gl::READ_FRAMEBUFFER, 0);
+    gl.bind_framebuffer(gl::DRAW_FRAMEBUFFER, 0);
+    gl.bind_framebuffer(gl::FRAMEBUFFER, target_framebuffer_id);
+    gl.delete_framebuffers(&[source_framebuffer]);
 }
 
 /// A rendering context that uses the Surfman library to create and manage
@@ -301,6 +349,20 @@ pub struct SoftwareRenderingContext {
 
 impl SoftwareRenderingContext {
     pub fn new(size: PhysicalSize<u32>) -> Result<Self, Error> {
+        let connection = Connection::new()?;
+        let adapter = connection.create_software_adapter()?;
+        Self::new_with_connection_and_adapter(&connection, &adapter, size)
+    }
+
+    /// Create an offscreen surfman rendering context using an existing
+    /// [`Connection`] and [`Adapter`], rendering into a generic surface backed
+    /// by an attached [`SwapChain`]. Despite the type name, this works with
+    /// hardware adapters as well and is used for off-thread compositing.
+    pub fn new_with_connection_and_adapter(
+        connection: &Connection,
+        adapter: &Adapter,
+        size: PhysicalSize<u32>,
+    ) -> Result<Self, Error> {
         if size.width == 0 || size.height == 0 {
             log::error!(
                 "Unable to create SoftwareRenderingContext with size under 1x1 ({size:?} provided)"
@@ -308,9 +370,7 @@ impl SoftwareRenderingContext {
             return Err(Error::Failed);
         }
 
-        let connection = Connection::new()?;
-        let adapter = connection.create_software_adapter()?;
-        let surfman_rendering_info = SurfmanRenderingContext::new(&connection, &adapter, None)?;
+        let surfman_rendering_info = SurfmanRenderingContext::new(connection, adapter, None)?;
 
         let surfman_size = Size2D::new(size.width as i32, size.height as i32);
         let surface =
@@ -324,6 +384,14 @@ impl SoftwareRenderingContext {
             surfman_rendering_info,
             swap_chain,
         })
+    }
+}
+
+impl SoftwareRenderingContext {
+    /// A thread-safe handle to the [`SwapChain`] backing this context's surface,
+    /// usable by consumers on other threads to take and recycle front surfaces.
+    pub fn swap_chain(&self) -> SwapChain<Device> {
+        self.swap_chain.clone()
     }
 }
 
@@ -404,6 +472,20 @@ impl RenderingContext for SoftwareRenderingContext {
 
     fn adapter(&self) -> Option<Adapter> {
         self.surfman_rendering_info.adapter()
+    }
+
+    fn blit_texture_to_frame(&self, texture_id: u32, texture_size: UntypedSize2D<i32>) -> bool {
+        let target = self
+            .surfman_rendering_info
+            .framebuffer()
+            .map_or(0, |framebuffer| framebuffer.0.into());
+        blit_texture_into_framebuffer(
+            &self.surfman_rendering_info.gleam_gl,
+            texture_id,
+            texture_size,
+            target,
+        );
+        true
     }
 }
 
@@ -599,6 +681,20 @@ impl RenderingContext for WindowRenderingContext {
 
     fn adapter(&self) -> Option<Adapter> {
         self.surfman_context.adapter()
+    }
+
+    fn blit_texture_to_frame(&self, texture_id: u32, texture_size: UntypedSize2D<i32>) -> bool {
+        let target = self
+            .surfman_context
+            .framebuffer()
+            .map_or(0, |framebuffer| framebuffer.0.into());
+        blit_texture_into_framebuffer(
+            &self.surfman_context.gleam_gl,
+            texture_id,
+            texture_size,
+            target,
+        );
+        true
     }
 }
 
@@ -909,6 +1005,17 @@ impl RenderingContext for OffscreenRenderingContext {
 
     fn read_to_image(&self, source_rectangle: DeviceIntRect) -> Option<RgbaImage> {
         self.framebuffer.borrow().read_to_image(source_rectangle)
+    }
+
+    fn blit_texture_to_frame(&self, texture_id: u32, texture_size: UntypedSize2D<i32>) -> bool {
+        let target = self.framebuffer.borrow().framebuffer_id;
+        blit_texture_into_framebuffer(
+            &self.parent_context.gleam_gl_api(),
+            texture_id,
+            texture_size,
+            target,
+        );
+        true
     }
 
     fn refresh_driver(&self) -> Option<Rc<dyn RefreshDriver>> {
