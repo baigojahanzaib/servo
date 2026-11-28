@@ -2718,6 +2718,9 @@ where
             ServiceWorkerAlgorithm::MatchServiceWorkerRegistration { storage_key, .. } => {
                 storage_key.clone()
             },
+            ServiceWorkerAlgorithm::MatchAllServiceWorkerRegistrations { storage_key, .. } => {
+                storage_key.clone()
+            },
         };
 
         if self

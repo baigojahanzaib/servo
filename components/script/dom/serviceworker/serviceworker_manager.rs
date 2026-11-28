@@ -390,6 +390,12 @@ impl ServiceWorkerManager {
                 } => {
                     self.handle_match_registration(storage_key, client_url, result_handler);
                 },
+                ServiceWorkerAlgorithm::MatchAllServiceWorkerRegistrations {
+                    storage_key,
+                    result_handler,
+                } => {
+                    self.handle_match_all_registrations(storage_key, result_handler);
+                },
             },
             ServiceWorkerMsg::Exit => return false,
             ServiceWorkerMsg::SetNetworkOnlineState(online) => {
@@ -452,6 +458,40 @@ impl ServiceWorkerManager {
 
         // Step 6: Invoke Finish Job with job.
         // TODO: Finish Job.
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-getregistrations>
+    /// Steps running in parallel in the service worker manager: collect every
+    /// registration whose storage key matches, ordered by scope url length
+    /// (longest first, per spec step 6 of getRegistrations).
+    fn handle_match_all_registrations(
+        &self,
+        storage_key: ImmutableOrigin,
+        result_handler: GenericCallback<ServiceWorkerAlgorithmResult>,
+    ) {
+        let mut infos: Vec<ServiceWorkerRegistrationInfo> = self
+            .registrations
+            .iter()
+            .filter(|(scope, _)| scope.origin() == storage_key)
+            .filter_map(|(scope, registration)| {
+                Some(ServiceWorkerRegistrationInfo {
+                    scope_url: scope.clone(),
+                    script_url: registration.get_newest_worker()?.script_url,
+                    storage_key: storage_key.clone(),
+                    id: registration.id,
+                    installing_worker: registration.installing_worker.as_ref().map(|w| w.id),
+                    waiting_worker: registration.waiting_worker.as_ref().map(|w| w.id),
+                    active_worker: registration.active_worker.as_ref().map(|w| w.id),
+                })
+            })
+            .collect();
+        infos.sort_by_key(|info| std::cmp::Reverse(info.scope_url.as_str().len()));
+        if result_handler
+            .send(ServiceWorkerAlgorithmResult::MatchAllServiceWorkerRegistrations(infos))
+            .is_err()
+        {
+            warn!("Failed to send match-all registrations result to script.");
+        }
     }
 
     /// <https://w3c.github.io/ServiceWorker/#match-service-worker-registration>

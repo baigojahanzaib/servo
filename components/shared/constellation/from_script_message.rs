@@ -403,6 +403,11 @@ pub enum ServiceWorkerAlgorithm {
         client_url: ServoUrl,
         result_handler: GenericCallback<ServiceWorkerAlgorithmResult>,
     },
+    /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-getregistrations>
+    MatchAllServiceWorkerRegistrations {
+        storage_key: ImmutableOrigin,
+        result_handler: GenericCallback<ServiceWorkerAlgorithmResult>,
+    },
 }
 
 /// <https://w3c.github.io/ServiceWorker/#algorithms>
@@ -415,6 +420,9 @@ pub enum ServiceWorkerAlgorithmResult {
 
     /// <https://w3c.github.io/ServiceWorker/#match-service-worker-registration>
     MatchServiceWorkerRegistration(Option<ServiceWorkerRegistrationInfo>),
+
+    /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-getregistrations>
+    MatchAllServiceWorkerRegistrations(Vec<ServiceWorkerRegistrationInfo>),
 
     /// <https://w3c.github.io/ServiceWorker/#dom-client-postmessage-message-options>
     /// Note: this is not algorithm; re-using algo channel for convenience.

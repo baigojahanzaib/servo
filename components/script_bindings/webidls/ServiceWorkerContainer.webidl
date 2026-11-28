@@ -12,7 +12,8 @@ interface ServiceWorkerContainer : EventTarget {
                                                           optional RegistrationOptions options = {});
 
   [NewObject] Promise<(ServiceWorkerRegistration or undefined)> getRegistration(optional USVString clientURL = "");
-  //[NewObject] Promise<FrozenArray<ServiceWorkerRegistration>> getRegistrations();
+  // Note: spec says FrozenArray; sequence is the servo-equivalent idiom and JS-invisible.
+  [NewObject] Promise<sequence<ServiceWorkerRegistration>> getRegistrations();
 
   //void startMessages();
 

@@ -198,6 +198,33 @@ impl ServiceWorkerContainer {
         promise.resolve_native(cx, &*registration);
     }
 
+    /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-getregistrations>
+    fn handle_match_all_registrations_result(
+        &self,
+        cx: &mut JSContext,
+        registration_infos: Vec<ServiceWorkerRegistrationInfo>,
+        promise: &RootedPromise,
+    ) {
+        let global = self.global();
+        let registrations: Vec<DomRoot<ServiceWorkerRegistration>> = registration_infos
+            .iter()
+            .map(|info| {
+                let registration = global.get_serviceworker_registration(
+                    cx,
+                    &info.script_url,
+                    &info.scope_url,
+                    info.id,
+                    info.installing_worker,
+                    info.waiting_worker,
+                    info.active_worker,
+                );
+                self.maybe_resolve_ready(cx, &registration, info.active_worker.is_some());
+                registration
+            })
+            .collect();
+        promise.resolve_native(cx, &registrations);
+    }
+
     fn handle_algorithm_result(&self, cx: &mut JSContext, result: ServiceWorkerAlgorithmResult) {
         match result {
             ServiceWorkerAlgorithmResult::Job(job_result) => {
@@ -223,6 +250,18 @@ impl ServiceWorkerContainer {
                     return;
                 };
                 self.handle_match_registration_result(cx, registration_info, &promise);
+            },
+            ServiceWorkerAlgorithmResult::MatchAllServiceWorkerRegistrations(registration_infos) => {
+                let promise = self
+                    .pending_algorithm_results
+                    .borrow_mut()
+                    .pop_front()
+                    .map(|promise| promise.root(cx));
+                let Some(promise) = promise else {
+                    debug_assert!(false, "No pending algorithm result.");
+                    return;
+                };
+                self.handle_match_all_registrations_result(cx, registration_infos, &promise);
             },
             ServiceWorkerAlgorithmResult::MessageFromWorker {
                 message,
@@ -507,6 +546,50 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
         }
 
         // A: Step 7
+        promise
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-getregistrations>
+    fn GetRegistrations(&self, realm: &mut CurrentRealm) -> RootedPromise {
+        // Step 1: Let client be this’s service worker client.
+        let global = self.global();
+
+        // Step 3: Let promise be a new promise.
+        let promise = Promise::new_in_realm(realm);
+
+        // Step 2: Let client storage key be the result of running obtain a storage key given client.
+        let Some(storage_key) = global.obtain_storage_key() else {
+            promise.reject_error(
+                realm,
+                Error::Type(c"Failed to obtain a storage key".to_owned()),
+            );
+            return promise;
+        };
+
+        let result_handler = self.get_or_setup_callback(&promise);
+
+        // Step 4: Run the following substeps in parallel:
+        // Note: continues in parallel in the service worker manager,
+        // by way of the constellation.
+        if global
+            .script_to_constellation_chan()
+            .send(ScriptToConstellationMessage::ServiceWorkerAlgorithm(
+                ServiceWorkerAlgorithm::MatchAllServiceWorkerRegistrations {
+                    storage_key,
+                    result_handler,
+                },
+            ))
+            .is_err()
+        {
+            // Note: pop the promise we just pushed, since we will not get a result back to handle it.
+            self.pending_algorithm_results.borrow_mut().pop_back();
+            promise.reject_error(
+                realm,
+                Error::Type(c"Failed to send MatchAllServiceWorkerRegistrations algorithm".to_owned()),
+            );
+        }
+
+        // Step 5: Return promise.
         promise
     }
 
