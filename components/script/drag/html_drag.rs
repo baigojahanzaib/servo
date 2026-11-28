@@ -407,6 +407,14 @@ fn compute_drag_operation(effect_allowed: &str, drop_effect: &str) -> DragOperat
         "copy" if allows("copy") => DragOperation::Copy,
         "link" if allows("link") => DragOperation::Link,
         "move" if allows("move") => DragOperation::Move,
+        // When the dragover handler cancels the event without choosing an
+        // explicit dropEffect (the overwhelmingly common pattern - a plain
+        // `event.preventDefault()`), other engines still allow the drop and
+        // pick the first operation permitted by effectAllowed. Mirror that
+        // fallback or virtually no real-world drop target ever fires `drop`.
+        "none" | "" | "uninitialized" if allows("copy") => DragOperation::Copy,
+        "none" | "" | "uninitialized" if allows("move") => DragOperation::Move,
+        "none" | "" | "uninitialized" if allows("link") => DragOperation::Link,
         _ => DragOperation::None,
     }
 }
