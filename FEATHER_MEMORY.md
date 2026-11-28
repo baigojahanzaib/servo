@@ -6708,3 +6708,8 @@ Three-layer defect, each layer masked by the previous:
 
 ## sec1zt349: download-resources regen zero-delta — harness-untestable leaf (2026-11-28)
 - downloading-resources 18/18 ran-as-expected, zero stale positives. The download-attribute leaf is HARNESS-UNTESTABLE: feather implements download via fetch_background shell-visible path, but WPT tests observe download triggering in ways servoshell harness can't surface. Expected-fails are structurally correct. Don't invest here without a shell-level test approach.
+
+## sec1zt350: slotted-directionality leaf PARTIALLY FIXED + shipped (2026-11-28)
+- a7eaf8d6282: :dir() ancestor walk now uses traversal_parent() (flattened tree — slot/host aware). dir-shadow-15/16/32 pass, zero regressions. UPSTREAMABLE — clean spec-compliance fix with WPT evidence.
+- Remaining 4 dir-shadow failures all need dir=auto resolution in slot context — the script-side directionality cache doesn't account for slot assignment. Deeper leaf: cache computation lives in script (search directionality cache writer); must evaluate slotted text per flattened tree. Deferred with exact scope.
+- KEY PATTERN for future fixes: when a tree-walk semantic is wrong in shadow context, check traversal_parent() first — servo already has correct flattened-tree machinery; most bugs are consumers using raw DOM parents.
