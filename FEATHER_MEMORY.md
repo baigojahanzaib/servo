@@ -8081,3 +8081,13 @@ allocations across frames; (3) best — keep NV12 interleaved as RG8-ish or
 use WebRender's native NV12 support if present. File:
 components/script/dom/html/embedded_content/media_elements/
 media_frame_renderer.rs render().
+
+## sec1zt387 — 1080p STALL FIXED: vectorized NV12 deinterleave
+
+commit on feather-engine. Measured: 1080p@8M 0.000x frozen -> 1.005x
+realtime sustained through end of file (video samples flowed to 59s of the
+60s file). The scalar-loop theory confirmed by the fix itself. Residual
+optimizations possible (allocation reuse, native NV12) but the user-facing
+defect is dead. Decoder-selection theory never needed — the copy cost alone
+was the wedge at any bitrate where NV12 frames flow; low bitrates likely
+took a non-NV12 path or the cost fit in decode slack.
