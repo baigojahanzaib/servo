@@ -7852,3 +7852,18 @@ replace() per spec — assign/reload/component setters die in the wrapper
 before reaching Location methods. The assign wiring (shipped) is therefore
 unreachable cross-origin — harmless defense-in-depth; the real forwarding
 coverage is exactly href+replace, which is spec-complete.
+
+## sec1zt375 — middle-frame nav restriction shipped + WPT discrepancy open
+
+Restriction: dissimilar non-top location-write targets throw SecurityError
+('allowed to navigate' — x-origin frames may only navigate top or same-origin).
+Probe-verified CORRECT in replicated topology (srcdoc middle iframe, x-origin
+grandchild writing parent.location): throws exactly as spec/browsers do.
+**OPEN DISCREPANCY**: the actual WPT child-navigates-parent-cross-origin test
+still reports 'success' for location/href/replace writes — the write neither
+throws nor navigates there. Topology difference: WPT middle iframe is a
+dynamically-created no-src iframe whose contentDocument is directly mutated;
+probe used srcdoc. Suspect initial-empty-document browsing-context resolution
+or parent-proxy resolution differs in that path. Zero harness regression
+(ini expected FAIL before and after). Needs a focused session — mechanism
+unknown, do not assume the restriction is wrong: it is probe-verified.

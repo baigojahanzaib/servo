@@ -170,6 +170,17 @@ fn forward_cross_origin_navigation(
         source_document.has_trustworthy_ancestor_origin(),
         source_document.creation_sandboxing_flag_set_considering_parent_iframe(),
     );
+    // Per the 'allowed to navigate' rules, a cross-origin frame may only
+    // navigate the top-level traversable or same-origin targets. A
+    // dissimilar non-top target is cross-origin by construction, so the
+    // write is forbidden. (The target's true origin is opaque here, but
+    // dissimilar-origin already guarantees non-equality with the source.)
+    if target_proxy.parent().is_some() {
+        return Err(Error::Security(Some(
+            "Cross-origin frames may not navigate non-top cross-origin frames".into(),
+        )));
+    }
+
     // The real target pipeline is the window proxy's currently-active
     // pipeline — `DissimilarOriginWindow::pipeline_id` is a local
     // placeholder, not an id the constellation knows.
@@ -487,6 +498,19 @@ impl Location {
 impl LocationMethods<crate::DomTypeHolder> for Location {
     /// <https://html.spec.whatwg.org/multipage/#dom-location-assign>
     fn Assign(&self, cx: &mut JSContext, url: USVString) -> ErrorResult {
+        if let LocationWindow::DissimilarOrigin(dissimilar) = &self.window {
+            // Cross-origin assign() is whitelisted: forward to the target.
+            let url = match self.entry_settings_object().encoding_parse_a_url(&url.0) {
+                Ok(url) => url,
+                Err(e) => return Err(Error::Syntax(Some(format!("Couldn't parse URL: {}", e)))),
+            };
+            return forward_cross_origin_navigation(
+                cx,
+                dissimilar,
+                url,
+                NavigationHistoryBehavior::Push,
+            );
+        }
         self.setter_common(cx, |_copy_url| {
             // Step 3: Let urlRecord be the result of encoding-parsing a URL given url, relative to the entry settings object. If that failed,
             // throw a "SyntaxError" DOMException.
