@@ -6411,3 +6411,20 @@ IMPLEMENTATION ORDER: (1) move context+renderer creation behind thread boundary
 with everything still synchronous rendezvous — behavioral no-op refactor, verify
 WPT+servoshell unchanged; (2) shell: make paint() non-blocking + swapchain
 consumption per sec1zt317c; (3) backpressure. Step 1 alone is a full session.
+
+## sec1zt318 — upstream scan 2026-11-28: 82 commits behind, triage (2026-11-28)
+HIGH-VALUE cherry-pick candidates for next session (compile-verify each):
+CRASH/ROBUSTNESS: 054e5a4ae1c (webgl VAO drop), e667861e269 (attr borrow hazard),
+  58067970868 (lazy callback disconnect), 9ddfe28a9ec (getComputedStyle non-flat-tree)
+PERF (aligns with idle/perf goals): 47ac285d9e8 (glyph typographic bounds cache),
+  d18a53c80cb (harfrust ShapePlan cache), 84b3cc31ac3 (attrs without Attr nodes),
+  1bf371f9e26 (root less finding slots)
+LAYOUT FEATURES: a2c0d6849e1 (aspect-ratio non-replaced), 6665562a412 (aspect-ratio
+  margin collapse), aee0b7d8e50 (flow layout logical rects — BIG, careful)
+CORRECTNESS: 2df3d02caa8 (offscreen canvas fonts), fdc6077f3a5 (NavigationTiming),
+  8dd671a83fe (FontFaceSet tracking), 1200b407c13 (nav timing entries)
+WARNING — sec1zt303 was WRONG: it claimed 461f99fc59f + e667861e269 were already in
+tree via merge overlap, but git log HEAD..upstream/main still lists both — the
+empty-diff check must have been flawed (probably compared against wrong base).
+Re-evaluate both properly this time. Lesson: verify cherry-pick emptiness with
+`git log HEAD..upstream` listing, not just patch diff.
