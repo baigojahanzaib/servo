@@ -9706,3 +9706,18 @@ FUNCTION/MECHANISM: media/mse-buffered-index — **the "streams die" fix**
 FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still open
 
 24/7 stream jfKfPfyJRdk: getPlayerResponse() returns NO streamingData and no videoDetails — the player response never populated. Network log shows ZERO requests to youtubei/v1/player — bootstrap dies before the streaming-data fetch is even issued (only log_event telemetry fires). MediaSource/MediaSourceHandle both present. This is upstream of all streaming logic — a feature-gate or JS-path failure in YouTube's early bootstrap for this stream class. Cost-benefit poor for further digging (mainstream live+VOD verified working); revisit only if user reports it specifically. Probe recipe: compare performance.getEntriesByType('resource') for youtubei calls on working vs broken streams.
+
+## sec1zt438 (2026-11-28) — chat-presence re-probe + WPT path fix
+- wpt-run.sh had stale path css/html (doesn't exist in current tree — dir is
+  css/CSS2): the phase silently no-op'd. Fixed + feather PR opened. Fresh
+  post-fixes baseline launched (css/CSS2 css/cssom html websockets fetch
+  workers) — hours-long, results for future rotations.
+- Chat-frame re-probe on the user stream: first-pass geometry verified correct
+  right-panel placement (sec1zt421); a later same-page re-probe briefly found
+  no #chatframe element — timing/state-sensitive, NOT decisive. The adopted-
+  sheets layout fix is verified; whether chat content loads (CSP history)
+  needs the dogfood build for user confirmation.
+- Baseline note: this rotation's full tally — worker-MSE arc complete
+  (4a554248ff0+43149eb954c+c432cf83c2f), adoptedStyleSheets flip (e2869198687),
+  svg-use arc complete (84b8f2014bd+089898ec37b+d06d48a55d6). Everything
+  pixel/behavior-verified. Dogfood build recommended.
