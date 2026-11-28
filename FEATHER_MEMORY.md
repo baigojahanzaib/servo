@@ -8211,3 +8211,20 @@ Also note consent-redirect theory: if live_chat navigation redirects
 through consent.youtube.com/accounts.google.com the destination origin
 differs and SAMEORIGIN fails spec-correctly — Chrome avoids it via login
 state cookies.
+
+## sec1zt396 — GST logging WORKS (launch syntax was the failure); stall localized to data-feed boundary
+
+GST_DEBUG=3 flows to stderr fine via wrapper script (/tmp/gstwrap.sh pattern:
+export then exec — the inline env-in-subshell syntax silently fails!).
+Decisive same-run measurement: ct 19.59 frozen while last decoded video
+sample pts stuck at 19.07 — decode itself stalls mid-file (30s file).
+Without webdriver samples flowed to 29s — nondeterministic or
+webdriver-influenced. KEY LOG FACT: the mp4 is fetched MULTIPLE times (two
+200 responses) — the refetch machinery is active. Unified theory: playback
+consumes everything the source fed, then stalls at the feed boundary —
+the appsrc need-data/refetch chain stops pushing mid-file. Stall position
+varies run to run (9s, 19s) = however much the initial burst fed. qtdemux
+warnings benign. faad audio decode active. NEXT investigative step: read
+source.rs feed logic — why does pushing stop mid-file (need-data callback
+never re-armed? refetch completion not resuming pushes? appsrc
+enough-data deadlock with the EOS-blocking wrapper?).
