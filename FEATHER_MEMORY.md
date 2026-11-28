@@ -9816,3 +9816,18 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   serialization-cache invalidation path.
 - Build note: std::ptr::eq for DomRoot-vs-&Node identity; traverse_preorder
   yields DomRoot, single deref reaches Node.
+
+## sec1zt444 (2026-11-28) — rotation-end state
+- feather-engine tip: dynamic-svg-repaint fix 9f225c756a7 + memory. YouTube
+  livestream smoke-tested post-fix: ct=49.4 rs=4 playing, zero panics — the
+  added invalidation churn does not destabilize svg-heavy pages.
+- WPT baseline STILL running html phase (started 15:52, 1.4M log lines at
+  16:33) then websockets/fetch/workers remain. Results in
+  /tmp/wpt-results-2026-11-28/. NOTE: binary under test predates the
+  dynamic-svg fix — a followup delta run for css/html dirs is worthwhile.
+  Early css/CSS2: 2 unexpected of 8.9k, css/cssom: 0 unexpected.
+- Disk 81% — watch on next rotation; bottles/ untracked artifacts are not ours.
+- Probe-infra lessons banked this rotation: measure object/image sizes only
+  after 1.5s+ load delay; webdriver ports leak across probes (use fresh port
+  per servoshell, kill after); pkill patterns matching "webdriver=44" can hit
+  WPT workers on random ports — kill by exact port only.
