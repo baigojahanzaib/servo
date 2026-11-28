@@ -9350,3 +9350,17 @@ fast-forward / audio-only-nosync 1.003x / shipped config 1.008x on 1080p
 A+V. Residual: video presentation still relies on video sink sync=true —
 fine since the system clock works. EOF/end-of-stream behavior still flaky
 (ct jumps backwards at file end — EOS handling issue, separate).
+
+## sec1zt401 — MSE ROOT CAUSE ISOLATED: video.src = createObjectURL(mediaSource) HARD-WEDGES the script thread
+
+Binary isolation with three step-pages (/tmp/msestep1-3.html): MediaSource
+construction fine, URL.createObjectURL fine, but ATTACHING the blob URL to
+a video element deadlocks the script thread completely — webdriver fully
+unresponsive (even title queries hang). Explains everything: YouTube's MSE
+init dies at attach — no src, no sourceopen, no appends, no samples.
+Codec negotiation innocent (all isTypeSupported pass). The deadlock is in
+the attach chain: media element src setter -> blob resolution -> media
+session creation — look for mutex ordering or a blocking wait on the media
+pipeline thread from script while that thread callbacks into script.
+Repro: load /tmp/msestep3.html — instant wedge. This is THE YouTube
+root cause.
