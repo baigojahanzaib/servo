@@ -9756,3 +9756,19 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   sites (object-embedded svg rare) — CSS2 conformance leaf, sweep-tier.
 - Infra note: webdriver port 4444 was still held by the stale YouTube probe
   servoshell — use fresh ports (4445+) per probe, kill probes after use.
+
+## sec1zt441 (2026-11-28) — CORRECTION: object-svg 0x0 was a measurement race
+- Retest with proper load delay: object-embedded unsized svg measures 300x200
+  — IDENTICAL to img. No object-specific sizing defect exists. The sec1zt440
+  mechanism analysis (object funneling through image pipeline) is moot.
+- LESSON: object/image probes MUST measure after a load delay (1.5s+), never
+  at window.onload — async image fetch means zero-size at onload is normal.
+- What remains TRUE: svg-as-image natural size uses usvg bbox fallback
+  (image_cache.rs:739 svg_tree.size().to_int_size()) — for no-intrinsic-dims
+  svg this yields content bbox (300x200) instead of the spec default object
+  size chain (300x150). This is the actual mechanism behind
+  replaced-intrinsic-002.xht failing, and it's upstream servo behavior, NOT
+  fork divergence — conformance leaf, sweep-tier, low real-world impact.
+- replaced-intrinsic-002 is therefore NOT a regression from today's work.
+  css/CSS2 unexpected count 2/8.9k with one improvement flip — today's
+  engine changes show no WPT regression signal so far.
