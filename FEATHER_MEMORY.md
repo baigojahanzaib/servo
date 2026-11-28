@@ -9364,3 +9364,18 @@ session creation — look for mutex ordering or a blocking wait on the media
 pipeline thread from script while that thread callbacks into script.
 Repro: load /tmp/msestep3.html — instant wedge. This is THE YouTube
 root cause.
+
+## sec1zt402 — MSE attach wedge: repro refinement — NOT a clean thread deadlock
+
+5/5 repeat runs of msestep3: webdriver stays RESPONSIVE but document.title
+never gets set — the script's post-attach line never executes. So the
+attach path doesn't hard-wedge the script thread (earlier unresponsiveness
+was partly webdriver single-session artifacts) but the synchronous attach
+never returns: execution stuck INSIDE the src-set processing. gdb capture
+of a live run showed Script#1 idle in crossbeam select — meaning the wedge
+is timing-dependent OR the attach completes-but-breaks silently in some
+runs. Precise statement: the src-setter path for mediasource blob URLs
+never completes the script either by deadlock or silent abort; YouTube
+consequently never initializes MSE. Next step for the followup session:
+printf-instrument attach_media_source + create_media_player stages to find
+exactly where execution stops (cheap, decisive — rebuilds are 9s).
