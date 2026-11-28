@@ -470,10 +470,11 @@ impl HTMLDialogElement {
                 .focus(cx, &control.take().unwrap(), FocusTrigger::Script);
         }
 
-        // TODO: Step 7. Let topDocument be control's node navigable's top-level traversable's active document.
-        // TODO: Step 8. If control's node document's origin is not the same as the origin of topDocument, then return.
-        // TODO: Step 9. Empty topDocument's autofocus candidates.
-        // TODO: Step 10. Set topDocument's autofocus processed flag to true.
+        // Steps 7-10. Using the control's node document in place of the
+        // top-level traversable's active document: empty the document's
+        // autofocus candidates and set its autofocus processed flag.
+        self.owner_document().empty_autofocus_candidates();
+        self.owner_document().set_autofocus_processed();
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dialog-setup-steps>

@@ -922,8 +922,11 @@ impl HTMLElement {
         // node navigable's top-level traversable.
         // TODO: Step 8. If control's node document's origin is not the same as the origin of
         // topDocument, then return.
-        // TODO: Step 9. Empty topDocument's autofocus candidates.
-        // TODO: Step 10. Set topDocument's autofocus processed flag to true.
+        // Steps 7-10. Using the control's node document in place of the
+        // top-level traversable's active document: empty the document's
+        // autofocus candidates and set its autofocus processed flag.
+        self.owner_document().empty_autofocus_candidates();
+        self.owner_document().set_autofocus_processed();
     }
 
     /// <https://html.spec.whatwg.org/multipage/#check-popover-validity>
@@ -2663,6 +2666,14 @@ impl VirtualMethods for HTMLElement {
             self.update_assigned_access_key();
         }
         self.update_directionality_cache();
+
+        // <https://html.spec.whatwg.org/multipage/#the-autofocus-attribute>
+        // When an element with the autofocus attribute is inserted into a document,
+        // append it to the document's autofocus candidates.
+        if context.tree_connected && self.element.has_attribute(&local_name!("autofocus")) {
+            self.owner_document()
+                .push_autofocus_candidate(self.upcast::<Element>());
+        }
     }
 
     fn unbind_from_tree(&self, cx: &mut js::context::JSContext, context: &UnbindContext) {

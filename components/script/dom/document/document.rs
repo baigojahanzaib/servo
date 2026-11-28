@@ -108,6 +108,7 @@ use crate::dom::bindings::codegen::Bindings::DocumentBinding::{
 };
 use crate::dom::bindings::codegen::Bindings::ElementBinding::ScrollLogicalPosition;
 use crate::dom::bindings::codegen::Bindings::EventBinding::Event_Binding::EventMethods;
+use crate::dom::bindings::codegen::Bindings::HTMLOrSVGOrMathMLElementBinding::FocusOptions;
 use crate::dom::bindings::codegen::Bindings::HTMLElementBinding::HTMLElementMethods;
 use crate::dom::bindings::codegen::Bindings::HTMLIFrameElementBinding::HTMLIFrameElement_Binding::HTMLIFrameElementMethods;
 use crate::dom::bindings::codegen::Bindings::IntersectionObserverBinding::IntersectionObserverMethods;
@@ -504,6 +505,10 @@ pub(crate) struct Document {
     stylesheets: DomRefCell<DocumentStylesheetSet<ServoStylesheetInDocument>>,
     stylesheet_list: MutNullableDom<StyleSheetList>,
     ready_state: Cell<DocumentReadyState>,
+    /// <https://html.spec.whatwg.org/multipage/#autofocus-candidates>
+    autofocus_candidates: DomRefCell<Vec<Dom<Element>>>,
+    /// <https://html.spec.whatwg.org/multipage/#autofocus-processed-flag>
+    autofocus_processed: Cell<bool>,
     /// The script element that is currently executing.
     current_script: MutNullableDom<HTMLScriptElement>,
     #[no_trace]
@@ -1651,6 +1656,77 @@ impl Document {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#update-the-current-document-readiness>
+    /// <https://html.spec.whatwg.org/multipage/#flush-autofocus-candidates>
+    pub(crate) fn push_autofocus_candidate(&self, element: &Element) {
+        if self.autofocus_processed.get() {
+            return;
+        }
+        self.autofocus_candidates
+            .borrow_mut()
+            .push(Dom::from_ref(element));
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#flush-autofocus-candidates>
+    pub(crate) fn flush_autofocus_candidates(&self, cx: &mut JSContext) {
+        // Step 1. If document's autofocus processed flag is true, then return.
+        if self.autofocus_processed.get() {
+            return;
+        }
+
+        // Step 2. Set document's autofocus processed flag to true.
+        self.autofocus_processed.set(true);
+
+        // Skip documents that are not fully active: focusing them can crash
+        // because their navigable is being torn down, and the spec says to
+        // skip them while flushing.
+        if !self.is_fully_active() {
+            self.autofocus_candidates.borrow_mut().clear();
+            return;
+        }
+
+        // Autofocus must not fire in nested documents that are cross-origin
+        // with their container document. A detached frame (no frame element)
+        // is treated as cross-origin here.
+        let window = self.window();
+        if !window.is_top_level() {
+            let same_origin_with_container = window
+                .window_proxy()
+                .frame_element()
+                .is_some_and(|container| {
+                    self.origin()
+                        .same_origin_domain(&container.owner_document().origin())
+                });
+            if !same_origin_with_container {
+                self.autofocus_candidates.borrow_mut().clear();
+                return;
+            }
+        }
+
+        // Step 3. While document's autofocus candidates is not empty:
+        let candidates = std::mem::take(&mut *self.autofocus_candidates.borrow_mut());
+        for element in candidates {
+            // Step 3.2. If element is not connected or element's node document
+            // is not document, then continue.
+            if !element.upcast::<Node>().is_connected() {
+                continue;
+            }
+
+            // Step 3.3. Run the focusing steps for element.
+            if let Some(html_element) = element.downcast::<HTMLElement>() {
+                html_element.Focus(cx, &FocusOptions::default());
+            }
+            return;
+        }
+    }
+
+    pub(crate) fn empty_autofocus_candidates(&self) {
+        self.autofocus_candidates.borrow_mut().clear();
+    }
+
+    pub(crate) fn set_autofocus_processed(&self) {
+        self.autofocus_processed.set(true);
+    }
+
     pub(crate) fn update_the_current_document_readiness(
         &self,
         cx: &mut JSContext,
@@ -1686,7 +1762,19 @@ impl Document {
                 // info's DOM interactive time is 0, then set document's load timing info's DOM
                 // interactive time to now.
                 // Note: "check for zero" is handled by `.update_with_current_instant`.
-                update_with_current_instant(&self.navigation_timing.dom_interactive)
+                update_with_current_instant(&self.navigation_timing.dom_interactive);
+
+                // <https://html.spec.whatwg.org/multipage/#flush-autofocus-candidates>
+                // The parser is done at this point, so flush the autofocus candidates.
+                // Defer to a task: focusing runs script-adjacent machinery that
+                // requires a stable DOM, which does not hold mid-mutation.
+                let document = Trusted::new(self);
+                self.owner_global()
+                    .task_manager()
+                    .dom_manipulation_task_source()
+                    .queue(task!(flush_autofocus_candidates: move |cx| {
+                        document.root().flush_autofocus_candidates(cx);
+                    }));
             },
         };
 
@@ -4632,6 +4720,8 @@ impl Document {
             // https://html.spec.whatwg.org/multipage/#current-document-readiness
             // > Each Document has a current document readiness, a string, initially "complete".
             ready_state: Cell::new(DocumentReadyState::Complete),
+            autofocus_candidates: Default::default(),
+            autofocus_processed: Cell::new(false),
             current_script: Default::default(),
             current_the_end_loading_phase: Default::default(),
             pending_parsing_blocking_script: Default::default(),
