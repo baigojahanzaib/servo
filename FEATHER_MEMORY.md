@@ -6565,3 +6565,8 @@ Three-layer defect, each layer masked by the previous:
 - NEGATIVE RESULTS (release-tree binary, feather#403 included): data: chains clean, tab close clean, alt+F4 shutdown clean, aux window.open/close clean. The gate fix (feather#403) eliminates the only confirmed trigger.
 - Harness artifact: backtrace is symbolless in release builds (fmt::v11::detail::write_console spam) â€” symbol capture needed for future compositor panics.
 - Residual risk: the surface-teardown ordering defect is real but has no known trigger in the release tree; if a NEW teardown path emerges (e.g. tab-group close-all, crash recovery), expect this signature.
+
+## google signin flow — re-verified 2026-11-28 merge train (Windows lane)
+- Signin page renders cleanly (no botwall interstitial on load), real-input typing works perfectly in google forms (input-latency fix confirmed live), identifier submission round-trips.
+- FINAL STEP STILL BLOCKED: google responds "Couldn't sign you in — this browser or app may not be secure" (accounts.google.com/v3/signin/rejected). Server-side browser attestation — the documented TLS-JA3/botguard hard floor, unchanged. Everything client-side of the flow now works; remaining wall is attestation only.
+- Harness/input lesson: keybd_event typing needs VK codes (uppercase letters/digits map directly); click coordinates need physical-pixel scaling (screenshot analysis is scaled 1120x840 vs desktop 1600x1200 — multiply by 1.428).
