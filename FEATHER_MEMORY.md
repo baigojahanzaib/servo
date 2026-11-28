@@ -6360,3 +6360,27 @@ create_context sharing: SwapChain handles surface presentation sync correctly.
 REVISED MILESTONE 2 SHAPE: paint worker renders into a swapchain surface; UI thread
 locks+blits the front surface texture — same consumption pattern webrender uses
 for webgl. This avoids hand-rolled FBO double-buffering entirely.
+
+## sec1zt317c — composite plan RESOLVED: no shared contexts needed at all (2026-11-28)
+Surfman type-level facts (0.14 source audit): Connection+Surface are Send on Linux
+(x11/wayland/mesa_surfaceless) but Device and Context are NOT Send ANYWHERE. This is
+deliberate: surfman's threading model NEVER moves devices/contexts across threads —
+each thread creates its own device+context locally, and SURFACES move between them.
+Surface textures work cross-context WITHOUT shared object namespaces because surfaces
+are backed by platform-shareable buffers (EGLImage/dma-buf/pixmap). Proof in-tree:
+WebGLThreads — webgl contexts render on their own threads into surfaces, webrender
+consumes them as external images on the compositor thread. No context sharing anywhere.
+CORRECTED ARCHITECTURE for composite-off-ui-thread:
+1. Paint thread: creates its OWN device+context+webrender Renderer locally, renders
+   frames into swapchain surfaces.
+2. UI thread: locks front surface via SwapChain, creates SurfaceTexture in the egui/
+   shell context, blits quad, unlocks. EXACTLY the webgl consumption pattern
+   (webrender_external_images.rs lock_swap_chain).
+3. NO shared-context spike needed — the mechanism is production-proven in-tree.
+   The real engineering is 100% in the paint-thread restructure: moving
+   Renderer+painter render duties behind a thread boundary with rendezvous sync
+   for screenshots/reftests. Skip milestone-1 spike; go directly to restructure.
+REVISED FIRST SLICE: inside components/paint, spawn render thread owning
+device+context+Renderer at Paint::new; Painter::render becomes a rendezvous
+message roundtrip. Verify servoshell+WPT still pass — that alone is the refactor
+proof before touching the shell at all.
