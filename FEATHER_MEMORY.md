@@ -8193,3 +8193,21 @@ insertion machinery never even inserts ytd-live-chat-frame (polymer boots,
 ytd-app present, 1534 ytd elements — but chat frame never inserted; the one
 iframe is a 0x0 utility). User's real build reaches insertion and THEN hits
 the CSP neterror — deeper pipeline difference. Needs live reproduction.
+
+## sec1zt395 — XFO and CSP share the SAME error text: user's "CSP block" may be X-Frame-Options
+
+servoparser/mod.rs (~1580): BOTH the CSP frame-ancestors check AND
+check_a_navigation_response_adherence_to_x_frame_options failure produce
+NetworkError::ContentSecurityPolicy — so the user's youtube-live sidebar
+error text doesn't discriminate. live_chat carries X-Frame-Options:
+SAMEORIGIN — a likelier trigger than CSP (which per spec shouldn't block).
+XFO implementation analysis (xframeoptions.rs): the sameorigin walk is
+per-spec BUT depends on frame_element() resolving for each ancestor; the
+conservative fallback (parent exists but frame_element unresolvable ->
+return false) blocks legitimate embeds whenever the ancestor chain crosses
+script-thread boundaries or the proxy's frame_element was never set (e.g.
+dynamically reparented/cross-thread frames). Unverified but concrete.
+Also note consent-redirect theory: if live_chat navigation redirects
+through consent.youtube.com/accounts.google.com the destination origin
+differs and SAMEORIGIN fails spec-correctly — Chrome avoids it via login
+state cookies.
