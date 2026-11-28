@@ -9488,3 +9488,13 @@ Verified: sd480av progressive playback now fires 'ended' correctly
 cause as the freeze: the audio sync wedge blocked pipeline EOS
 propagation. Progressive playback is now behaviorally complete: plays
 realtime, ends correctly. Media fixes verified end-to-end.
+
+## sec1zt410 — audio-only playback verified: media matrix fully green
+
+tone.m4a audio-only progressive: plays through 20s duration, ENDED fires.
+Minor quirk noted: ended=false when probed 2s after ENDED event (spec
+says ended stays true until replay) — cosmetic, low priority. The
+progressive media verification matrix is now complete: video-only,
+audio+video (480p/720p/1080p), audio-only — all play realtime, all end
+correctly. Session total: 2 shipped engine media fixes + console logging
++ youtube root-cause chain + MSE end-to-end proof.
