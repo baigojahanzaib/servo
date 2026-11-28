@@ -6512,3 +6512,7 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 - fps directionally positive on DOM-rasterization load (5-6 async vs 4-5 sync, within noise).
 - GOTCHA: `media_gstreamer_enabled` is NOT a valid pref name — servoshell panics "Unknown preference" at startup. Media works without it.
 - Windows lane: the user-visible delta verification belongs on the Windows repro hardware — llvmpipe boxes cannot surface it.
+
+## sec1zt313: composite async — feather shell verification PASSED (2026-11-28)
+- The exact reproduction passes in feather shell-new (feather-ui binary): YouTube plays + omnibox typing instant WITH live autocomplete dropdown during playback, scroll repaints clean, zero panics/surfman issues/winit crashes in full log, clean teardown navigating away from playing video. Composite-off-UI-thread is shippable.
+- location-interface directory with teardown fix: 68/69 as expected, ZERO crashes (previously 65+2crash+1err) — the teardown panic fix eliminated the cascade crashes. Remaining leaf: location.hash on srcdoc iframe FAILs (about:srcdoc#test not applied — small genuine leaf).
