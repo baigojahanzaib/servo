@@ -9625,3 +9625,10 @@ FUNCTION/MECHANISM: media/worker-mse-element-state
 FUNCTION/MECHANISM: media/worker-mse-verification
 
 `43149eb954c` verified end-to-end on youtube.com/watch?v=aqz-KE-bpKQ: `dur=634.601` (correct full duration, was NaN pre-fix), 3 buffered ranges extending to end=62.3s, ct=5.6 rs=4. Player health/live-edge logic now receives correct cross-thread state. Probe reliability trick: retry the same stored session 3x with 4s gaps — heavy-page execute/sync usually lands within 3 tries.
+
+## sec1zt424 — lofi-stream divergence characterized (2026-11-28)
+FUNCTION/MECHANISM: media/livestream-bootstrap — OPEN
+
+24/7 stream jfKfPfyJRdk: after navigation zero MSE pushes, player state=-1 (unstarted), video src never attached. Event livestream 1OoZJoHCCyk and VOD aqz-KE-bpKQ both stream fine through identical machinery. Ruled out: PerformanceObserver gaps — servo warns "No valid entry type provided to observe()" but does NOT throw (verified both observe syntaxes nothrow), so non-fatal. Missing entry types vs chrome: longtask, layout-shift, event, first-input. Open suspects: (a) 24/7 streams use low-latency/dash-ump/SABR streaming paths with different feature detection, (b) a JS exception in player bootstrap that servoshell console forwarding doesn't capture (only console.* forwarded, uncaught exceptions may not be), (c) some API the lofi player config specifically requires. Next probe: instrument window.onerror capture injection before load, or diff the ytplayer config feature flags between working/non-working streams.
+
+**Uncaught-exception forwarding gap**: servoshell forwards console.* but possibly NOT uncaught exceptions — worth fixing as debug infrastructure (small: report error events in script_thread or window error handler to stderr).
