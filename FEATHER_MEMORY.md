@@ -9521,3 +9521,19 @@ catch-up — cosmetic-level, worth a future look but functional. Media
 state: progressive playback is feature-complete for the dogfood use
 case. All user-video complaints trace to either these fixed defects or
 the youtube worker-MSE gap.
+
+## sec1zt413 — dogfood verification checklist for next user build
+
+What the user should see improved in the next build (Linux lane fixes):
+1. Videos that previously froze after a few seconds now play through
+   (1080p progressive was 0.000x, now realtime).
+2. Videos WITH audio no longer freeze entirely (audio sync wedge fix) —
+   lag should be substantially reduced though VM testing cant measure
+   hardware-audio behavior precisely; user confirmation needed.
+3. Videos end properly instead of jumping/replaying weirdly.
+4. Seeking within a video recovers (brief pause ok).
+5. Youtube videos will STILL not play — that needs the worker-MSE arc
+   (next engine priority). Youtube livestreams same.
+6. Console errors now visible in servoshell stderr — debugging aid only.
+Items NOT addressed (other lanes/blocked): cookies reset, google default,
+downloads dropdown (shell lane); gmail specifics (credential-blocked).
