@@ -271,12 +271,13 @@ impl VideoFrameRenderer for MediaFrameRenderer {
         // natively supported WebRender YUV format.
         let nv12_planes = if is_nv12 {
             let (y, uv) = frame.get_nv12_planes();
-            let mut u = Vec::with_capacity(uv.len() / 2);
-            let mut v = Vec::with_capacity(uv.len() / 2);
-            for pair in uv.chunks_exact(2) {
-                u.push(pair[0]);
-                v.push(pair[1]);
-            }
+            // Strided-copy deinterleave: per-byte push loops prevent
+            // vectorization and capacity-check every byte — at 1080p the UV
+            // plane is ~1MB/frame, so this cost backpressures the gst
+            // streaming thread it runs on. Iterator collects let the compiler
+            // batch the copies.
+            let u: Vec<u8> = uv.iter().step_by(2).copied().collect();
+            let v: Vec<u8> = uv.iter().skip(1).step_by(2).copied().collect();
             Some((
                 plane_descriptor(width, height, ImageFormat::R8),
                 SerializableImageData::Raw(GenericSharedMemory::from_arc_vec(y)),
