@@ -8046,3 +8046,18 @@ squarely in the wedge zone, 720p borderline — matches user report exactly
 (gst pipeline without presentation, or compare against gst-launch playbin
 outside servo) — if gst-launch sustains 8M, the defect is in servo's
 sink/compositor handoff, not decoding.
+
+## sec1zt385 — DEFECT LOCALIZED: servo frame-handoff, NOT decode
+
+gst-launch playbin (fakesinks, no clock) eats the entire 60s 1080p@8M file in
+<20s — decode throughput 3x+ realtime. Decoding is innocent. The wedge is in
+servo's video-frame handoff: the path gst-appsink/media-player → compositor
+frame presentation. At high data rates the handoff wedges after the initial
+preroll burst. Concrete next steps for the implementer: (1) read the video
+sink/appsink frame-pull loop in components/media — check whether frames are
+pulled on a clock schedule or on compositor demand, and what happens when
+the compositor is slow; (2) suspect backpressure: if the frame channel is
+bounded and the compositor doesn't consume at realtime at large frame sizes,
+the appsink blocks and the whole gst pipeline stalls — matches every
+observation (burst-then-freeze, bitrate dependence, paints-then-stops).
+Check components/media frame forwarding + webrender video frame path.
