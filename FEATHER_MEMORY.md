@@ -9676,3 +9676,8 @@ Servo's input-side scroll latency mitigation EXISTS: `components/paint/webview_r
 FUNCTION/MECHANISM: stability, embedder/theme
 
 Post-use-implementation sweep: github.com and en.wikipedia.org both render well (typography/layout/images correct), zero panics. Minor observations: some icon slots render as black blocks on wikipedia (possibly remaining svg gaps — CSS-mask icons or sprite edge cases; low priority vs dogfood). THEME PLUMBING: servo's prefers-color-scheme is NOT hardcoded light — it resolves from `webview_theme()` with precedence devtools-override > document-theme > webview-theme (window.rs:3673 region). servoshell just defaults to light. **Dark mode is an embedder setting — the feather shell can set the webview theme; no engine work needed.** Shell-lane note, not engine.
+
+## sec1zt433 — real-world validation: YouTube homepage transformed (2026-11-28)
+FUNCTION/MECHANISM: validation/youtube-rendering
+
+Screenshot-verified post-use-implementation YouTube homepage: sidebar sprite icons (home/shorts/subscriptions/you) ALL RENDER — direct validation of the use implementation on real sprite systems. Logo correct (red+black wordmark in light mode). Search/mic icons visible, category chips, thumbnails, ads all render. Page is close-to-correct overall. Remaining nits: some emoji missing in titles (font coverage, separate known area). This is the transformation evidence for the dogfood build.
