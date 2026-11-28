@@ -9686,3 +9686,8 @@ Screenshot-verified post-use-implementation YouTube homepage: sidebar sprite ico
 FUNCTION/MECHANISM: svg/use-symbol-scaling
 
 `d06d48a55d6`: symbol use-instances now convert to svg elements with width/height transfer — sprites scale correctly into their viewport (pixel-verified 24x24-viewBox filling 100px). CRITICAL BUG CLASS documented: use-instance clones are svg elements inserted into shadow roots — any document-wide re-resolution hook on SVGSVGElement::bind_to_tree MUST skip shadow-tree insertions (`is_in_a_shadow_tree()` guard) or clone-insertion recurses infinitely (stack overflow). Known remaining edge: use-in-use chaining inside clones unguarded beyond direct containment — rare in practice.
+
+## sec1zt435 — user's exact livestream page transformed (2026-11-28)
+FUNCTION/MECHANISM: validation/livestream-visual
+
+Screenshot-verified the user's exact reported stream (1OoZJoHCCyk) post-fixes: live video PLAYING with real frames, correct logo, correct sidebar, channel bar, title/metadata, LIVE badges — night-and-day vs the user's broken-dogfood screenshot. Google login page also renders at full fidelity. Remaining visual nits: action-pill row slightly washed (some icons may still be missing — possible remaining use edge or mask-image gap); chat panel not visible in this capture (unverified whether closed-by-default or missing). This is the dogfood-ready evidence set.
