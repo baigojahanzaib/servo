@@ -7495,3 +7495,7 @@ Final piece: bind-order propagation trap — at a parent's bind-scan time, child
 - mozjs raw API from safe cx: `js::jsapi::JS_ClearPendingException(cx.raw_cx())`; check with safe wrapper `script_bindings::js::JS_IsExceptionPending(cx)`.
 - Symptom index: "SecurityError: The operation is insecure" uncaught at a cross-origin `win.location` access line + thread crash `!JS_IsExceptionPending` = constructor-time exception leak, NOT a real security failure.
 - Result: location-valueof, location-symbol-toprimitive pass; zero regressions in the-location-interface directory.
+
+## sec1zt355 — flexbox baseline-alignment cluster sizing (NOT leaf-priced)
+- 31 baseline inis in css-flexbox/alignment/ + ~10 more in parent dir; baseline alignment requires first/last-baseline synthesis across flex items, writing modes, and item types (table/grid/flex items) — genuine multi-session layout feature, NOT a leaf. Do not pick as leaf work.
+- GIT GOTCHA (mechanism): `git fetch origin feather-engine` on this box fetches into FETCH_HEAD but does NOT update the origin/feather-engine tracking ref — use `git ls-remote origin feather-engine` for the true tip and rebase onto FETCH_HEAD. Both lanes push frequently; expect non-fast-forward on every push, rebase --onto FETCH_HEAD <old-base> with union-resolution of FEATHER_MEMORY.md.
