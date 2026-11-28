@@ -9479,3 +9479,12 @@ globals at all (Exposed=Window only), so the worker-side setup dies
 silently — no exception surfaces because youtube feature-detects the
 missing pieces and never starts. THE MSHandle/worker-MSE arc is
 confirmed as the correct and only target. Plan in sec1zt407 stands.
+
+## sec1zt409 — EOS defect FIXED as side-effect of the sync wedge fix
+
+Verified: sd480av progressive playback now fires 'ended' correctly
+(ct=30.0 ended=true dur=30.0) — the previously documented EOS defect
+(ended never fires, ct jumps backwards at file end) is gone. Same root
+cause as the freeze: the audio sync wedge blocked pipeline EOS
+propagation. Progressive playback is now behaviorally complete: plays
+realtime, ends correctly. Media fixes verified end-to-end.
