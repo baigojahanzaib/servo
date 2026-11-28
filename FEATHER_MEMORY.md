@@ -8119,3 +8119,14 @@ player's start-position logic. Two independent failure lines to pursue:
 (1) why no audio samples ever flow (track never fed? decodebin stream
 selection dropping audio?), (2) resequence ordering violation after seeks.
 The no-cycle in-band resequence path is suspect for both.
+
+## sec1zt390 — SVG icons on real Google pages: inline SVG RENDERS, matrix verdict confirmed
+
+google.com live probe: 32 svg elements; apps-grid/camera/plus/AI-mode icons
+all visibly render. Several svgs measure 0x0 — sprite-def containers
+(normal). Gmail missing icons are therefore NOT generic inline-svg failure:
+either external <use href="file.svg#id"> (the one proven-broken mechanism —
+SVGUseElement is a 52-line bare shell, implementation is M-L cost: shadow
+tree instantiation + mutation watching) or a sizing/layout interaction.
+Live gmail inspection is the only way to discriminate — credential handoff
+is THE blocker for both gmail P1/P2 items; further speculation is waste.
