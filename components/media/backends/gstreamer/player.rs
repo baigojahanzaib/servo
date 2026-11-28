@@ -400,7 +400,7 @@ impl PlayerInner {
                         // Skipping the cycle keeps the source instance alive so injection
                         // can actually fire in the live pipeline. SERVO_MSE_CYCLE re-enables
                         // the old behavior for A/B verification.
-                        if std::env::var("SERVO_MSE_CYCLE").is_ok() {
+                        if std::env::var("SERVO_MSE_NOCYCLE").is_err() {
                             let r = pipeline.set_state(gstreamer::State::Ready);
                             eprintln!("[mse] seek pipeline->ready {:?}", r);
                             let r = pipeline.set_state(restore);

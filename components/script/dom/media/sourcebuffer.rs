@@ -186,15 +186,22 @@ impl SourceBuffer {
         if has_timecodes {
             let mut rewritten = 0u32;
             let base_tc = full[start_idx].1;
-            let target_ms = (seek_target * 1000.0).round() as u64;
+            let _target_ms = (seek_target * 1000.0).round() as u64;
             let first_ms = (base_tc * 1000.0).round() as u64;
             for (idx, (_, tc, coff, csize)) in full.iter().enumerate() {
                 if idx < start_idx || *csize == 0 {
                     continue;
                 }
                 let orig_ms = (*tc * 1000.0).round() as u64;
+                // Zero-rebase, not target-relative (sec-media): the cycle
+                // design restarts the pipeline clock at zero, so refed frames
+                // stamped at the seek target sit hundreds of seconds in the
+                // pipeline's future and never render — the backwards-seek
+                // freeze. Position reporting is corrected separately by the
+                // player-side mse_position_offset, so media time must start
+                // at zero here.
                 let delta = orig_ms.saturating_sub(first_ms);
-                let new_val = target_ms.saturating_add(delta);
+                let new_val = delta;
                 let max_val = if *csize >= 8 {
                     u64::MAX
                 } else {
