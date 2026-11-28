@@ -9656,3 +9656,8 @@ Implementation cost: real arc — same-document shadow-tree instantiation, href 
 FUNCTION/MECHANISM: layout/vertical-centering
 
 All four mechanisms verified healthy in servo: flex align-items:center, table-cell vertical-align:middle, line-height centering, flex margin:auto — center offsets exact to the pixel. Gmail's mis-centering is app-specific: prime suspect is constructable stylesheets (fixed by flip, needs dogfood verification) or interaction with some other missing piece. Credential-blocked for live confirmation.
+
+## sec1zt429 — SVG `<use>` IMPLEMENTED and shipped (2026-11-28)
+FUNCTION/MECHANISM: svg/use-element — **the big web-compat fix**
+
+`84b8f2014bd`: inline same-document `<use>` shadow-tree instantiation implemented per SVG2. Resolution on bind_to_tree + href/xlink:href mutation; deep clone into closed UA shadow root; attach_shadow non-HTML-namespace bypass for UA widgets. Pixel-verified: `<g>` and `<symbol>` sprite references both rasterize correctly. Real-site smoke: YouTube healthy (ct advancing rs=4, 15 use elements resolving, no panics). **Expected user impact: gmail icons, YouTube iconography, all sprite-based icon systems now render.** Verification method note: use elements themselves measure 0x0 in getBoundingClientRect even when working — verify via pixel readback not geometry probes. v1 limitations in commit message; likely followups: symbol→svg conversion for exact viewBox scaling, mutation re-resolution for dynamically-injected sprite sheets (YouTube/gmail inject some sprites AFTER uses bind — those cases may still fail; if dogfood shows remaining missing icons, that's the first suspect).
