@@ -9544,3 +9544,10 @@ downloads dropdown (shell lane); gmail specifics (credential-blocked).
 — started end of sec1zt4xx rotation so the next rotation has a release
 binary for WPT expectation regen sweeps (debug binary unusable for timing
 -sensitive WPT). If process died with VM snapshot, restart it.
+
+## sec1zt415 — worker-exposure dependency surface catalogued
+
+Interfaces needing Exposed widening for worker-MSE: MediaSource,
+SourceBuffer, SourceBufferList, TimeRanges (all currently
+[Exposed=Window]). MediaSourceHandle webidl does not exist yet — new
+file needed. Dependency depth is shallow (4 interfaces + 1 new).
