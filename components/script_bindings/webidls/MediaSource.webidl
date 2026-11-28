@@ -7,10 +7,11 @@
 enum MediaSourceReadyState { "closed", "open", "ended" };
 enum EndOfStreamError { "network", "decode" };
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface MediaSource : EventTarget {
   [Throws] constructor();
 
+  readonly attribute MediaSourceHandle handle;
   readonly attribute SourceBufferList sourceBuffers;
   readonly attribute SourceBufferList activeSourceBuffers;
   readonly attribute MediaSourceReadyState readyState;

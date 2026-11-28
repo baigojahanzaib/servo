@@ -7,12 +7,14 @@ use js::jsapi::{Heap, JSObject};
 use rustc_hash::FxHashMap;
 use servo_base::id::{
     BlobId, CryptoKeyId, DomExceptionId, DomMatrixId, DomPointId, DomQuadId, DomRectId, FileId,
+    MediaSourceHandleId,
     FileListId, ImageBitmapId, ImageDataId, MessagePortId, OffscreenCanvasId, QuotaExceededErrorId,
 };
 use servo_constellation_traits::{
     BlobImpl, DomException, DomMatrix, DomPoint, DomQuad, DomRect, MessagePortImpl,
     SerializableCryptoKey, SerializableFile, SerializableFileList, SerializableImageBitmap,
-    SerializableImageData, SerializableQuotaExceededError, TransferableOffscreenCanvas,
+    SerializableImageData, SerializableMediaSourceHandle, SerializableQuotaExceededError,
+    TransferableOffscreenCanvas,
     TransformStreamData,
 };
 
@@ -49,6 +51,8 @@ pub struct StructuredDataReader<'a> {
     pub points: Option<FxHashMap<DomPointId, DomPoint>>,
     /// A map of serialized rects.
     pub rects: Option<FxHashMap<DomRectId, DomRect>>,
+    /// A map of serialized media source handles.
+    pub media_source_handles: Option<FxHashMap<MediaSourceHandleId, SerializableMediaSourceHandle>>,
     /// A map of serialized quads.
     pub quads: Option<FxHashMap<DomQuadId, DomQuad>>,
     /// A map of serialized matrices.
@@ -84,6 +88,8 @@ pub struct StructuredDataWriter {
     pub points: Option<FxHashMap<DomPointId, DomPoint>>,
     /// Serialized rects.
     pub rects: Option<FxHashMap<DomRectId, DomRect>>,
+    /// Serialized media source handles.
+    pub media_source_handles: Option<FxHashMap<MediaSourceHandleId, SerializableMediaSourceHandle>>,
     /// Serialized quads.
     pub quads: Option<FxHashMap<DomQuadId, DomQuad>>,
     /// Serialized matrices.

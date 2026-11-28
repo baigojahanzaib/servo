@@ -4,7 +4,7 @@
 
 // https://html.spec.whatwg.org/multipage#time-ranges
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface TimeRanges {
   readonly attribute unsigned long length;
   [Throws] double start(unsigned long index);

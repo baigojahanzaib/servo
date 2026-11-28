@@ -6,7 +6,7 @@
 
 enum AppendMode { "segments", "sequence" };
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface SourceBuffer : EventTarget {
   [Throws] attribute AppendMode mode;
   readonly attribute boolean updating;

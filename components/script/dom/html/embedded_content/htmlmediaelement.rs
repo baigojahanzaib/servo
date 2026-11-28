@@ -59,7 +59,7 @@ use crate::dom::bindings::codegen::Bindings::TextTrackCueBinding::TextTrackCueMe
 use crate::dom::bindings::codegen::Bindings::URLBinding::URLMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::UnionTypes::{
-    MediaStreamOrBlob, VideoTrackOrAudioTrackOrTextTrack,
+    MediaStreamOrMediaSourceHandleOrBlob, VideoTrackOrAudioTrackOrTextTrack,
 };
 use crate::dom::bindings::error::{Error, ErrorResult, Fallible};
 use crate::dom::bindings::inheritance::Castable;
@@ -130,14 +130,20 @@ const SEEK_POSITION_THRESHOLD: f64 = 0.5;
 enum SrcObject {
     MediaStream(Dom<MediaStream>),
     Blob(Dom<Blob>),
+    MediaSourceHandle(Dom<crate::dom::media::mediasourcehandle::MediaSourceHandle>),
 }
 
-impl From<MediaStreamOrBlob> for SrcObject {
-    fn from(src_object: MediaStreamOrBlob) -> SrcObject {
+impl From<MediaStreamOrMediaSourceHandleOrBlob> for SrcObject {
+    fn from(src_object: MediaStreamOrMediaSourceHandleOrBlob) -> SrcObject {
         match src_object {
-            MediaStreamOrBlob::Blob(blob) => SrcObject::Blob(Dom::from_ref(&*blob)),
-            MediaStreamOrBlob::MediaStream(stream) => {
+            MediaStreamOrMediaSourceHandleOrBlob::Blob(blob) => {
+                SrcObject::Blob(Dom::from_ref(&*blob))
+            },
+            MediaStreamOrMediaSourceHandleOrBlob::MediaStream(stream) => {
                 SrcObject::MediaStream(Dom::from_ref(&*stream))
+            },
+            MediaStreamOrMediaSourceHandleOrBlob::MediaSourceHandle(handle) => {
+                SrcObject::MediaSourceHandle(Dom::from_ref(&*handle))
             },
         }
     }
@@ -275,6 +281,11 @@ pub(crate) struct HTMLMediaElement {
     blob_url: DomRefCell<Option<ServoUrl>>,
     /// Attached MediaSource, when this element's source is a MediaSource object URL.
     media_source: DomRefCell<Option<Dom<crate::dom::media::mediasource::MediaSource>>>,
+    /// Cross-thread MSE association: set when attached through a serialized
+    /// MediaSourceHandle whose MediaSource lives in another script thread.
+    #[no_trace]
+    #[ignore_malloc_size_of = "cross-thread shared core, Arc-owned"]
+    mse_core: DomRefCell<Option<std::sync::Arc<crate::dom::media::core::MediaSourceCore>>>,
     /// <https://html.spec.whatwg.org/multipage/#dom-media-played>
     played: DomRefCell<TimeRangesContainer>,
     // https://html.spec.whatwg.org/multipage/#dom-media-audiotracks
@@ -465,6 +476,7 @@ impl HTMLMediaElement {
             current_seek_position: Cell::new(f64::NAN),
             resource_url: DomRefCell::new(None),
             media_source: DomRefCell::new(None),
+            mse_core: DomRefCell::new(None),
             blob_url: DomRefCell::new(None),
             played: DomRefCell::new(TimeRangesContainer::default()),
             audio_tracks_list: Default::default(),
@@ -1604,7 +1616,7 @@ impl HTMLMediaElement {
 
     fn fetch_request(&self, cx: &JSContext, offset: Option<u64>, seek_lock: Option<SeekLock>) {
         // MSE: data arrives via appendBuffer, never the network.
-        if self.media_source.borrow().is_some() {
+        if self.is_mse_backed() {
             return;
         }
         if self.resource_url.borrow().is_none() && self.blob_url.borrow().is_none() {
@@ -1782,6 +1794,9 @@ impl HTMLMediaElement {
                                 Some(ServoUrl::parse(&blob_url.str()).expect("infallible"));
                             self.fetch_request(cx, None, None);
                         },
+                        SrcObject::MediaSourceHandle(handle) => {
+                            self.attach_media_source_core(handle.core());
+                        },
                         SrcObject::MediaStream(stream) => {
                             let tracks = &*stream.get_tracks();
                             for (pos, track) in tracks.iter().enumerate() {
@@ -1920,6 +1935,52 @@ impl HTMLMediaElement {
         self.ready_state.set(ReadyState::HaveNothing);
     }
 
+    /// Whether this element is playing media-source-backed content (either
+    /// same-thread blob-url attach or cross-thread handle attach).
+    pub(crate) fn is_mse_backed(&self) -> bool {
+        self.media_source.borrow().is_some() || self.mse_core.borrow().is_some()
+    }
+
+    /// Attach through a serialized MediaSourceHandle: the MediaSource object
+    /// lives in another script thread (MSE-in-workers), so all interaction
+    /// goes through the shared core — bytes flow straight into the player
+    /// from the worker, and control events (attach/seek/detach) are posted
+    /// back into the owner's event loop as tasks.
+    fn attach_media_source_core(&self, core: std::sync::Arc<crate::dom::media::core::MediaSourceCore>) {
+        // The player must exist before the core advertises it: the worker
+        // starts appending the moment its sourceopen handler runs.
+        // The core must be visible before player creation: the stream-type
+        // detection reads is_mse_backed() and a progressive player cannot
+        // consume pushed MSE bytes.
+        *self.mse_core.borrow_mut() = Some(core.clone());
+        if self.player.borrow().is_none() {
+            let _ = self.create_media_player(&Resource::Url(
+                servo_url::ServoUrl::parse("servomse://mse").expect("infallible"),
+            ));
+        }
+        if let Some(ref player) = *self.player.borrow() {
+            *core.player.lock().unwrap() = Some(player.clone());
+        }
+        core.attached.store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // Notify the owning thread: the MediaSource transitions to open and
+        // sourceopen fires there, which is what the page's append logic waits
+        // for. Posted as a task because the DOM state machine is thread-affine.
+        if let Some(ref task_source) = *core.owner_task_source.lock().unwrap() {
+            let id = core.id;
+            task_source.queue_unconditionally(task!(mse_handle_attach: move |cx| {
+                let mut realm = js::realm::CurrentRealm::assert(cx);
+                let global = crate::dom::globalscope::GlobalScope::from_current_realm(&mut realm);
+                if let Some(ms) = global.get_media_source(&id) {
+                    ms.attach_to_media_element();
+                }
+            }));
+        }
+
+        self.network_state.set(NetworkState::Idle);
+        self.ready_state.set(ReadyState::HaveNothing);
+    }
+
     /// Push MSE-appended bytes into the push player.
     pub(crate) fn push_media_source_data(&self, track: u64, total_tracks: u64, bytes: Vec<u8>) -> bool {
         if let Some(ref player) = *self.player.borrow() {
@@ -1942,6 +2003,20 @@ impl HTMLMediaElement {
         if let Some(ms) = self.media_source.borrow_mut().take() {
             ms.clear_media_element();
             ms.detach_from_media_element();
+        }
+        if let Some(core) = self.mse_core.borrow_mut().take() {
+            core.attached.store(false, std::sync::atomic::Ordering::SeqCst);
+            core.player.lock().unwrap().take();
+            if let Some(ref task_source) = *core.owner_task_source.lock().unwrap() {
+                let id = core.id;
+                task_source.queue_unconditionally(task!(mse_handle_detach: move |cx| {
+                    let mut realm = js::realm::CurrentRealm::assert(cx);
+                    let global = crate::dom::globalscope::GlobalScope::from_current_realm(&mut realm);
+                    if let Some(ms) = global.get_media_source(&id) {
+                        ms.detach_from_media_element();
+                    }
+                }));
+            }
         }
     }
 
@@ -2312,9 +2387,25 @@ impl HTMLMediaElement {
         // next append must re-feed the init segment (deviation from spec, which
         // keeps buffered across seeks — impossible in a push pipeline). This has
         // to happen before the seeking event so handlers observe empty ranges.
-        let is_mse = self.media_source.borrow().is_some();
+        let is_mse = self.is_mse_backed();
         if let Some(ref ms) = *self.media_source.borrow() {
             ms.notify_seek(time);
+        }
+        if let Some(ref core) = *self.mse_core.borrow() {
+            // The MediaSource lives in another thread: post the seek
+            // notification into its event loop, where the refeed machinery
+            // runs. Re-fed bytes flow back into this element's player through
+            // the shared core without any further involvement here.
+            if let Some(ref task_source) = *core.owner_task_source.lock().unwrap() {
+                let id = core.id;
+                task_source.queue_unconditionally(task!(mse_handle_seek: move |cx| {
+                    let mut realm = js::realm::CurrentRealm::assert(cx);
+                    let global = crate::dom::globalscope::GlobalScope::from_current_realm(&mut realm);
+                    if let Some(ms) = global.get_media_source(&id) {
+                        ms.notify_seek(time);
+                    }
+                }));
+            }
         }
 
         // Step 10. Queue a media element task given the media element to fire an event named
@@ -2410,6 +2501,7 @@ impl HTMLMediaElement {
                 if let Some(ref src_object) = *self.src_object.borrow() {
                     match src_object {
                         SrcObject::MediaStream(_) => StreamType::Stream,
+                        SrcObject::MediaSourceHandle(_) => StreamType::MediaSource,
                         _ => StreamType::Seekable,
                     }
                 } else {
@@ -2417,7 +2509,7 @@ impl HTMLMediaElement {
                 }
             },
             _ => {
-                if self.media_source.borrow().is_some() {
+                if self.is_mse_backed() {
                     StreamType::MediaSource
                 } else {
                     StreamType::Seekable
@@ -3581,19 +3673,24 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-srcobject>
-    fn GetSrcObject(&self) -> Option<MediaStreamOrBlob> {
+    fn GetSrcObject(&self) -> Option<MediaStreamOrMediaSourceHandleOrBlob> {
         (*self.src_object.borrow())
             .as_ref()
             .map(|src_object| match src_object {
-                SrcObject::Blob(blob) => MediaStreamOrBlob::Blob(DomRoot::from_ref(blob)),
+                SrcObject::Blob(blob) => MediaStreamOrMediaSourceHandleOrBlob::Blob(DomRoot::from_ref(blob)),
                 SrcObject::MediaStream(stream) => {
-                    MediaStreamOrBlob::MediaStream(DomRoot::from_ref(stream))
+                    MediaStreamOrMediaSourceHandleOrBlob::MediaStream(DomRoot::from_ref(stream))
+                },
+                SrcObject::MediaSourceHandle(handle) => {
+                    MediaStreamOrMediaSourceHandleOrBlob::MediaSourceHandle(DomRoot::from_ref(
+                        handle,
+                    ))
                 },
             })
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-srcobject>
-    fn SetSrcObject(&self, cx: &mut JSContext, value: Option<MediaStreamOrBlob>) {
+    fn SetSrcObject(&self, cx: &mut JSContext, value: Option<MediaStreamOrMediaSourceHandleOrBlob>) {
         *self.src_object.borrow_mut() = value.map(|value| value.into());
         self.media_element_load_algorithm(cx);
     }
@@ -3810,19 +3907,19 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-played>
     fn Played(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
-        TimeRanges::new(cx, self.global().as_window(), self.played.borrow().clone())
+        TimeRanges::new(cx, &self.global(), self.played.borrow().clone())
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-seekable>
     fn Seekable(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
-        TimeRanges::new(cx, self.global().as_window(), self.seekable())
+        TimeRanges::new(cx, &self.global(), self.seekable())
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-buffered>
     fn Buffered(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
         // MSE: buffered is the union of the active source buffers' ranges.
         if let Some(ref ms) = *self.media_source.borrow() {
-            return TimeRanges::new(cx, self.global().as_window(), ms.buffered_value());
+            return TimeRanges::new(cx, &self.global(), ms.buffered_value());
         }
         let mut buffered = TimeRangesContainer::default();
         if let Some(ref player) = *self.player.borrow() {
@@ -3831,7 +3928,7 @@ impl HTMLMediaElementMethods<crate::DomTypeHolder> for HTMLMediaElement {
                 let _ = buffered.add(range.start, range.end);
             }
         }
-        TimeRanges::new(cx, self.global().as_window(), buffered)
+        TimeRanges::new(cx, &self.global(), buffered)
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-media-audiotracks>

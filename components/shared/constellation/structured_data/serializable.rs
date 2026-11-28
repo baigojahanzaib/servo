@@ -18,7 +18,7 @@ use rustc_hash::FxHashMap;
 use serde::{Deserialize, Serialize};
 use servo_base::id::{
     BlobId, CryptoKeyId, DomExceptionId, DomMatrixId, DomPointId, DomQuadId, DomRectId, FileId,
-    FileListId, ImageBitmapId, ImageDataId, QuotaExceededErrorId,
+    FileListId, ImageBitmapId, ImageDataId, MediaSourceHandleId, QuotaExceededErrorId,
 };
 use servo_url::ImmutableOrigin;
 use strum::EnumIter;
@@ -76,6 +76,8 @@ pub enum Serializable {
     ImageBitmap,
     /// The `ImageData` interface.
     ImageData,
+    /// The `MediaSourceHandle` interface.
+    MediaSourceHandle,
     /// The `CryptoKey` interface.
     #[cfg(feature = "subtlecrypto")]
     CryptoKey,
@@ -96,6 +98,8 @@ impl Serializable {
                 StructuredSerializedData::clone_all_of_type::<DomPoint>
             },
             Serializable::DomRect => StructuredSerializedData::clone_all_of_type::<DomRect>,
+            Serializable::MediaSourceHandle =>
+                StructuredSerializedData::clone_all_of_type::<SerializableMediaSourceHandle>,
             Serializable::DomRectReadOnly => StructuredSerializedData::clone_all_of_type::<DomRect>,
             Serializable::DomQuad => StructuredSerializedData::clone_all_of_type::<DomQuad>,
             Serializable::DomMatrix => StructuredSerializedData::clone_all_of_type::<DomMatrix>,
@@ -726,6 +730,31 @@ impl BroadcastClone for SerializableCryptoKey {
 
     fn destination(data: &mut StructuredSerializedData) -> &mut Option<FxHashMap<Self::Id, Self>> {
         &mut data.crypto_keys
+    }
+
+    fn clone_for_broadcast(&self) -> Option<Self> {
+        Some(self.clone())
+    }
+}
+
+/// A serializable version of the MediaSourceHandle interface: just the id of
+/// the shared media-source core, resolved back to the in-process core object
+/// at deserialization time.
+#[derive(Clone, Debug, Deserialize, MallocSizeOf, Serialize)]
+pub struct SerializableMediaSourceHandle {
+    /// The id of the media source core.
+    pub id: Uuid,
+}
+
+impl BroadcastClone for SerializableMediaSourceHandle {
+    type Id = MediaSourceHandleId;
+
+    fn source(data: &StructuredSerializedData) -> &Option<FxHashMap<Self::Id, Self>> {
+        &data.media_source_handles
+    }
+
+    fn destination(data: &mut StructuredSerializedData) -> &mut Option<FxHashMap<Self::Id, Self>> {
+        &mut data.media_source_handles
     }
 
     fn clone_for_broadcast(&self) -> Option<Self> {

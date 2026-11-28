@@ -15,7 +15,8 @@ use serde::{Deserialize, Serialize};
 pub use serializable::*;
 use servo_base::id::{
     BlobId, CryptoKeyId, DomExceptionId, DomMatrixId, DomPointId, DomQuadId, DomRectId, FileId,
-    FileListId, ImageBitmapId, ImageDataId, MessagePortId, OffscreenCanvasId, QuotaExceededErrorId,
+    FileListId, ImageBitmapId, ImageDataId, MediaSourceHandleId, MessagePortId, OffscreenCanvasId,
+    QuotaExceededErrorId,
 };
 use strum::IntoEnumIterator;
 pub use transferable::*;
@@ -45,6 +46,8 @@ pub struct StructuredSerializedData {
     pub points: Option<FxHashMap<DomPointId, DomPoint>>,
     /// Serialized rect objects.
     pub rects: Option<FxHashMap<DomRectId, DomRect>>,
+    /// Serialized media source handles.
+    pub media_source_handles: Option<FxHashMap<MediaSourceHandleId, SerializableMediaSourceHandle>>,
     /// Serialized quad objects.
     pub quads: Option<FxHashMap<DomQuadId, DomQuad>>,
     /// Serialized matrix objects.

@@ -142,10 +142,10 @@ impl TimeRanges {
 
     pub(crate) fn new(
         cx: &mut JSContext,
-        window: &Window,
+        global: &crate::dom::globalscope::GlobalScope,
         ranges: TimeRangesContainer,
     ) -> DomRoot<TimeRanges> {
-        reflect_dom_object(cx, Box::new(TimeRanges::new_inherited(ranges)), window)
+        reflect_dom_object(cx, Box::new(TimeRanges::new_inherited(ranges)), global)
     }
 }
 

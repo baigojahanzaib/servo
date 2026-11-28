@@ -437,6 +437,8 @@ namespace_id! {DomPointId, DomPointIndex, "DomPoint"}
 
 namespace_id! {DomRectId, DomRectIndex, "DomRect"}
 
+namespace_id! {MediaSourceHandleId, MediaSourceHandleIndex, "MediaSourceHandle"}
+
 namespace_id! {DomQuadId, DomQuadIndex, "DomQuad"}
 
 namespace_id! {DomMatrixId, DomMatrixIndex, "DomMatrix"}

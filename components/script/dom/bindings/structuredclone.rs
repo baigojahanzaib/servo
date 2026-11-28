@@ -55,6 +55,7 @@ use crate::dom::dompointreadonly::DOMPointReadOnly;
 use crate::dom::file::File;
 use crate::dom::filelist::FileList;
 use crate::dom::globalscope::GlobalScope;
+use crate::dom::media::mediasourcehandle::MediaSourceHandle;
 use crate::dom::imagebitmap::ImageBitmap;
 use crate::dom::imagedata::ImageData;
 use crate::dom::messageport::MessagePort;
@@ -95,6 +96,7 @@ pub(super) enum StructuredCloneTags {
     DomMatrix = 0xFFFF8012,
     DomMatrixReadOnly = 0xFFFF8013,
     ImageData = 0xFFFF8014,
+    MediaSourceHandle = 0xFFFF8016,
     #[cfg(feature = "subtlecrypto")]
     CryptoKey = 0xFFFF8015,
     Max = 0xFFFFFFFF,
@@ -117,6 +119,7 @@ impl From<SerializableInterface> for StructuredCloneTags {
             SerializableInterface::ImageBitmap => StructuredCloneTags::ImageBitmap,
             SerializableInterface::QuotaExceededError => StructuredCloneTags::QuotaExceededError,
             SerializableInterface::ImageData => StructuredCloneTags::ImageData,
+        SerializableInterface::MediaSourceHandle => StructuredCloneTags::MediaSourceHandle,
             #[cfg(feature = "subtlecrypto")]
             SerializableInterface::CryptoKey => StructuredCloneTags::CryptoKey,
         }
@@ -159,6 +162,7 @@ fn reader_for_type(
         SerializableInterface::ImageBitmap => read_object::<ImageBitmap>,
         SerializableInterface::QuotaExceededError => read_object::<QuotaExceededError>,
         SerializableInterface::ImageData => read_object::<ImageData>,
+        SerializableInterface::MediaSourceHandle => read_object::<MediaSourceHandle>,
         #[cfg(feature = "subtlecrypto")]
         SerializableInterface::CryptoKey => read_object::<CryptoKey>,
     }
@@ -319,6 +323,7 @@ fn serialize_for_type(val: SerializableInterface) -> SerializeOperation {
         SerializableInterface::ImageBitmap => try_serialize::<ImageBitmap>,
         SerializableInterface::QuotaExceededError => try_serialize::<QuotaExceededError>,
         SerializableInterface::ImageData => try_serialize::<ImageData>,
+        SerializableInterface::MediaSourceHandle => try_serialize::<MediaSourceHandle>,
         #[cfg(feature = "subtlecrypto")]
         SerializableInterface::CryptoKey => try_serialize::<CryptoKey>,
     }
@@ -744,6 +749,7 @@ pub(crate) fn write(
             transform_streams: sc_writer.transform_streams_port.take(),
             points: sc_writer.points.take(),
             rects: sc_writer.rects.take(),
+            media_source_handles: sc_writer.media_source_handles.take(),
             quads: sc_writer.quads.take(),
             matrices: sc_writer.matrices.take(),
             exceptions: sc_writer.exceptions.take(),
@@ -784,6 +790,7 @@ pub(crate) fn read(
         file_lists: data.file_lists.take(),
         points: data.points.take(),
         rects: data.rects.take(),
+        media_source_handles: data.media_source_handles.take(),
         quads: data.quads.take(),
         matrices: data.matrices.take(),
         exceptions: data.exceptions.take(),

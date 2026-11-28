@@ -92,7 +92,7 @@ impl SourceBuffer {
         global: &GlobalScope,
         mime_type: DOMString,
     ) -> DomRoot<SourceBuffer> {
-        let buffered = TimeRanges::new(cx, global.as_window(), TimeRangesContainer::default());
+        let buffered = TimeRanges::new(cx, global, TimeRangesContainer::default());
         reflect_dom_object_with_proto(
             cx,
             Box::new(SourceBuffer::new_inherited(mime_type, &buffered)),
@@ -413,7 +413,7 @@ impl SourceBufferMethods<crate::DomTypeHolder> for SourceBuffer {
 
     /// <https://w3c.github.io/media-source/#dom-sourcebuffer-buffered>
     fn Buffered(&self, cx: &mut JSContext) -> DomRoot<TimeRanges> {
-        TimeRanges::new(cx, self.global().as_window(), self.buffered.borrow().clone())
+        TimeRanges::new(cx, &self.global(), self.buffered.borrow().clone())
     }
 
     /// <https://w3c.github.io/media-source/#dom-sourcebuffer-timestampoffset>

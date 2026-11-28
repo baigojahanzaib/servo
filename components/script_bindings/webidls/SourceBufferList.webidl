@@ -4,7 +4,7 @@
 
 // https://w3c.github.io/media-source/#dom-sourcebufferlist
 
-[Exposed=Window]
+[Exposed=(Window,DedicatedWorker)]
 interface SourceBufferList : EventTarget {
   readonly attribute unsigned long length;
            attribute EventHandler onaddsourcebuffer;

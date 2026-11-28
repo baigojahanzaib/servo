@@ -24,9 +24,11 @@ use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::event::{Event, EventBubbles, EventCancelable};
 use crate::dom::eventtarget::EventTarget;
+use crate::dom::media::core::{MediaSourceCore, register_core};
 use crate::dom::media::sourcebuffer::SourceBuffer;
 use crate::dom::media::sourcebufferlist::SourceBufferList;
-use crate::dom::window::Window;
+use crate::dom::globalscope::GlobalScope;
+use std::sync::Arc;
 
 #[dom_struct]
 pub(crate) struct MediaSource {
@@ -38,7 +40,16 @@ pub(crate) struct MediaSource {
     #[no_trace]
     id: Uuid,
     next_track_id: Cell<u64>,
+    /// Lazily-created handle object for this source (spec: each MediaSource
+    /// has exactly one, created on first access).
+    handle: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::media::mediasourcehandle::MediaSourceHandle>>>,
     media_element: script_bindings::cell::DomRefCell<Option<Dom<crate::dom::html::embedded_content::htmlmediaelement::HTMLMediaElement>>>,
+    /// Cross-thread shared state for MSE-in-workers: when this object lives
+    /// in a worker, the attaching media element reaches the player through
+    /// the core rather than the thread-affine element reference.
+    #[no_trace]
+    #[ignore_malloc_size_of = "cross-thread shared core, Arc-owned"]
+    core: Arc<MediaSourceCore>,
 }
 
 impl MediaSource {
@@ -46,38 +57,72 @@ impl MediaSource {
         source_buffers: &SourceBufferList,
         active_source_buffers: &SourceBufferList,
     ) -> MediaSource {
+        let id = Uuid::new_v4();
         MediaSource {
             eventtarget: EventTarget::new_inherited(),
             ready_state: Cell::new(MediaSourceReadyState::Closed),
             source_buffers: Dom::from_ref(source_buffers),
             active_source_buffers: Dom::from_ref(active_source_buffers),
             duration: Cell::new(f64::NAN),
-            id: Uuid::new_v4(),
+            id,
             next_track_id: Cell::new(0),
             media_element: script_bindings::cell::DomRefCell::new(None),
+            handle: script_bindings::cell::DomRefCell::new(None),
+            core: Arc::new(MediaSourceCore::new(id)),
         }
     }
 
     pub(crate) fn new(
         cx: &mut JSContext,
-        window: &Window,
+        global: &GlobalScope,
         proto: Option<HandleObject>,
     ) -> DomRoot<MediaSource> {
-        let global = window.upcast::<crate::dom::globalscope::GlobalScope>();
         let source_buffers = SourceBufferList::new(cx, global);
         let active_source_buffers = SourceBufferList::new(cx, global);
-        reflect_dom_object_with_proto(
+        let ms = reflect_dom_object_with_proto(
             cx,
             Box::new(MediaSource::new_inherited(&source_buffers, &active_source_buffers)),
             global,
             proto,
-        )
+        );
+        let handle = crate::dom::media::mediasourcehandle::MediaSourceHandle::new(
+            cx,
+            global,
+            ms.core.clone(),
+        );
+        *ms.handle.borrow_mut() = Some(Dom::from_ref(&*handle));
+        register_core(&ms.core);
+        *ms.core.owner_task_source.lock().unwrap() = Some(
+            global
+                .task_manager()
+                .media_element_task_source()
+                .to_sendable(),
+        );
+        // Register in the owning globalscope at construction so cross-thread
+        // control tasks can look the object up by id (the blob-URL registry
+        // doubles as the per-global MediaSource index).
+        global.register_media_source(ms.url_id(), &ms);
+        ms
     }
 }
 
 impl MediaSource {
     pub(crate) fn url_id(&self) -> Uuid {
         self.id
+    }
+
+    pub(crate) fn core(&self) -> Arc<MediaSourceCore> {
+        self.core.clone()
+    }
+
+    /// Mirror the merged buffered ranges into the shared core so the element
+    /// thread can advance readyState without touching worker DOM state.
+    pub(crate) fn mirror_buffered_to_core(&self) {
+        let mut ranges = Vec::new();
+        self.source_buffers.for_each_buffer(|sb| {
+            ranges.extend_from_slice(&sb.buffered_ranges());
+        });
+        self.core.set_buffered_ranges(ranges);
     }
 
     pub(crate) fn set_media_element(&self, element: &crate::dom::html::embedded_content::htmlmediaelement::HTMLMediaElement) {
@@ -94,13 +139,15 @@ impl MediaSource {
         if let Some(ref element) = *self.media_element.borrow() {
             return element.push_media_source_data(track, self.source_buffers.len() as u64, bytes);
         }
-        false
+        self.core.push_data(track, self.source_buffers.len() as u64, bytes)
     }
 
     pub(crate) fn signal_end_of_stream(&self) {
         if let Some(ref element) = *self.media_element.borrow() {
             element.push_media_source_eos();
+            return;
         }
+        self.core.end_of_stream();
     }
 
     /// Merged buffered ranges across all source buffers (union).
@@ -190,14 +237,14 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
     /// <https://w3c.github.io/media-source/#dom-mediasource-constructor>
     fn Constructor(
         cx: &mut JSContext,
-        window: &Window,
+        global: &GlobalScope,
         proto: Option<HandleObject>,
     ) -> Fallible<DomRoot<MediaSource>> {
-        Ok(MediaSource::new(cx, window, proto))
+        Ok(MediaSource::new(cx, global, proto))
     }
 
     /// <https://w3c.github.io/media-source/#dom-mediasource-istypesupported>
-    fn IsTypeSupported(_global: &Window, type_: DOMString) -> bool {
+    fn IsTypeSupported(_global: &GlobalScope, type_: DOMString) -> bool {
         // The honest answer is whatever the machine can decode: consult the
         // real backend registry (gstreamer caps) rather than a static table.
         !type_.str().is_empty() &&
@@ -205,6 +252,11 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
                 ServoMedia::get().can_play_type(&type_.str()),
                 SupportsMediaType::No
             )
+    }
+
+    /// <https://w3c.github.io/media-source/#dom-mediasource-handle>
+    fn Handle(&self) -> DomRoot<crate::dom::media::mediasourcehandle::MediaSourceHandle> {
+        DomRoot::from_ref(&**self.handle.borrow().as_ref().expect("created at construction"))
     }
 
     /// <https://w3c.github.io/media-source/#dom-mediasource-sourcebuffers>
@@ -233,6 +285,7 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
             return Err(Error::InvalidState(None));
         }
         self.duration.set(value);
+        self.core.set_duration(value);
         Ok(())
     }
 
@@ -241,7 +294,7 @@ impl MediaSourceMethods<crate::DomTypeHolder> for MediaSource {
         if self.ready_state.get() != MediaSourceReadyState::Open {
             return Err(Error::InvalidState(None));
         }
-        if !Self::IsTypeSupported(self.global().as_window(), type_.clone()) {
+        if !Self::IsTypeSupported(&self.global(), type_.clone()) {
             return Err(Error::NotSupported(None));
         }
         let track = self.next_track_id.get();
