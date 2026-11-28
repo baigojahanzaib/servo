@@ -9642,3 +9642,12 @@ Uncaught exceptions DO reach servoshell stderr already — verified both main-th
 FUNCTION/MECHANISM: media/worker-mse-seek — arc complete
 
 Post-seek recovery verified on youtube.com/watch?v=aqz-KE-bpKQ with worker-MSE: seek to 100s → playback recovered, ct advancing past seek point rs=4 paused=false. The mse_handle_seek cross-thread notification path works. **Worker-MSE arc is now feature-complete**: playback, duration, buffered, seek all verified on real YouTube.
+
+## sec1zt427 — ROOT CAUSE: SVG `<use>` is an unimplemented stub (2026-11-28)
+FUNCTION/MECHANISM: svg/use-element — **the gmail-icons root cause, and much more**
+
+`components/script/dom/svg/svguseelement.rs` is a 52-line DOM stub: no shadow-tree instantiation, no href resolution, no rendering of referenced content. Verified behaviorally: `<use href="#same-document-id">` measures 0x0 in all variants (sprite-def in same doc, outer svg correctly sized at 24x24). **Every sprite-based SVG icon system on the web is invisible in servo** — gmail icons, YouTube iconography, most modern icon systems. This is THE root cause of the user's gmail-icons complaint and a top-tier web-compat gap.
+
+NEGATIVE results ruled out along the way: svg sizing itself is healthy — CSS width/height on svg applies correctly including inside flex (24x24 correct); unp sized svg defaults huge (1008x1008 — wrong per spec which says 300x150, minor separate bug) but NOT zero.
+
+Implementation cost: real arc — same-document shadow-tree instantiation, href resolution, style cascade into shadow, mutation re-resolution. Multi-session. External-use (cross-file) even more. Upstream servo issue likely exists.
