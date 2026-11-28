@@ -8149,3 +8149,16 @@ defect now. Investigation needs: GST_DEBUG output is swallowed by servo's
 log bridge (must fix logging first); examine how playbin clock is selected
 with appsink audio (appsink is not a clock provider); examine preroll/sync
 interaction. Note youtube freeze-at-seek-target matches exactly.
+
+## sec1zt392 — audio-only ALSO frozen: unified theory = dynamic-stream/preroll wedge
+
+Final isolation: pure audio file (aac in audio element) plays at 0.06x —
+same freeze signature, rs=4 fully buffered. Unified theory fitting ALL
+observations: pipeline plays initially on system clock, then wedges when
+the audio stream appears/is consumed — the wedge is in stream linkage,
+preroll completion, or clock reselection, NOT decode or consumption rate
+(drain-fix proved consumption irrelevant). Video-only pipelines never
+trigger it. Audio-only wedges immediately. Test files on probe box:
+/tmp/hd1080.mp4 (video-only control, plays), /tmp/hd1080av.mp4,
+/tmp/sd480av.mp4, /tmp/tone.m4a; harness /tmp/throughput*.html +
+/audiotest.html via python http.server :8431.
