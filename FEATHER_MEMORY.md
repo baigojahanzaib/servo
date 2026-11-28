@@ -9921,3 +9921,19 @@ FUNCTION/MECHANISM: media/livestream-bootstrap — deep characterization, still 
   upstream-divergent and mostly irrelevant to feather (shell overrides).
   Reverted the test-only serviceworker flip; adoptedstylesheet flip stays
   (harmless, correct-on-merits for servoshell testing).
+
+## sec1zt450 (2026-11-28) — rotation-end state
+- Rotation tally: WPT baseline complete+reported (feather PR, html unexp
+  167→87), crash-cluster declassified as contamination artifact, CacheStorage
+  /canvas-layer attributions corrected (pref-gate + phantom-expectation
+  classes), Windows-lane MSE commits verified unregressed on Linux,
+  serviceworker verified working-when-prefed (feather already enables it),
+  the adoptedstylesheet-flip dogfood irrelevance documented.
+- BLOCKERS for next rotation: composite-arc spike needs shell-new rebuild
+  (~30G disk, 22G free — needs cleanup decision). gmail items need the
+  credential handoff. Everything else needs dogfood feedback on the real fix
+  stack: worker-MSE+mirroring+starvation+svg-use+dynamic-svg-repaint.
+- Probe ergonomics: servoshell --enable-experimental-web-platform-features
+  approximates feather's pref environment for verification probes (but NOT
+  exactly — feather enables more than the experimental list; check engine.rs
+  pref block when probe/behavior mismatches appear).
