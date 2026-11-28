@@ -194,6 +194,10 @@ impl GStreamerRender {
             .downcast::<gstreamer_app::AppSink>()
             .unwrap();
 
+        if std::env::var("SERVO_MEDIA_NO_SYNC").is_ok() {
+            appsink.set_sync(false);
+        }
+
         if let Some(render) = self.render.as_ref() {
             render.build_video_sink(appsink.upcast_ref::<gstreamer::Element>(), pipeline)?
         } else {
