@@ -9440,3 +9440,29 @@ core + handle serialization + attach plumbing (handle -> same
 servomse:// player creation path). Still multi-session arc. servo's
 structured clone infrastructure for cross-thread DOM objects is the
 first read (see dom/bindings/structuredclone.rs or equivalent).
+
+## sec1zt407 — MediaSourceHandle implementation shortcut: player handles are ALREADY cross-thread
+
+Key finding: htmlmediaelement.push_media_source_data is just
+player.lock().push_data_track(...) — the servo-media Player handle is a
+cross-thread-safe client of the media backend. The ONLY thread-coupled
+part of MSE is the DOM-level MS->element reference used to FIND the
+player. Implementation plan (replaces sec1zt406 generalities):
+1. Global cross-thread registry: HashMap<Uuid(MS id), WeakPlayerHandle>
+   behind Arc<Mutex>, in script or servo-media — attach path registers,
+   detach deregisters.
+2. Worker-side MediaSource (new Exposed=(Window,DedicatedWorker)):
+   appendBuffer -> registry lookup by MS id -> push_data_track directly,
+   NO main-thread hop needed. Events/state machine stay worker-local.
+3. MediaSourceHandle: serializable DOM object holding MS Uuid;
+   serialize=(NamespaceIndex,Uuid), deserialize=handle object in receiver
+   realm. Spec attach: handle assigned as media provider -> srcObject or
+   src-attr path needs extension: currently blob-url lookup in
+   resource_fetch_algorithm keyed by url_id; handle path can reuse the
+   SAME uuid keyed lookup (mediasource registry keyed by Uuid already
+   exists — see get_media_source in htmlmediaelement).
+4. IsTypeSupported(&Window) needs generalizing to &GlobalScope.
+FIRST READS: how get_media_source registry works today (global static?),
+whether Player is Clone/Send, structuredclone.rs storage plumbing.
+Estimate: 2-3 focused sessions. Everything else in youtube path already
+verified working (sec1zt404 end-to-end MSE proof).
