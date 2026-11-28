@@ -306,6 +306,11 @@ pub struct Preferences {
     /// <https://drafts.csswg.org/cssom-view/#the-visualviewport-interface>
     // feature: VisualViewport | #41341 | Web/API/VisualViewport
     pub dom_visual_viewport_enabled: bool,
+    /// Whether web content compositing on the paint thread is consumed
+    /// asynchronously: `WebView::paint` returns immediately after consuming the
+    /// latest completed frame instead of blocking until a new frame finishes
+    /// rendering. Intended for embedders that drive Servo on their UI thread.
+    pub gfx_async_paint_composite: bool,
     /// True to compile all WebRender shaders when Servo initializes. This is mostly
     /// useful when modifying the shaders, to ensure they all compile after each change is
     /// made.
@@ -595,6 +600,7 @@ impl Preferences {
             fonts_sans_serif: String::new(),
             fonts_serif: String::new(),
             fonts_shaping_backend: String::new(),
+            gfx_async_paint_composite: false,
             gfx_precache_shaders: false,
             gfx_text_antialiasing_enabled: true,
             gfx_subpixel_text_antialiasing_enabled: true,

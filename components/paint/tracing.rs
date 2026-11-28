@@ -34,6 +34,7 @@ mod from_constellation {
                 Self::SetFrameTreeForWebView(..) => target!("SetFrameTreeForWebView"),
                 Self::SetThrottled(..) => target!("SetThrottled"),
                 Self::NewWebRenderFrameReady(..) => target!("NewWebRenderFrameReady"),
+                Self::PaintThreadFrameReady(..) => target!("PaintThreadFrameReady"),
                 Self::PipelineExited(..) => target!("PipelineExited"),
                 Self::SendInitialTransaction(..) => target!("SendInitialTransaction"),
                 Self::ScrollNodeByDelta(..) => target!("ScrollNodeByDelta"),

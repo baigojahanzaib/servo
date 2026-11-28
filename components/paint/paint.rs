@@ -189,6 +189,10 @@ bitflags! {
         const BlinkingCaret = 1 << 5;
         /// The observers of the refresh driver wait for a paint after the next frame start.
         const FrameStart = 1 << 6;
+        /// The paint thread finished rasterizing a frame, which now needs to be
+        /// consumed. This reason alone never triggers a new render — only
+        /// consumption of the completed frame.
+        const PaintThreadFrameReady = 1 << 7;
     }
 }
 
@@ -436,6 +440,11 @@ impl Paint {
         }
 
         match msg {
+            PaintMessage::PaintThreadFrameReady(painter_id) => {
+                if let Some(painter) = self.maybe_painter(painter_id) {
+                    painter.handle_paint_thread_frame_ready();
+                }
+            },
             PaintMessage::CollectMemoryReport(sender) => {
                 self.collect_memory_report(sender);
             },

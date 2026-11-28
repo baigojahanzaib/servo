@@ -16,7 +16,8 @@
 //! needed).
 
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use crossbeam_channel::{Sender, unbounded};
 use dpi::PhysicalSize;
@@ -45,12 +46,32 @@ pub(crate) struct RenderReply {
     pub(crate) epochs: FxHashMap<WebRenderPipelineId, WebRenderEpoch>,
 }
 
+/// State shared between the paint thread and its handle on the compositor
+/// thread, used for asynchronous frame completion signaling.
+pub(crate) struct PaintThreadSharedState {
+    /// The generation of the most recently completed frame. Incremented by the
+    /// paint thread after the frame has been swapped into the swap chain,
+    /// with release ordering; readers should use acquire ordering.
+    pub(crate) completed_generation: AtomicUsize,
+    /// The WebRender epochs of all pipelines as of the latest completed frame.
+    /// Written before `completed_generation` is incremented.
+    pub(crate) epochs: Mutex<FxHashMap<WebRenderPipelineId, WebRenderEpoch>>,
+}
+
 pub(crate) enum PaintThreadMessage {
     Render {
         document: DocumentId,
         size: Size2D<i32, DevicePixel>,
         epoch_pipelines: Vec<WebRenderPipelineId>,
         reply: Sender<RenderReply>,
+    },
+    /// Render a frame without any completion reply. Completion is signaled
+    /// through the shared state and a `PaintThreadFrameReady` message to the
+    /// compositor.
+    RenderAsync {
+        document: DocumentId,
+        size: Size2D<i32, DevicePixel>,
+        epoch_pipelines: Vec<WebRenderPipelineId>,
     },
     Resize {
         size: PhysicalSize<u32>,
@@ -96,6 +117,7 @@ pub(crate) struct PaintThreadHandle {
     sender: Sender<PaintThreadMessage>,
     join_handle: Option<std::thread::JoinHandle<()>>,
     swap_chain: SwapChain<Device>,
+    shared: Arc<PaintThreadSharedState>,
 }
 
 impl PaintThreadHandle {
@@ -113,6 +135,11 @@ impl PaintThreadHandle {
     ) -> Result<(Self, RenderApiSender), String> {
         let (sender, receiver) = unbounded();
         let (startup_sender, startup_receiver) = unbounded();
+        let shared = Arc::new(PaintThreadSharedState {
+            completed_generation: AtomicUsize::new(0),
+            epochs: Mutex::new(FxHashMap::default()),
+        });
+        let thread_shared = shared.clone();
         let join_handle = std::thread::Builder::new()
             .name(format!("PaintThread{painter_id:?}"))
             .spawn(move || {
@@ -125,6 +152,7 @@ impl PaintThreadHandle {
                     external_image_inputs,
                     receiver,
                     startup_sender,
+                    thread_shared,
                 );
             })
             .map_err(|error| format!("Failed to spawn paint thread: {error:?}"))?;
@@ -142,6 +170,7 @@ impl PaintThreadHandle {
                 sender,
                 join_handle: Some(join_handle),
                 swap_chain,
+                shared,
             },
             render_api_sender,
         ))
@@ -169,6 +198,35 @@ impl PaintThreadHandle {
             })
             .ok()?;
         reply_receiver.recv().ok()
+    }
+
+    /// Kick off an asynchronous frame render. Returns false if the paint
+    /// thread is gone.
+    pub(crate) fn render_async(
+        &self,
+        document: DocumentId,
+        size: Size2D<i32, DevicePixel>,
+        epoch_pipelines: Vec<WebRenderPipelineId>,
+    ) -> bool {
+        self.sender
+            .send(PaintThreadMessage::RenderAsync {
+                document,
+                size,
+                epoch_pipelines,
+            })
+            .is_ok()
+    }
+
+    pub(crate) fn completed_generation(&self) -> usize {
+        self.shared.completed_generation.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn completed_epochs(&self) -> FxHashMap<WebRenderPipelineId, WebRenderEpoch> {
+        self.shared
+            .epochs
+            .lock()
+            .expect("poisoned")
+            .clone()
     }
 
     pub(crate) fn resize(&self, size: PhysicalSize<u32>) {
@@ -227,6 +285,7 @@ fn paint_thread_main(
     external_image_inputs: ExternalImageHandlerInputs,
     receiver: crossbeam_channel::Receiver<PaintThreadMessage>,
     startup_sender: Sender<Result<StartupSuccess, String>>,
+    shared: Arc<PaintThreadSharedState>,
 ) {
     let rendering_context =
         match SoftwareRenderingContext::new_with_connection_and_adapter(&connection, &adapter, size)
@@ -314,7 +373,7 @@ fn paint_thread_main(
 
     let (mut renderer, render_api_sender) = webrender::create_webrender_instance(
         webrender_gl.clone(),
-        Box::new(crate::render_notifier::RenderNotifier::new(painter_id, paint_proxy)),
+        Box::new(crate::render_notifier::RenderNotifier::new(painter_id, paint_proxy.clone())),
         webrender::WebRenderOptions {
             use_optimized_shaders: true,
             resource_override_path: servo_config::opts::get().shaders_path.clone(),
@@ -392,6 +451,40 @@ fn paint_thread_main(
                     .collect();
 
                 let _ = reply.send(RenderReply { epochs });
+            },
+            PaintThreadMessage::RenderAsync {
+                document,
+                size,
+                epoch_pipelines,
+            } => {
+                if let Err(error) = rendering_context.make_current() {
+                    error!("Failed to make the rendering context current: {error:?}");
+                }
+                rendering_context.prepare_for_rendering();
+
+                renderer.update();
+                clear_background(&*rendering_context, &webrender_gl);
+                renderer.render(size, 0 /* buffer_age */).ok();
+
+                // Ensure all GL work is complete before the surface is
+                // consumed on another thread.
+                webrender_gl.finish();
+                rendering_context.present();
+
+                {
+                    let mut epochs = shared.epochs.lock().expect("poisoned");
+                    epochs.clear();
+                    for pipeline_id in epoch_pipelines {
+                        if let Some(epoch) = renderer.current_epoch(document, pipeline_id) {
+                            epochs.insert(pipeline_id, epoch);
+                        }
+                    }
+                }
+                shared.completed_generation.fetch_add(1, Ordering::Release);
+
+                // Notify the compositor that a frame is ready to consume. This
+                // drives the repaint that imports and blits the frame.
+                paint_proxy.send(paint_api::PaintMessage::PaintThreadFrameReady(painter_id));
             },
             PaintThreadMessage::Resize { size, reply } => {
                 if let Err(error) = rendering_context.make_current() {

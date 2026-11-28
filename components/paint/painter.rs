@@ -118,6 +118,21 @@ pub(crate) struct Painter {
     /// rendered on the paint thread.
     pub(crate) last_frame_epochs: RefCell<FxHashMap<WebRenderPipelineId, WebRenderEpoch>>,
 
+    /// The generation of the most recently requested asynchronous frame render.
+    pub(crate) paint_thread_requested_generation: Cell<usize>,
+
+    /// The generation of the most recently consumed paint thread frame.
+    pub(crate) paint_thread_consumed_generation: Cell<usize>,
+
+    /// The most recently consumed paint thread frame, kept imported as a
+    /// texture in the embedder's rendering context. In asynchronous mode this
+    /// is re-blitted into the frame target whenever no newer frame has
+    /// completed, because double-buffered embedder contexts swap the blitted
+    /// content away on present.
+    #[allow(clippy::type_complexity)]
+    pub(crate) parked_frame_texture:
+        RefCell<Option<(surfman::SurfaceTexture, u32, euclid::default::Size2D<i32>)>>,
+
     /// The GL bindings for webrender
     webrender_gl: Rc<dyn gleam::gl::Gl>,
 
@@ -368,6 +383,9 @@ impl Painter {
             webrender_renderer,
             paint_thread: RefCell::new(paint_thread),
             last_frame_epochs: RefCell::new(FxHashMap::default()),
+            paint_thread_requested_generation: Cell::new(0),
+            paint_thread_consumed_generation: Cell::new(0),
+            parked_frame_texture: RefCell::new(None),
             webrender_api,
             webrender_document,
             webrender_gl,
@@ -497,7 +515,11 @@ impl Painter {
         let notified_refresh_driver_observers = refresh_driver.notify_will_paint(self);
 
         if self.paint_thread.borrow().is_some() {
-            self.render_on_paint_thread(time_profiler_channel);
+            if servo_config::pref!(gfx_async_paint_composite) {
+                self.render_on_paint_thread_async();
+            } else {
+                self.render_on_paint_thread(time_profiler_channel);
+            }
         } else {
             if let Err(error) = self.rendering_context.make_current() {
                 error!("Failed to make the rendering context current: {error:?}");
@@ -570,6 +592,75 @@ impl Painter {
         self.consume_paint_thread_frame();
     }
 
+    /// Asynchronous compositing: consume the latest completed paint thread
+    /// frame if one is newly available, then kick off a new asynchronous
+    /// render if no render is currently in flight and there is new content to
+    /// render. Returns immediately in all cases — rasterization never blocks
+    /// the calling thread.
+    fn render_on_paint_thread_async(&mut self) {
+        let mut consumed_nothing_new = false;
+        {
+            let paint_thread = self.paint_thread.borrow();
+            let Some(paint_thread) = paint_thread.as_ref() else {
+                return;
+            };
+
+            // Consume a completed frame we have not consumed yet.
+            let completed_generation = paint_thread.completed_generation();
+            if completed_generation > self.paint_thread_consumed_generation.get() {
+                *self.last_frame_epochs.borrow_mut() = paint_thread.completed_epochs();
+                self.paint_thread_consumed_generation.set(completed_generation);
+                self.consume_paint_thread_frame();
+            } else {
+                consumed_nothing_new = true;
+            }
+        }
+        if consumed_nothing_new {
+            self.reblit_parked_frame();
+        }
+
+        // Kick off a new render if the paint thread is idle and there is new
+        // content. A repaint triggered only by frame completion
+        // (`PaintThreadFrameReady`) consumes the frame but never starts a new
+        // render — otherwise rendering would loop forever.
+        let repaint_reason = self.needs_repaint.get();
+        let has_new_content =
+            !repaint_reason.difference(RepaintReason::PaintThreadFrameReady).is_empty();
+        if !has_new_content {
+            return;
+        }
+
+        let paint_thread = self.paint_thread.borrow();
+        let Some(paint_thread) = paint_thread.as_ref() else {
+            return;
+        };
+        if self.paint_thread_requested_generation.get() != paint_thread.completed_generation() {
+            // A render is already in flight; the new content will be rendered
+            // by the kick that happens when it completes.
+            return;
+        }
+
+        let size = self.rendering_context.size2d().to_i32();
+        let epoch_pipelines: Vec<_> = self
+            .webview_renderers
+            .values()
+            .flat_map(|webview_renderer| webview_renderer.pipelines.keys().copied())
+            .map(Into::into)
+            .collect();
+        if paint_thread.render_async(self.webrender_document, size, epoch_pipelines) {
+            self.paint_thread_requested_generation
+                .update(|generation| generation + 1);
+        }
+    }
+
+    /// Handle the notification that the paint thread finished rasterizing a
+    /// frame: request a repaint so that the frame is consumed. This deliberately
+    /// uses a dedicated repaint reason that never triggers a new render by
+    /// itself.
+    pub(crate) fn handle_paint_thread_frame_ready(&self) {
+        self.set_needs_repaint(RepaintReason::PaintThreadFrameReady);
+    }
+
     /// Take the front surface of the paint thread's swap chain, import it as a
     /// texture into the embedder's rendering context, blit it into the embedder
     /// framebuffer, and recycle the surface for reuse by the paint thread.
@@ -596,9 +687,36 @@ impl Painter {
         };
         self.rendering_context
             .blit_texture_to_frame(texture_id, texture_size);
-        if let Some(surface) = self.rendering_context.destroy_texture(surface_texture) {
+
+        // Park the newly imported frame and return the previously parked one
+        // to the swap chain. The frame stays available for re-bliting (see
+        // `render_on_paint_thread_async`).
+        let previous = self
+            .parked_frame_texture
+            .borrow_mut()
+            .replace((surface_texture, texture_id, texture_size));
+        if let Some((previous_texture, _, _)) = previous &&
+            let Some(surface) = self.rendering_context.destroy_texture(previous_texture)
+        {
             swap_chain.recycle_surface(surface);
         }
+    }
+
+    /// Re-blit the most recently consumed paint thread frame into the frame
+    /// target. Needed in asynchronous mode for double-buffered embedder
+    /// rendering contexts, whose `present` swaps the blitted content away:
+    /// without this, the frame target reverts to empty content one present
+    /// after each consumed frame.
+    fn reblit_parked_frame(&self) {
+        let parked = self.parked_frame_texture.borrow();
+        let Some(&(_, texture_id, texture_size)) = parked.as_ref() else {
+            return;
+        };
+        if let Err(error) = self.rendering_context.make_current() {
+            error!("Failed to make the rendering context current: {error:?}");
+        }
+        self.rendering_context
+            .blit_texture_to_frame(texture_id, texture_size);
     }
 
     fn clear_background(&self) {

@@ -95,6 +95,10 @@ pub enum PaintMessage {
     /// the frame is ready. It contains a bool to indicate if it needs to composite, the
     /// `DocumentId` of the new frame and the `PainterId` of the associated painter.
     NewWebRenderFrameReady(PainterId, DocumentId, bool),
+    /// The paint thread has finished rasterizing a frame into its swap chain.
+    /// The frame still needs to be consumed (imported and blitted) on the
+    /// compositor thread, which requires a repaint.
+    PaintThreadFrameReady(PainterId),
     /// Script or the Constellation is notifying the renderer that a Pipeline has finished
     /// shutting down. The renderer will not discard the Pipeline until both report that
     /// they have fully shut it down, to avoid recreating it due to any subsequent
