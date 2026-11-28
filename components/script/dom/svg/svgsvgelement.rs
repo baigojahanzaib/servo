@@ -51,6 +51,9 @@ pub(crate) struct SVGSVGElement {
     // on each layout and must be invalidated when the subtree changes.
     #[no_trace]
     cached_serialized_data_url: AtomicRefCell<Option<Result<ServoUrl, ()>>>,
+    /// Reentrancy guard: serialization reads computed styles, which can flush
+    /// layout synchronously and re-enter serialization for the same element.
+    serialization_in_progress: Cell<bool>,
 }
 
 impl SVGSVGElement {
@@ -64,6 +67,7 @@ impl SVGSVGElement {
             uuid: Uuid::new_v4(),
             viewbox_ratio: Default::default(),
             cached_serialized_data_url: Default::default(),
+            serialization_in_progress: Cell::new(false),
         }
     }
 
@@ -84,6 +88,17 @@ impl SVGSVGElement {
     }
 
     pub(crate) fn serialize_and_cache_subtree(&self, cx: &mut js::context::JSContext) {
+        if self.serialization_in_progress.get() {
+            // A nested serialization triggered by a style-induced layout flush:
+            // the outer serialization will complete and cache the result.
+            return;
+        }
+        self.serialization_in_progress.set(true);
+        self.serialize_and_cache_subtree_inner(cx);
+        self.serialization_in_progress.set(false);
+    }
+
+    fn serialize_and_cache_subtree_inner(&self, cx: &mut js::context::JSContext) {
         let document_fragment = self.owner_document().CreateDocumentFragment(cx);
         let cloned_node = Node::clone(
             cx,
@@ -102,6 +117,12 @@ impl SVGSVGElement {
             return;
         }
 
+        // The serialized subtree is rasterized in isolation, without any of the
+        // document's stylesheets. Copy the computed values of the SVG presentation
+        // properties onto the clone as inline style so that CSS-driven painting
+        // (fills, strokes, opacities, text styling) survives rasterization.
+        self.inline_computed_styles_into_clone(cx, self.upcast(), &cloned_node);
+
         self.process_use_elements(cx, &cloned_node);
 
         let Ok(xml_source) = cloned_node.xml_serialize(TraversalScope::IncludeNode) else {
@@ -116,6 +137,80 @@ impl SVGSVGElement {
             Ok(url) => *self.cached_serialized_data_url.borrow_mut() = Some(Ok(url)),
             Err(error) => error!("Unable to parse serialized SVG data url: {error}"),
         };
+    }
+
+    fn inline_computed_styles_into_clone(&self, cx: &mut JSContext, original: &Node, clone: &Node) {
+        // Presentation properties whose computed values are baked into the
+        // serialization so that the isolated rasterization matches the document.
+        // NOTE: `display` is deliberately excluded: SVG-internal elements compute
+        // to `display: none` in this engine (they do not participate in box
+        // layout), so copying it would hide everything in the rasterization.
+        const INLINED_PROPERTIES: &[&str] = &[
+            "fill",
+            "fill-opacity",
+            "fill-rule",
+            "stroke",
+            "stroke-width",
+            "stroke-opacity",
+            "stroke-linecap",
+            "stroke-linejoin",
+            "stroke-miterlimit",
+            "stroke-dasharray",
+            "stroke-dashoffset",
+            "opacity",
+            "color",
+            "visibility",
+            "stop-color",
+            "stop-opacity",
+            "font-family",
+            "font-size",
+            "font-weight",
+            "font-style",
+            "font-stretch",
+            "text-anchor",
+            "letter-spacing",
+            "dominant-baseline",
+            "alignment-baseline",
+            "clip-rule",
+        ];
+        use crate::dom::bindings::codegen::Bindings::CSSStyleDeclarationBinding::CSSStyleDeclarationMethods;
+        use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
+
+        let window = self.owner_window();
+        // The clone is an exact deep copy, so preorder traversals of the two
+        // subtrees correspond element-for-element.
+        let originals: Vec<DomRoot<Node>> = original.traverse_preorder(ShadowIncluding::No).collect();
+        let clones: Vec<DomRoot<Node>> = clone.traverse_preorder(ShadowIncluding::No).collect();
+        for (original_node, clone_node) in originals.iter().zip(clones.iter()) {
+            let (Some(original_element), Some(clone_element)) = (
+                original_node.downcast::<Element>(),
+                clone_node.downcast::<Element>(),
+            ) else {
+                continue;
+            };
+            if !original_element.is_connected() {
+                continue;
+            }
+            let computed = window.GetComputedStyle(cx, original_element, None);
+            let mut style = String::new();
+            for property in INLINED_PROPERTIES {
+                let value = computed.GetPropertyValue(DOMString::from(*property));
+                let value = value.str();
+                if !value.is_empty() {
+                    style.push_str(property);
+                    style.push_str(": ");
+                    style.push_str(&value);
+                    style.push_str("; ");
+                }
+            }
+            if !style.is_empty() {
+                clone_element.set_attribute_from_parser(
+                    cx,
+                    QualName::new(None, ns!(), local_name!("style")),
+                    DOMString::from(style),
+                );
+            }
+        }
     }
 
     fn process_use_elements(&self, cx: &mut JSContext, root_node: &Node) {
@@ -260,6 +355,10 @@ impl SVGSVGElement {
         let _ = root_node.AppendChild(cx, &cloned_node);
     }
 
+    pub(crate) fn has_cached_serialization(&self) -> bool {
+        self.cached_serialized_data_url.borrow().is_some()
+    }
+
     pub(crate) fn invalidate_cached_serialized_subtree_and_rasterization_result(
         &self,
         no_gc: &NoGC,
@@ -345,6 +444,9 @@ impl VirtualMethods for SVGSVGElement {
     fn bind_to_tree(&self, cx: &mut js::context::JSContext, context: &crate::dom::node::BindContext) {
         if let Some(s) = self.super_type() {
             s.bind_to_tree(cx, context);
+        }
+        if context.tree_connected {
+            self.owner_document().increment_inline_svg_count();
         }
         // Sprite sheets are svg-rooted and are often injected AFTER the use
         // elements that reference them (gmail/YouTube insert icons before the
@@ -459,5 +561,8 @@ impl VirtualMethods for SVGSVGElement {
         }
 
         self.invalidate_cached_serialized_subtree_and_rasterization_result(cx.no_gc());
+        if context.tree_connected {
+            self.owner_document().decrement_inline_svg_count();
+        }
     }
 }

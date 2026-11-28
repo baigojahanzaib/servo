@@ -555,6 +555,10 @@ pub(crate) struct Document {
     /// Information on elements needing restyle to ship over to layout when the
     /// time comes.
     pending_restyles: DomRefCell<FxHashMap<Dom<Element>, NoTrace<PendingRestyle>>>,
+    /// Number of inline svg roots currently connected to this document. Gates the
+    /// restyle-driven svg serialization cache invalidation so that svg-less pages
+    /// pay nothing.
+    inline_svg_count: Cell<usize>,
     /// A collection of reasons that the [`Document`] needs to be restyled at the next
     /// opportunity for a reflow. If this is empty, then the [`Document`] does not need to
     /// be restyled.
@@ -4743,6 +4747,7 @@ impl Document {
             internal_ancestor_origin_objects_list: Default::default(),
             appropriate_template_contents_owner_document: Default::default(),
             pending_restyles: DomRefCell::new(FxHashMap::default()),
+            inline_svg_count: Cell::new(0),
             needs_restyle: Cell::new(RestyleReason::DOMChanged),
             origin: DomRefCell::new(origin),
             referrer,
@@ -5552,6 +5557,19 @@ impl Document {
         name: &Atom,
     ) -> Ref<'_, [Dom<Element>]> {
         self.name_map.get_all(cx.no_gc(), self.upcast(), name)
+    }
+
+    pub(crate) fn increment_inline_svg_count(&self) {
+        self.inline_svg_count.set(self.inline_svg_count.get() + 1);
+    }
+
+    pub(crate) fn decrement_inline_svg_count(&self) {
+        self.inline_svg_count
+            .set(self.inline_svg_count.get().saturating_sub(1));
+    }
+
+    pub(crate) fn has_inline_svg(&self) -> bool {
+        self.inline_svg_count.get() != 0
     }
 
     pub(crate) fn drain_pending_restyles(

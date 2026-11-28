@@ -190,6 +190,7 @@ use crate::dom::sanitizer::Sanitizer;
 use crate::dom::servoparser::ServoParser;
 use crate::dom::shadowroot::shadowroot::{IsUserAgentWidget, ShadowRoot};
 use crate::dom::svg::svgelement::SVGElement;
+use crate::dom::svg::svgsvgelement::SVGSVGElement;
 use crate::dom::text::Text;
 use crate::dom::trustedtypes::trustedhtml::TrustedHTML;
 use crate::dom::trustedtypes::trustedtypepolicyfactory::TrustedTypePolicyFactory;
@@ -5419,6 +5420,29 @@ impl VirtualMethods for Element {
                             );
                         sender.send(devtools_message).unwrap();
                     }
+                }
+            }
+        }
+
+        // Theme/state attribute changes on ancestor elements can restyle
+        // inline-svg descendants (e.g. `html[dark]` fill rules) without any
+        // mutation inside the svg itself, and restyle alone does not invalidate
+        // the rasterization serialization cache. Invalidate the cache of any
+        // svg root in this element's subtree; serialization re-reads computed
+        // styles after the pending restyle, so the new paint is captured.
+        // Mutations inside an svg are already covered by the svg element hooks.
+        let document = node.owner_document();
+        if node.is_connected() &&
+            document.has_inline_svg() &&
+            !node
+                .inclusive_ancestors_unrooted(cx.no_gc(), ShadowIncluding::No)
+                .any(|ancestor| ancestor.downcast::<SVGSVGElement>().is_some())
+        {
+            for descendant in node.traverse_preorder(ShadowIncluding::No) {
+                if let Some(svg) = descendant.downcast::<SVGSVGElement>() {
+                    svg.invalidate_cached_serialized_subtree_and_rasterization_result(
+                        cx.no_gc(),
+                    );
                 }
             }
         }
