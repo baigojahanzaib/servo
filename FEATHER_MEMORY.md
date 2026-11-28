@@ -7895,7 +7895,6 @@ URL 'foo' parse behavior, or wptserve port/host specifics. Lowest-priority
 open item now — engine behavior is verified correct outside the harness.
 Probe infrastructure note: *.localhost subdomains resolve to 127.0.0.1 —
 same-site x-origin pairs available locally without /etc/hosts edits.
-<<<<<<< Updated upstream
 ||||||| Stash base
 
 ## sec1zt378 — cherry-pick arc status (10 items)
@@ -7919,7 +7918,6 @@ PENDING leaf-work: workers-ini verified deletions (Worker-creation-happens-
 in-parallel, Worker-postMessage-happens-in-parallel, postMessage_block — all
 PASS solo, delete inis on feather-engine); rest of workers regen was CRASH
 noise from parallel-build contention — discarded; stash@{0} holds raw regen.
-=======
 
 ## sec1zt378 — cherry-pick arc status (10 items)
 
@@ -7958,7 +7956,6 @@ E0133 unsafe-call warning — if that code is ever re-attempted it needs an
 unsafe block. RECOMMENDATION: skip item10 until upstream reconciles, or fix
 SVGScriptElement binding generation as its own small task. Branch
 cherry-pick/element-weakref has the WIP state locally (not pushed).
->>>>>>> Stashed changes
 
 ## sec1zt380 — dogfood P1/P2 first results + media analysis
 
@@ -9303,3 +9300,25 @@ feather#513 OPEN = superset batch (clipboard + tab-cy + google-default + downloa
 LOFI STREAM jfKfPfyJRdk IS NOT LIVE — it's the original ended lofi stream ("Video unavailable — live stream recording is not available", "Streamed 4y ago"). The "livestreams never attach MediaSource" repro conclusion is CONFOUNDED — player-unstarted may be correct behavior for an ended stream. vp09 codec-string fix (servo#30) still stands on independent evidence (isTypeSupported false→true verified). END-TO-END livestream verification needs a GENUINELY LIVE stream — candidates: youtube.com/live directory, news channels (e.g. watch?v=ydpy6GcvlC8 or current sky/news live ids — verify isLive in ytInitialPlayerResponse).
 CLIPBOARD VERIFIED REAL-INPUT: powershell Set-Clipboard 'clipboard-test-12345' → ctrl+v in feather omnibox → text arrived with working autocomplete dropdown. Inbound cross-app clipboard FIXED by egui-winit clipboard feature (feather#513). Outbound (copy from feather) untested.
 pyautogui+ctypes window automation works on this box: EnumWindows+SetForegroundWindow+pyautogui.click/hotkey, screenshot to png — cheap alternative to computer tool. cp1252 gotcha: printing window titles with emoji crashes python stdout — don't print titles.
+||||||| parent of ffda7333d63 (docs: memory sec1zt398 sync breakthrough)
+
+## sec1zt398 — BREAKTHROUGH: sync=false unblocks everything — wedge is clock-sync consumption
+
+Decisive experiment (SERVO_MEDIA_NO_SYNC=1 env gate in render.rs): with
+appsink sync=false the ENTIRE 30s A+V file flows end-to-end — video samples
+complete to pts 29s, ct reaches end. So decode/demux/push/pipeline are ALL
+innocent: the wedge is strictly in basesink clock-synchronized consumption.
+With sync=true the sink waits on the clock before releasing frames and that
+wait deadlocks/starves — pipeline reaches PLAYING (confirmed via
+GST_STATES), then goes silent. CRITICAL ENVIRONMENTAL CAVEAT: this VM has
+no audio hardware — no audio sink clock provider exists. On real hardware
+the audio sink provides the pipeline clock and sync-consumption may mostly
+work (user sees laggy-not-frozen) — the total freeze may be VM-specific
+severity of the same defect. OPEN correctness question: with sync=false,
+does ct advance at realtime or frame-rate? (position source must be
+verified clock-based, not frame-based). Also observed: ended never fires at
+file end (EOS path incomplete). NEXT: (1) verify position reporting source;
+(2) decide the proper fix — browsers typically don't use sync sinks;
+compositor-scheduled frame presentation is standard, so sync=false may
+actually be the RIGHT design provided the renderer drops stale frames;
+(3) re-verify on hardware with audio present.
