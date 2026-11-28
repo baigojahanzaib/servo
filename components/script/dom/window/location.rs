@@ -121,7 +121,15 @@ impl Location {
             url.as_str().starts_with("about:srcdoc") &&
             url.as_str() != "about:srcdoc"
         {
-            return;
+            // Fragment-only navigations are same-document navigations and are
+            // not subject to the srcdoc navigation blocking.
+            let is_fragment_only = url
+                .as_str()
+                .strip_prefix("about:srcdoc")
+                .is_some_and(|remainder| remainder.starts_with('#'));
+            if !is_fragment_only {
+                return;
+            }
         }
         let mut load_data = incumbent_global
             .as_window()
