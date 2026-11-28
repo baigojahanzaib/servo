@@ -5,8 +5,10 @@
 use dom_struct::dom_struct;
 use js::context::JSContext;
 use net_traits::request::Referrer;
+use js::jsapi::SymbolCode;
 use script_bindings::dom::MutNullableDom;
-use script_bindings::reflector::{Reflector, reflect_dom_object};
+use script_bindings::js::{JS_DefineProperty, JS_GetProperty, JS_GetPrototype, JS_NewObject, PropertyFlags};
+use script_bindings::reflector::{DomObject, Reflector, reflect_dom_object};
 use servo_constellation_traits::{LoadData, LoadOrigin, NavigationHistoryBehavior};
 use servo_url::ServoUrl;
 
@@ -80,26 +82,84 @@ impl Location {
     }
 
     pub(crate) fn new(cx: &mut JSContext, window: &Window) -> DomRoot<Self> {
-        reflect_dom_object(
+        let location = reflect_dom_object(
             cx,
             Box::new(Location::new_inherited(LocationWindow::SameOrigin(
                 Dom::from_ref(window),
             ))),
             window,
-        )
+        );
+        location.define_invariant_properties(cx);
+        location
     }
 
     pub(crate) fn new_dissimilar_origin(
         cx: &mut JSContext,
         window: &DissimilarOriginWindow,
     ) -> DomRoot<Self> {
-        reflect_dom_object(
+        let location = reflect_dom_object(
             cx,
             Box::new(Location::new_inherited(LocationWindow::DissimilarOrigin(
                 Dom::from_ref(window),
             ))),
             window,
-        )
+        );
+        location.define_invariant_properties(cx);
+        location
+    }
+
+    /// <https://html.spec.whatwg.org/multipage/#the-location-interface>
+    /// Location objects carry own `valueOf` (exactly Object.prototype.valueOf)
+    /// and `@@toPrimitive` (undefined) properties which are non-enumerable,
+    /// non-writable and non-configurable, so object conversion of a Location
+    /// cannot be influenced by user script.
+    #[expect(unsafe_code)]
+    fn define_invariant_properties(&self, cx: &mut JSContext) {
+        unsafe {
+            let obj = self.reflector().get_jsobject();
+            // Object.prototype is the direct prototype of a fresh plain object.
+            // Do NOT walk the Location object's own chain: for cross-origin
+            // locations the chain passes through security wrappers whose
+            // access checks throw, leaving a pending exception behind.
+            rooted!(&in(cx) let plain = JS_NewObject(cx, None));
+            rooted!(&in(cx) let mut object_proto = std::ptr::null_mut::<js::jsapi::JSObject>());
+            rooted!(&in(cx) let mut valueof = js::jsval::UndefinedValue());
+            if !plain.get().is_null() &&
+                JS_GetPrototype(cx, plain.handle(), object_proto.handle_mut()) &&
+                !object_proto.get().is_null() &&
+                JS_GetProperty(
+                    cx,
+                    object_proto.handle(),
+                    c"valueOf",
+                    valueof.handle_mut(),
+                )
+            {
+                JS_DefineProperty(
+                    cx,
+                    obj,
+                    c"valueOf",
+                    valueof.handle(),
+                    PropertyFlags::empty(),
+                );
+            }
+
+            rooted!(&in(cx) let to_primitive =
+                js::rust::wrappers2::GetWellKnownSymbolKey(cx, SymbolCode::toPrimitive));
+            rooted!(&in(cx) let undefined = js::jsval::UndefinedValue());
+            js::rust::wrappers2::JS_DefinePropertyById2(
+                cx,
+                obj,
+                to_primitive.handle(),
+                undefined.handle(),
+                PropertyFlags::empty().as_jsprop_flags(),
+            );
+            // These definitions are best-effort internal invariants: any
+            // exception raised along the way (e.g. by security checks on
+            // dissimilar-origin locations) must not leak into script.
+            if script_bindings::js::JS_IsExceptionPending(cx) {
+                js::jsapi::JS_ClearPendingException(cx.raw_cx());
+            }
+        }
     }
 
     /// <https://html.spec.whatwg.org/multipage/#location-object-navigate>
