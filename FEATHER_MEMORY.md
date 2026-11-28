@@ -7867,3 +7867,18 @@ probe used srcdoc. Suspect initial-empty-document browsing-context resolution
 or parent-proxy resolution differs in that path. Zero harness regression
 (ini expected FAIL before and after). Needs a focused session — mechanism
 unknown, do not assume the restriction is wrong: it is probe-verified.
+
+## sec1zt376 — in-thread restriction shipped; same-site WPT path still open
+
+In-thread 'allowed to navigate' restriction added to navigate() (Normal type):
+x-origin source + non-top x-origin target → SecurityError. Probe-verified:
+EXACT WPT topology replica (dynamic no-src middle iframe + contentDocument
+injection) with localhost/127.0.0.1 throws correctly. Yet the real WPT test
+STILL reports 'success' — the same-site-subdomain difference is the only
+remaining variable. Leading hypothesis: same-site x-origin frames share a
+script thread and the whitelisted write resolves through a path that misses
+both gates (or navigates silently). Next investigator: instrument navigate()
++ the wrapper's location-write forwarding with eprintln in a local build and
+run the WPT test — trace which path the write takes. Both restrictions
+(dissimilar + in-thread) are correct-by-spec regardless; the WPT gap is an
+untraced path, not evidence against them.

@@ -316,6 +316,20 @@ impl Location {
 
         if navigation_type == NavigationType::Normal {
             check_top_navigation_activation_gate(&source_window, window)?;
+
+            // <https://html.spec.whatwg.org/multipage/#allowed-to-navigate>
+            // Cross-origin frames may navigate only the top-level traversable
+            // or same-origin targets. In-thread (same-site) cross-origin
+            // writes reach the real target window, so the restriction must
+            // live here as well as in the cross-thread forwarding path.
+            let target_proxy = window.window_proxy();
+            if target_proxy.parent().is_some() &&
+                !source_window.origin().same_origin_domain(&window.origin())
+            {
+                return Err(Error::Security(Some(
+                    "Cross-origin frames may not navigate non-top cross-origin frames".into(),
+                )));
+            }
         }
 
         let referrer = Referrer::ReferrerUrl(source_document.url());
