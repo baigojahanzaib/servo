@@ -63,6 +63,7 @@ use crate::dom::formdata::FormData;
 use crate::dom::formdataevent::FormDataEvent;
 use crate::dom::html::form_controls::htmlinputelement::HTMLInputElement;
 use crate::dom::html::form_controls::input_type::InputType;
+use crate::dom::html::interactive::htmldialogelement::HTMLDialogElement;
 use crate::dom::html::htmlbuttonelement::HTMLButtonElement;
 use crate::dom::html::htmlcollection::CollectionFilter;
 use crate::dom::html::htmldatalistelement::HTMLDataListElement;
@@ -949,9 +950,48 @@ impl HTMLFormElement {
         // Then, select the appropriate cell on that row based on method as given in the first cell of each column.
         // Then, jump to the steps named in that cell and defined below the table.
         match (&*scheme, method) {
+            // <https://html.spec.whatwg.org/multipage/#submit-dialog>
             (_, FormMethod::Dialog) => {
-                // TODO: Submit dialog
-                // https://html.spec.whatwg.org/multipage/#submit-dialog
+                // Step 1. If form does not have an ancestor dialog element, then return.
+                // Step 2. Let subject be form's nearest ancestor dialog element.
+                let dialog = self.upcast::<Node>().ancestors().find_map(|node| {
+                    node.downcast::<HTMLDialogElement>().map(DomRoot::from_ref)
+                });
+                let Some(dialog) = dialog else {
+                    return;
+                };
+
+                // Step 3. Let result be null.
+                let mut result: Option<DOMString> = None;
+                match submitter {
+                    // Step 4. If submitter is an input element whose type attribute is in
+                    // the Image Button state, let (x, y) be the selected coordinate and
+                    // set result to the concatenation of x, ",", and y.
+                    FormSubmitterElement::Input(input) => {
+                        if let InputType::Image(image_input_type) = &*input.input_type() {
+                            let coordinate = image_input_type.selected_coordinate();
+                            result = Some(DOMString::from(format!(
+                                "{},{}",
+                                coordinate.x, coordinate.y
+                            )));
+                        } else if input.is_submit_button() {
+                            // Step 5. Otherwise, if submitter is a submit button, then
+                            // set result to submitter's optional value.
+                            result = input
+                                .upcast::<Element>()
+                                .get_attribute_string_value(&local_name!("value"))
+                                .map(|value| value.into());
+                        }
+                    },
+                    FormSubmitterElement::Button(button) => {
+                        result = button.optional_value();
+                    },
+                    FormSubmitterElement::Form(_) => {},
+                }
+
+                // Step 6. Close the dialog subject with result and null.
+                // Step 7. Return.
+                dialog.close_the_dialog(cx, result, None);
             },
             // https://html.spec.whatwg.org/multipage/#submit-mutate-action
             ("http", FormMethod::Get) | ("https", FormMethod::Get) | ("data", FormMethod::Get) => {
