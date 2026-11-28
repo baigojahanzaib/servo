@@ -806,7 +806,11 @@ impl GStreamerPlayer {
             .set_config(config)
             .map_err(|e| PlayerError::Backend(e.to_string()))?;
 
-        if let Some(ref audio_renderer) = self.audio_renderer {
+        // The audio sink must exist even when there is no audio renderer
+        // (e.g. no audio hardware): without any consumer the audio stream
+        // backpressures the whole pipeline and video playback freezes.
+        // With no renderer we install the same appsink but drain-and-drop.
+        {
             let audio_sink =
                 gstreamer::ElementFactory::make("appsink")
                     .build()
@@ -818,7 +822,10 @@ impl GStreamerPlayer {
 
             let audio_sink = audio_sink.dynamic_cast::<gstreamer_app::AppSink>().unwrap();
 
-            let weak_audio_renderer = Arc::downgrade(audio_renderer);
+            let weak_audio_renderer = self
+                .audio_renderer
+                .as_ref()
+                .map(|renderer| Arc::downgrade(renderer));
 
             audio_sink.set_callbacks(
                 gstreamer_app::AppSinkCallbacks::builder()
@@ -827,6 +834,13 @@ impl GStreamerPlayer {
                         let sample = audio_sink
                             .pull_sample()
                             .map_err(|_| gstreamer::FlowError::Eos)?;
+
+                        let Some(ref weak_audio_renderer) = weak_audio_renderer else {
+                            // No audio renderer — drain and drop so the
+                            // stream never backpressures the pipeline.
+                            return Ok(gstreamer::FlowSuccess::Ok);
+                        };
+
                         let buffer = sample.buffer_owned().ok_or(gstreamer::FlowError::Error)?;
                         let audio_info = sample
                             .caps()
@@ -836,7 +850,7 @@ impl GStreamerPlayer {
                             audio_info.positions().ok_or(gstreamer::FlowError::Error)?;
 
                         let Some(audio_renderer) = weak_audio_renderer.upgrade() else {
-                            return Err(gstreamer::FlowError::Flushing);
+                            return Ok(gstreamer::FlowSuccess::Ok);
                         };
 
                         for position in positions.iter() {
@@ -849,6 +863,15 @@ impl GStreamerPlayer {
                             };
                             let chunk = Box::new(GStreamerAudioChunk(map));
                             let channel = position.to_mask() as u32;
+
+                            {
+                                use std::sync::atomic::{AtomicUsize, Ordering};
+                                static AUDIO_SAMPLES: AtomicUsize = AtomicUsize::new(0);
+                                let n = AUDIO_SAMPLES.fetch_add(1, Ordering::Relaxed);
+                                if n % 100 == 0 {
+                                    eprintln!("[mse] audio sample n={}", n);
+                                }
+                            }
 
                             audio_renderer.lock().unwrap().render(chunk, channel);
                         }
