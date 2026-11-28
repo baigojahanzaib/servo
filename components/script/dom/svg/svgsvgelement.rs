@@ -339,6 +339,29 @@ impl VirtualMethods for SVGSVGElement {
         Some(self.upcast::<SVGGraphicsElement>() as &dyn VirtualMethods)
     }
 
+    fn bind_to_tree(&self, cx: &mut js::context::JSContext, context: &crate::dom::node::BindContext) {
+        if let Some(s) = self.super_type() {
+            s.bind_to_tree(cx, context);
+        }
+        // Sprite sheets are svg-rooted and are often injected AFTER the use
+        // elements that reference them (gmail/YouTube insert icons before the
+        // defs arrive). A freshly-connected svg subtree may carry the missing
+        // targets, so re-resolve every use in the document. Resolution is
+        // idempotent: already-resolved uses cheaply reclone, unresolved ones
+        // get their first chance at content.
+        if context.tree_connected {
+            let document = self.upcast::<Node>().owner_doc();
+            for node in document
+                .upcast::<Node>()
+                .traverse_preorder(ShadowIncluding::No)
+            {
+                if let Some(use_element) = node.downcast::<crate::dom::svg::svguseelement::SVGUseElement>() {
+                    use_element.resolve_instance(cx);
+                }
+            }
+        }
+    }
+
     fn attribute_mutated(
         &self,
         cx: &mut js::context::JSContext,

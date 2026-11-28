@@ -62,7 +62,7 @@ impl SVGUseElement {
     /// v1 limitations: no cross-document references, no re-resolution when
     /// the referenced subtree mutates after the use bound, no chained
     /// use-in-use resolution beyond the direct containment guard.
-    fn resolve_instance(&self, cx: &mut js::context::JSContext) {
+    pub(crate) fn resolve_instance(&self, cx: &mut js::context::JSContext) {
         let element = self.upcast::<Element>();
         let mut href = element.get_string_attribute(&local_name!("href"));
         if href.str().is_empty() {
