@@ -6705,3 +6705,6 @@ Three-layer defect, each layer masked by the previous:
 - baseline alignment cluster: baseline-synthesis 4 + align-self-baseline-horiz 4 + multi-line-horiz 3 + justify-wmvert overlap — second cluster, HIGH real-web visibility (form rows, button groups with mixed content)
 - smaller: safe-overflow-position 4, table-as-item-stretch 3, percentage-heights 3, negative-overflow 3, collapsed-item 3
 - attack suggestion: baseline-alignment cluster first (real-web visibility × shared mechanism — one baseline-resolution fix likely kills many)
+
+## sec1zt349: download-resources regen zero-delta — harness-untestable leaf (2026-11-28)
+- downloading-resources 18/18 ran-as-expected, zero stale positives. The download-attribute leaf is HARNESS-UNTESTABLE: feather implements download via fetch_background shell-visible path, but WPT tests observe download triggering in ways servoshell harness can't surface. Expected-fails are structurally correct. Don't invest here without a shell-level test approach.
