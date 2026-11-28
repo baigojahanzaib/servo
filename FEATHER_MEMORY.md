@@ -6526,3 +6526,7 @@ REMAINING: step 3 backpressure tuning + feather shell youtube verification
 ## sec1zt315: srcdoc location.hash leaf — fix applied UNCOMMITTED (2026-11-28)
 - Mechanism: navigate_a_location in components/script/dom/window/location.rs blocks ALL navigations from about:srcdoc to urls starting with "about:srcdoc" except exactly "about:srcdoc" — this kills fragment-only same-document navigations (about:srcdoc#test) which must be allowed per spec.
 - FIX APPLIED IN WORKING TREE, NOT COMMITTED, NOT COMPILED (harness rule — baseline running): strip_prefix("about:srcdoc") remainder starting with '#' = fragment-only = allowed. Next session: after baseline completes, compile, verify location_hash.html passes (the "Setting location.hash on srcdoc iframe" subtest), run the-location-interface directory for regressions, commit+push. The working tree survives rotation.
+
+## sec1zt316: cherry-pick triage final (2026-11-28)
+- e667861e269 (attr borrow hazard) = already in tree as 185f8f3931b. 47ac285d9e8 (typographic bounds cache) = already in tree as 7e1622eb169. NOTHING TO DO for either.
+- 9ddfe28a9ec (getComputedStyle flat-tree) genuinely conflicts: 6 files auto-merge clean, configuration.py has a 3-way semantic conflict (HEAD diverged — contextForMember restructured). Resolution needs compile-verify cycles. Deferred post-baseline. To redo: git cherry-pick -n 9ddfe28a9ec, resolve configuration.py keeping HEAD's restructure + adding the incoming lengthGetterNeedsCx/implicitNoGCGetters logic, compile, verify.
