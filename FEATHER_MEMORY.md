@@ -6501,3 +6501,7 @@ KEY IMPLEMENTATION FACTS (verified, do not rediscover):
   THAT is the real leaf — the early-set was masking it. ini restored.
 REMAINING: step 3 backpressure tuning + feather shell youtube verification
 (shell rebuilding). windows lane: verify composite works on wgl/angle.
+
+## sec1zt311: composite teardown panic + surface lifecycle (2026-11-28)
+- Teardown panic "Should have destroyed the FBO renderbuffers with destroy()": parked frame texture in Painter was dropped raw. Surfman surfaces/textures MUST be destroyed with the device — never dropped. Fix (269203c8d8a): Painter::drop destroys the texture with the embedder context and recycles the surface into the paint thread's swap chain BEFORE paint thread shutdown, so the chain teardown destroys it properly. Symptom index: panic in surfman renderbuffers drop at shutdown → check surface/texture lifecycle ordering, parked textures especially.
+- NEGATIVE result: directory-run crashes on the-location-interface (security_location_0, replace-with-nested-iframe) were cascade artifacts — both pass solo. The panic was real but non-fatal for the test itself.
