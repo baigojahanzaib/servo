@@ -8130,3 +8130,22 @@ SVGUseElement is a 52-line bare shell, implementation is M-L cost: shadow
 tree instantiation + mutation watching) or a sizing/layout interaction.
 Live gmail inspection is the only way to discriminate — credential handoff
 is THE blocker for both gmail P1/P2 items; further speculation is waste.
+
+## sec1zt391 — AUDIO-PATH STRUCTURAL DEFECT: any audio track wedges playback (the real user-facing media bug)
+
+Decisive experiment series post-NV12-fix: progressive video-only plays
+perfectly (1.005x), but the SAME file with an audio track added freezes at
+0.007x at 1080p AND 0.048x even at 480p — structural, not size-dependent.
+Seeking produces no recovery: seek to 30s leaves ct frozen at exactly 30
+with no new samples flowing (samples maxed at pts 13s pre-seek). Raw
+gst-launch decodes the same A+V file fully in 14.4s — gst itself innocent.
+Drain-the-appsink fix shipped (correct but insufficient — wedge persists).
+Key environmental caveat: the probe VM has NO audio hardware (/dev/snd
+absent) so no audio renderer ever exists here — total freeze. On the user's
+real machine audio hardware exists but playback is still laggy/delayed/
+dying — consistent with a marginal/broken audio path everywhere, severity
+scaling with whether the renderer initializes. THE most important media
+defect now. Investigation needs: GST_DEBUG output is swallowed by servo's
+log bridge (must fix logging first); examine how playbin clock is selected
+with appsink audio (appsink is not a clock provider); examine preroll/sync
+interaction. Note youtube freeze-at-seek-target matches exactly.
