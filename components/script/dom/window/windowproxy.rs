@@ -1030,7 +1030,18 @@ impl WindowProxy {
             ))
         } else if let Some(parent_proxy) = self.parent() {
             // Step 4. Assert: parentDoc is fully active.
-            assert!(parent_proxy.currently_active().is_some());
+            // This spec assert cannot hold in servo's asynchronous pipeline
+            // world: a child document's creation can race its parent's
+            // navigation away, leaving the parent momentarily without an
+            // active document. Rather than crashing — reproducible on
+            // ad-iframe-dense pages that constantly create and destroy
+            // iframes — degrade gracefully the same way the frame-element
+            // branch above does: the document being created belongs to a
+            // dying tree anyway.
+            // TODO(47417): Once "creating a new browsing context" properly exists, remove this check
+            if parent_proxy.currently_active().is_none() {
+                return None;
+            }
             parent_proxy.document_origin_and_internal_ancestor_origin_objects_list()
         } else {
             None
