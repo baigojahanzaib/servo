@@ -9422,3 +9422,21 @@ worker-side MediaSource exposure, spec: MSE in workers). Moderate-cost
 engine arc, high user value. WebCodecs is separate/larger, probably not
 needed for the basic path. Probe method for verification: webdriver
 execute on live watch page, compare typeof MediaSourceHandle.
+
+## sec1zt406 — MediaSourceHandle implementation scoping: significant arc, halved-cost path identified
+
+Spec flow (MSE-in-workers): worker creates MediaSource, gets ms.handle
+(serializable MediaSourceHandle), postMessages it to main; main attaches
+by assigning handle as media provider to the video element. Requirements:
+(1) MediaSource+SourceBuffer exposed in DedicatedWorker scope
+(IsTypeSupported currently takes &Window — needs generalization),
+(2) MediaSourceHandle DOM object with structured-clone serialization
+across threads, (3) the MS core logic in an Arc-shared object both
+threads can reach — servo's current MediaSource is single-thread DOM.
+COST-HALVING INSIGHT: youtube creates the MS INSIDE the worker — the
+main thread only ever sees the handle. So main-thread MediaSource need
+not change at all; work is: worker-exposed MS/SB bindings + Arc-shared
+core + handle serialization + attach plumbing (handle -> same
+servomse:// player creation path). Still multi-session arc. servo's
+structured clone infrastructure for cross-thread DOM objects is the
+first read (see dom/bindings/structuredclone.rs or equivalent).
